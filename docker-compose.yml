@@ -1,0 +1,22 @@
+services:
+  distopic:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8787:8787/tcp"
+      - "40000:40000/udp"
+      - "40000:40000/tcp"
+    environment:
+      DISTOPIC_NAME: ${DISTOPIC_NAME:-Distopic}
+      DISTOPIC_REGISTRATION: ${DISTOPIC_REGISTRATION:-open}
+      # Optional: enables "Entrar com Discord".
+      DISTOPIC_DISCORD_CLIENT_ID: ${DISTOPIC_DISCORD_CLIENT_ID:-}
+      DISTOPIC_DISCORD_CLIENT_SECRET: ${DISTOPIC_DISCORD_CLIENT_SECRET:-}
+      DISTOPIC_PUBLIC_URL: ${DISTOPIC_PUBLIC_URL:-}
+      # Inside a container the server can't see the host's address; voice needs it.
+      DISTOPIC_ANNOUNCED_IP: ${DISTOPIC_ANNOUNCED_IP:?defina DISTOPIC_ANNOUNCED_IP com o IP da máquina (LAN ou público)}
+    volumes:
+      - distopic-data:/data
+
+volumes:
+  distopic-data:
