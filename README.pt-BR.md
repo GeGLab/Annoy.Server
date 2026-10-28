@@ -38,6 +38,10 @@ dá para migrar aos poucos.
 
 ## Começando
 
+> **Só quem hospeda faz isso.** Uma pessoa sobe o servidor, uma vez. O resto
+> instala apenas o [client](https://github.com/GustavoHSCruz/distopic-client)
+> e entra com o endereço e um convite, como num servidor TeamSpeak.
+
 ```bash
 git clone https://github.com/GustavoHSCruz/distopic-server.git
 cd distopic-server

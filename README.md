@@ -15,6 +15,8 @@
 
 <img src="docs/screenshots/chat-and-voice.png" alt="Distopic: text channels, voice channel with connected members, member list with roles" width="860">
 
+<sub>Screenshots show the English labels planned for localization; the current client UI is in Portuguese (pt-BR).</sub>
+
 </div>
 
 ## Why Distopic?
@@ -42,6 +44,10 @@ community gradually instead of all at once.
 | **Ops** | One process, SQLite storage, single UDP/TCP media port, Docker image, no external services |
 
 ## Quick start
+
+> **Only the host runs this.** One person sets up the server, once. Everyone
+> else just installs the [client](https://github.com/GustavoHSCruz/distopic-client)
+> and joins with the server address and an invite code, like a TeamSpeak server.
 
 ### Docker (recommended)
 
