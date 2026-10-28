@@ -57,6 +57,17 @@ cd distopic-server
 DISTOPIC_ANNOUNCED_IP=203.0.113.10 docker compose up -d
 ```
 
+This pulls the published image `ghcr.io/gustavohscruz/distopic-server`. Pin a
+version with `DISTOPIC_VERSION=0.1.0`, or build from source with
+`docker compose up -d --build`. Without Compose:
+
+```bash
+docker run -d --name distopic --restart unless-stopped \
+  -p 8787:8787 -p 40000:40000/udp -p 40000:40000/tcp \
+  -e DISTOPIC_ANNOUNCED_IP=203.0.113.10 -v distopic-data:/data \
+  ghcr.io/gustavohscruz/distopic-server:latest
+```
+
 Replace `203.0.113.10` with the address clients use to reach the machine: your
 LAN IP for home use, or the public IP on the internet. Open these ports:
 

@@ -1,5 +1,7 @@
 services:
   distopic:
+    # Published for every release; `docker compose up --build` builds from source instead.
+    image: ghcr.io/gustavohscruz/distopic-server:${DISTOPIC_VERSION:-latest}
     build: .
     restart: unless-stopped
     ports:
