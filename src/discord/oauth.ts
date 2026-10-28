@@ -7,6 +7,7 @@
 import { randomBytes } from "node:crypto";
 import { LIMITS, type DiscordLoginBegin, type DiscordLoginPoll } from "@distopic/protocol";
 import { createSession } from "../auth.ts";
+import { checkRegistration, consumeSignupInvite, grantBootstrapAdmin } from "../instance.ts";
 import { config } from "../config.ts";
 import { all, now, one, run, tx } from "../db.ts";
 import { sendToAudience } from "../events.ts";
@@ -23,6 +24,8 @@ interface Pending {
   redirectUri: string;
   /** Set when an already signed-in user links Discord to their account. */
   linkUserId: string | null;
+  /** Sign-up invite for instances that require one; checked only if a new account is needed. */
+  inviteCode: string | undefined;
   expiresAt: number;
   result: DiscordLoginPoll;
 }
@@ -45,13 +48,13 @@ function prune(): void {
 }
 
 /** `origin` is how the client reached us; DISTOPIC_PUBLIC_URL overrides it behind proxies. */
-export function beginLogin(origin: string, linkUserId: string | null): DiscordLoginBegin {
+export function beginLogin(origin: string, linkUserId: string | null, inviteCode?: string): DiscordLoginBegin {
   prune();
   if (byState.size >= MAX_PENDING) throw new Error("Logins pendentes demais; tente de novo em alguns minutos");
   const state = secret();
   const handoff = secret();
   const redirectUri = `${config.publicUrl || origin}/api/auth/discord/callback`;
-  byState.set(state, { handoff, redirectUri, linkUserId, expiresAt: Date.now() + TTL_MS, result: { status: "pending" } });
+  byState.set(state, { handoff, redirectUri, linkUserId, inviteCode, expiresAt: Date.now() + TTL_MS, result: { status: "pending" } });
   byHandoff.set(handoff, state);
   const params = new URLSearchParams({
     client_id: config.discord.clientId,
@@ -102,7 +105,7 @@ function uniqueUsername(discordName: string): string {
 }
 
 /** Links (or creates) the Distopic account for a Discord identity. Returns the user id. */
-function resolveAccount(d: DUser, linkUserId: string | null): string {
+function resolveAccount(d: DUser, linkUserId: string | null, inviteCode: string | undefined): string {
   const displayName = (d.global_name || d.username).slice(0, LIMITS.usernameMax);
   const avatar = avatarUrlOf(d);
   return tx(() => {
@@ -121,6 +124,8 @@ function resolveAccount(d: DUser, linkUserId: string | null): string {
     }
 
     if (linked) {
+      const banned = one<{ banned_at: string | null }>("SELECT banned_at FROM users WHERE id = ?", linked)?.banned_at;
+      if (banned) throw new Error("Conta suspensa nesta instância");
       run("UPDATE users SET display_name = ?, avatar_url = ? WHERE id = ?", displayName, avatar, linked);
       return linked;
     }
@@ -136,7 +141,8 @@ function resolveAccount(d: DUser, linkUserId: string | null): string {
       );
       return ghost;
     }
-    if (!config.registrationOpen) throw new Error("Cadastro fechado nesta instância");
+    // A brand-new account follows the instance's sign-up rules; claiming an imported profile does not.
+    const invite = checkRegistration(inviteCode);
     const id = newId();
     // Discord-only accounts have no password; "!" never verifies.
     run(
@@ -148,6 +154,8 @@ function resolveAccount(d: DUser, linkUserId: string | null): string {
       d.id,
       avatar,
     );
+    consumeSignupInvite(invite);
+    grantBootstrapAdmin(id, d.username);
     return id;
   });
 }
@@ -172,7 +180,7 @@ export async function completeLogin(state: string, code: string | undefined, err
   }
   try {
     const discordUser = await fetchDiscordUser(code, pending.redirectUri);
-    const userId = resolveAccount(discordUser, pending.linkUserId);
+    const userId = resolveAccount(discordUser, pending.linkUserId, pending.inviteCode);
     const user = getUser(userId)!;
     sendToAudience(userId, { t: "USER_UPDATE", d: user });
     pending.result = { status: "done", auth: pending.linkUserId ? null : { token: createSession(userId), user }, user };

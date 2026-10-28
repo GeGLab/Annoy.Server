@@ -6,22 +6,29 @@ import { config } from "./config.ts";
 import { db } from "./db.ts";
 import { HttpError } from "./errors.ts";
 import { registerGateway } from "./gateway.ts";
+import { syncConfiguredAdmin } from "./instance.ts";
+import { adminRoutes } from "./routes/admin.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { channelRoutes } from "./routes/channels.ts";
 import { discordAuthRoutes } from "./routes/discord-auth.ts";
 import { importRoutes } from "./routes/import.ts";
 import { serverRoutes } from "./routes/servers.ts";
 import { socialRoutes } from "./routes/social.ts";
-import { startVoice, voiceAddress } from "./voice.ts";
+import { startVoice, voiceAddresses } from "./voice-backend.ts";
 
 const app = Fastify({
-  logger: { level: process.env.LOG_LEVEL ?? "info" },
+  logger: {
+    level: process.env.LOG_LEVEL ?? "info",
+    // Privacy by default: request logs carry method and path only, never client IPs.
+    serializers: { req: (req) => ({ method: req.method, url: req.url.split("?")[0] }) },
+  },
   bodyLimit: 1024 * 1024,
 });
 
 // Auth is a bearer token, never a cookie, so any origin may call the API.
 await app.register(cors, { origin: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] });
-await app.register(multipart, { limits: { fileSize: config.maxUploadBytes, files: 10, fields: 10 } });
+// Per-upload size comes from the instance settings (see routes/channels.ts); this is only the ceiling.
+await app.register(multipart, { limits: { fileSize: config.uploadCeilingBytes, files: 10, fields: 10 } });
 await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
 
 app.setErrorHandler((err, _req, reply) => {
@@ -32,6 +39,7 @@ app.setErrorHandler((err, _req, reply) => {
   return reply.status(500).send({ error: "internal", message: "Erro interno do servidor" });
 });
 
+syncConfiguredAdmin();
 await startVoice();
 registerGateway(app);
 await app.register(
@@ -42,6 +50,7 @@ await app.register(
     channelRoutes(api);
     socialRoutes(api);
     importRoutes(api);
+    await api.register(adminRoutes);
   },
   { prefix: "/api" },
 );
@@ -55,6 +64,12 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 await app.listen({ host: config.host, port: config.port });
+// Voice media goes straight to the announced address; a container or loopback address reaches nobody.
+if (config.voice.backend === "builtin" && config.voice.announcedAddresses.length === 0 && voiceAddresses().every((a) => /^(127\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a))) {
+  app.log.warn(
+    `Voz anunciada em ${voiceAddresses().join(", ")}, um endereço interno (Docker ou loopback): outras máquinas não vão conseguir falar. Defina DISTOPIC_ANNOUNCED_IP com o IP público e o da LAN.`,
+  );
+}
 app.log.info(
-  `${config.name} pronto: http://${config.host}:${config.port} · voz UDP/TCP ${config.voice.port} anunciada em ${voiceAddress()}`,
+  `${config.name} pronto: http://${config.host}:${config.port} · voz UDP/TCP em ${voiceAddresses().join(", ")}`,
 );

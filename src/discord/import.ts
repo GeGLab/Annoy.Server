@@ -11,7 +11,7 @@ import {
   type ImportRequest,
   type ImportStructure,
 } from "@distopic/protocol";
-import { config } from "../config.ts";
+import { maxUploadBytes, requireServerQuota } from "../instance.ts";
 import { now, one, run, tx } from "../db.ts";
 import { badRequest, conflict, forbidden } from "../errors.ts";
 import { sendToUser, serverChanged } from "../events.ts";
@@ -170,6 +170,7 @@ export function startImport(userId: string, req: ImportRequest): ImportJob {
   for (const r of jobs.values()) {
     if (r.userId === userId && (r.job.phase === "structure" || r.job.phase === "messages")) throw conflict("Já existe uma importação em andamento");
   }
+  if (req.target.kind === "new") requireServerQuota(userId);
   if (req.target.kind === "existing") {
     const { server } = requireServer(req.target.serverId, userId);
     // Importing rewrites roles and permissions, so only the owner may target a server.
@@ -392,7 +393,7 @@ interface StoredAttachment {
 async function downloadAttachments(r: Running, m: DMessage): Promise<StoredAttachment[]> {
   const out: StoredAttachment[] = [];
   for (const a of m.attachments) {
-    if (a.size > config.maxUploadBytes) {
+    if (a.size > maxUploadBytes()) {
       warn(r.job, `Anexo ${a.filename} (${Math.round(a.size / 1048576)} MB) excede o limite e foi ignorado`);
       continue;
     }

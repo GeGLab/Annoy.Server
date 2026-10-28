@@ -6,7 +6,8 @@ import { Connection, register, sendToAudience, sendToChannel, unregister } from 
 import { requireChannel } from "./perms.ts";
 import { addConnection, presenceOf, removeConnection } from "./presence.ts";
 import { audienceOf, dmChannelsForUser, getRelationships, getUser, serversForUser } from "./repo.ts";
-import { handleVoice, leaveVoice, setSelfState } from "./voice.ts";
+import { getSettings, isAdmin } from "./instance.ts";
+import { handleVoice, leaveVoice, setSelfState, setSpeaking, voiceBackend } from "./voice-backend.ts";
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
 const IDENTIFY_TIMEOUT_MS = 10_000;
@@ -70,7 +71,14 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
     const presences = Object.fromEntries(audienceOf(userId).map((id) => [id, presenceOf(id)]));
     conn.send({
       t: "READY",
-      d: { user, servers: serversForUser(userId), dms: dmChannelsForUser(userId), relationships: getRelationships(userId), presences },
+      d: {
+        user,
+        servers: serversForUser(userId),
+        dms: dmChannelsForUser(userId),
+        relationships: getRelationships(userId),
+        presences,
+        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend },
+      },
     });
     if (cameOnline) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: "online" } });
     return;
@@ -90,6 +98,9 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
     }
     case "voice_state":
       setSelfState(conn, msg.selfMute === true, msg.selfDeaf === true);
+      return;
+    case "speaking":
+      setSpeaking(conn, msg.speaking === true);
       return;
     case "voice": {
       const id = Number(msg.id);

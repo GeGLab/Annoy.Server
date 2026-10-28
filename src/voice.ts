@@ -1,4 +1,4 @@
-import { has, Permission, type VoiceMethod, type VoiceState } from "@distopic/protocol";
+import { has, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
 import * as mediasoup from "mediasoup";
 import type { types as ms } from "mediasoup";
 import { config, detectRouteAddress } from "./config.ts";
@@ -9,7 +9,19 @@ import { getChannel } from "./repo.ts";
 
 const MEDIA_CODECS: ms.RouterRtpCodecCapability[] = [
   { kind: "audio", mimeType: "audio/opus", clockRate: 48000, channels: 2, preferredPayloadType: 111 },
+  { kind: "video", mimeType: "video/VP8", clockRate: 90000, parameters: { "x-google-start-bitrate": 1000 } },
+  {
+    kind: "video",
+    mimeType: "video/H264",
+    clockRate: 90000,
+    parameters: { "packetization-mode": 1, "profile-level-id": "42e01f", "level-asymmetry-allowed": 1, "x-google-start-bitrate": 1000 },
+  },
 ];
+
+/** Screen shares at 1080p can need several Mbps; this caps what one sender may push. */
+const MAX_INCOMING_BITRATE = 8_000_000;
+
+const sourceOf = (producer: ms.Producer): MediaSource => producer.appData.source as MediaSource;
 
 interface Peer {
   conn: Connection;
@@ -35,22 +47,23 @@ const peersByConn = new Map<number, Peer>();
 /** Authoritative voice state, keyed by user (one voice session per user). */
 const states = new Map<string, VoiceState>();
 
-let announcedAddress = "";
-export const voiceAddress = () => announcedAddress;
+let announced: string[] = [];
+/** Address → port, as clients will see them in ICE candidates. */
+export const voiceAddresses = () => announced.map((address, i) => `${address}:${config.voice.port + i}`);
 
 export async function startVoice(): Promise<void> {
-  announcedAddress = config.voice.announcedAddress ?? (await detectRouteAddress());
+  announced = config.voice.announcedAddresses.length > 0 ? config.voice.announcedAddresses : [await detectRouteAddress()];
   worker = await mediasoup.createWorker({ logLevel: "warn" });
   worker.on("died", () => {
     console.error("mediasoup worker died; exiting so the supervisor restarts the server");
     process.exit(1);
   });
-  const { port } = config.voice;
+  // One port per announced address: a WebRtcServer can't announce two addresses on the same socket.
   webRtcServer = await worker.createWebRtcServer({
-    listenInfos: [
-      { protocol: "udp", ip: "0.0.0.0", announcedAddress, port },
-      { protocol: "tcp", ip: "0.0.0.0", announcedAddress, port },
-    ],
+    listenInfos: announced.flatMap((announcedAddress, i) => [
+      { protocol: "udp" as const, ip: "0.0.0.0", announcedAddress, port: config.voice.port + i },
+      { protocol: "tcp" as const, ip: "0.0.0.0", announcedAddress, port: config.voice.port + i },
+    ]),
   });
   onServerChanged(revalidateServer);
 }
@@ -74,10 +87,10 @@ async function getRoom(channelId: string): Promise<Room> {
     const room: Room = { router, levels, peers: new Map() };
     levels.on("volumes", (volumes) => {
       const loud = new Set(volumes.map((v) => v.producer.appData.userId as string));
-      for (const peer of room.peers.values()) setSpeaking(peer, loud.has(peer.userId));
+      for (const peer of room.peers.values()) markSpeaking(peer, loud.has(peer.userId));
     });
     levels.on("silence", () => {
-      for (const peer of room.peers.values()) setSpeaking(peer, false);
+      for (const peer of room.peers.values()) markSpeaking(peer, false);
     });
     rooms.set(channelId, room);
     return room;
@@ -90,7 +103,7 @@ async function getRoom(channelId: string): Promise<Room> {
   }
 }
 
-function setSpeaking(peer: Peer, speaking: boolean): void {
+function markSpeaking(peer: Peer, speaking: boolean): void {
   const state = states.get(peer.userId);
   if (!state || state.speaking === speaking) return;
   state.speaking = speaking;
@@ -127,10 +140,26 @@ export function leaveVoice(conn: Connection): void {
   }
 }
 
+/** Mirrors which video sources a peer is sending into its public voice state. */
+function refreshMediaFlags(peer: Peer): void {
+  const state = states.get(peer.userId);
+  if (!state || state.channelId !== peer.channelId) return;
+  const sources = new Set([...peer.producers.values()].map(sourceOf));
+  const video = sources.has("camera");
+  const screen = sources.has("screen");
+  if (state.video === video && state.screen === screen) return;
+  state.video = video;
+  state.screen = screen;
+  publishState(peer.userId, peer.serverId);
+}
+
 function kick(peer: Peer, reason: string): void {
   leaveVoice(peer.conn);
   peer.conn.send({ t: "VOICE_KICKED", d: { reason } });
 }
+
+/** The built-in SFU measures audio levels itself; client reports are ignored. */
+export function setSpeaking(_conn: Connection, _speaking: boolean): void {}
 
 export function setSelfState(conn: Connection, selfMute: boolean, selfDeaf: boolean): void {
   const peer = peersByConn.get(conn.id);
@@ -147,7 +176,10 @@ export async function setServerMute(serverId: string, userId: string, muted: boo
   state.serverMute = muted;
   for (const peer of peersByConn.values()) {
     if (peer.userId !== userId) continue;
-    for (const producer of peer.producers.values()) await (muted ? producer.pause() : producer.resume());
+    // Server mute silences the microphone only; cameras and screens keep flowing.
+    for (const producer of peer.producers.values()) {
+      if (sourceOf(producer) === "mic") await (muted ? producer.pause() : producer.resume());
+    }
   }
   publishState(userId, serverId);
 }
@@ -166,9 +198,13 @@ function revalidateServer(serverId: string): void {
     const perms = channel ? channelPermissions(channel, peer.userId) : 0;
     if (!channel || !has(perms, Permission.VIEW_CHANNEL) || !has(perms, Permission.CONNECT)) {
       kick(peer, "Você perdeu acesso a este canal de voz");
-    } else if (!has(perms, Permission.SPEAK)) {
-      for (const producer of peer.producers.values()) producer.close();
-      peer.producers.clear();
+    } else {
+      const canSpeak = has(perms, Permission.SPEAK);
+      const canStream = has(perms, Permission.STREAM);
+      for (const producer of [...peer.producers.values()]) {
+        const allowed = sourceOf(producer) === "mic" ? canSpeak : canStream;
+        if (!allowed) producer.close();
+      }
     }
   }
 }
@@ -219,9 +255,11 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         selfDeaf: data.selfDeaf === true,
         serverMute: false,
         speaking: false,
+        video: false,
+        screen: false,
       });
       publishState(userId, channel.serverId);
-      return { rtpCapabilities: room.router.rtpCapabilities, canSpeak: has(perms, Permission.SPEAK) };
+      return { backend: "builtin", rtpCapabilities: room.router.rtpCapabilities, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM) };
     }
 
     case "createTransport": {
@@ -231,7 +269,9 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         enableUdp: true,
         enableTcp: true,
         preferUdp: true,
+        initialAvailableOutgoingBitrate: 1_500_000,
       });
+      await transport.setMaxIncomingBitrate(MAX_INCOMING_BITRATE);
       peer.transports.set(transport.id, transport);
       return {
         id: transport.id,
@@ -252,32 +292,56 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
     case "produce": {
       const peer = peerOf(conn);
       const channel = getChannel(peer.channelId);
-      if (!channel || !has(channelPermissions(channel, userId), Permission.SPEAK)) throw forbidden("Sem permissão para falar");
-      if (data.kind !== "audio") throw badRequest("Apenas áudio é suportado");
+      const perms = channel ? channelPermissions(channel, userId) : 0;
+      const kind = data.kind === "video" ? "video" : data.kind === "audio" ? "audio" : null;
+      const source = data.source === "camera" || data.source === "screen" ? data.source : kind === "audio" ? "mic" : null;
+      if (!kind || !source || (kind === "audio") !== (source === "mic")) throw badRequest("Mídia inválida");
+      if (source === "mic" && !has(perms, Permission.SPEAK)) throw forbidden("Sem permissão para falar");
+      if (source !== "mic" && !has(perms, Permission.STREAM)) throw forbidden("Sem permissão para transmitir câmera ou tela");
       const transport = peer.transports.get(str(data, "transportId"));
       if (!transport) throw notFound("Transporte");
       const room = roomOf(peer);
+      // One producer per source: a new camera replaces the previous one.
+      for (const existing of [...peer.producers.values()]) if (sourceOf(existing) === source) existing.close();
       const producer = await transport.produce({
-        kind: "audio",
+        kind,
         rtpParameters: data.rtpParameters as ms.RtpParameters,
-        appData: { userId },
+        appData: { userId, source },
       });
       peer.producers.set(producer.id, producer);
-      producer.observer.on("close", () => peer.producers.delete(producer.id));
-      if (states.get(userId)?.serverMute) await producer.pause();
-      await room.levels.addProducer({ producerId: producer.id });
+      producer.observer.on("close", () => {
+        peer.producers.delete(producer.id);
+        refreshMediaFlags(peer);
+      });
+      if (source === "mic") {
+        if (states.get(userId)?.serverMute) await producer.pause();
+        await room.levels.addProducer({ producerId: producer.id });
+      }
+      refreshMediaFlags(peer);
       for (const other of room.peers.values()) {
-        if (other !== peer) other.conn.send({ t: "VOICE_NEW_PRODUCER", d: { channelId: peer.channelId, producerId: producer.id, userId } });
+        if (other !== peer) {
+          other.conn.send({ t: "VOICE_NEW_PRODUCER", d: { channelId: peer.channelId, producerId: producer.id, userId, kind, source } });
+        }
       }
       return { id: producer.id };
     }
 
+    case "closeProducer": {
+      const peer = peerOf(conn);
+      const producer = peer.producers.get(str(data, "producerId"));
+      // Consumers observe "producerclose" and notify their own clients.
+      producer?.close();
+      return {};
+    }
+
     case "getProducers": {
       const peer = peerOf(conn);
-      const out: { producerId: string; userId: string }[] = [];
+      const out: { producerId: string; userId: string; kind: ms.MediaKind; source: MediaSource }[] = [];
       for (const other of roomOf(peer).peers.values()) {
         if (other === peer) continue;
-        for (const producer of other.producers.values()) out.push({ producerId: producer.id, userId: other.userId });
+        for (const producer of other.producers.values()) {
+          out.push({ producerId: producer.id, userId: other.userId, kind: producer.kind, source: sourceOf(producer) });
+        }
       }
       return { producers: out };
     }
@@ -311,5 +375,8 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
     case "leave":
       leaveVoice(conn);
       return {};
+
+    default:
+      throw badRequest("Operação de voz não suportada neste servidor");
   }
 }

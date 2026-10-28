@@ -6,8 +6,9 @@ services:
     restart: unless-stopped
     ports:
       - "8787:8787/tcp"
-      - "40000:40000/udp"
-      - "40000:40000/tcp"
+      # One voice port per announced address (public first, then LAN): 40000, 40001, ...
+      - "40000-40001:40000-40001/udp"
+      - "40000-40001:40000-40001/tcp"
     environment:
       DISTOPIC_NAME: ${DISTOPIC_NAME:-Distopic}
       DISTOPIC_REGISTRATION: ${DISTOPIC_REGISTRATION:-open}
@@ -16,7 +17,8 @@ services:
       DISTOPIC_DISCORD_CLIENT_SECRET: ${DISTOPIC_DISCORD_CLIENT_SECRET:-}
       DISTOPIC_PUBLIC_URL: ${DISTOPIC_PUBLIC_URL:-}
       # Inside a container the server can't see the host's address; voice needs it.
-      DISTOPIC_ANNOUNCED_IP: ${DISTOPIC_ANNOUNCED_IP:?defina DISTOPIC_ANNOUNCED_IP com o IP da máquina (LAN ou público)}
+      # "public,lan" serves friends outside and people at home: e.g. 203.0.113.10,192.168.0.10
+      DISTOPIC_ANNOUNCED_IP: ${DISTOPIC_ANNOUNCED_IP:?defina DISTOPIC_ANNOUNCED_IP com o IP público e o da LAN, separados por vírgula}
     volumes:
       - distopic-data:/data
 

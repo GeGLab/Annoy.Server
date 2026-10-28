@@ -43,8 +43,8 @@ export function socialRoutes(app: FastifyInstance): void {
     const other = getUserByName(body.username);
     if (!other) throw notFound("Usuário");
     if (other.id === userId) throw badRequest("Você não pode adicionar a si mesmo");
-    if (one("SELECT 1 AS x FROM users WHERE id = ? AND imported_from IS NOT NULL", other.id)) {
-      throw badRequest("Perfis importados do Discord não são contas reais");
+    if (one("SELECT 1 AS x FROM users WHERE id = ? AND (imported_from IS NOT NULL OR username LIKE 'deleted.%' OR banned_at IS NOT NULL)", other.id)) {
+      throw badRequest("Este perfil não pode receber pedidos de amizade");
     }
     const mine = relationshipStatus(userId, other.id);
     if (mine === "friend" || mine === "outgoing") return {};

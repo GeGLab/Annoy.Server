@@ -36,7 +36,8 @@ community gradually instead of all at once.
 | Area | What you get |
 | --- | --- |
 | **Text** | Servers, categories, text channels, paginated history, edit/delete, replies, `@user` / `@everyone` mentions, Markdown, file attachments, typing indicators |
-| **Voice** | Low-latency voice channels over WebRTC (built-in [mediasoup](https://mediasoup.org) SFU), voice activity or push-to-talk, mute/deafen, speaking indicators, server mute and disconnect for moderators |
+| **Voice and video** | Voice channels over WebRTC with camera and screen sharing, voice activity or push-to-talk, speaking indicators, server mute and disconnect. Built-in [mediasoup](https://mediasoup.org) SFU, or Cloudflare Realtime SFU for hosts behind CGNAT |
+| **Instance admin** | Open, invite-only or closed sign-up, sign-up invites, account suspension and deletion, server removal, limits |
 | **Permissions** | Role hierarchy, 15 permissions, per-channel allow/inherit/deny overwrites for roles and members, invites with expiry and use limits, kick and ban |
 | **Social** | Friends (requests and accept), presence, direct messages |
 | **Discord import** | Copy channels, categories, roles, permission overwrites and message history (with attachments) from a Discord server. You choose exactly what comes over |
@@ -101,10 +102,13 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `DISTOPIC_HOST` | `0.0.0.0` | Bind address |
 | `DISTOPIC_PORT` | `8787` | API and gateway port |
 | `DISTOPIC_VOICE_PORT` | `40000` | Voice media port (UDP and TCP) |
-| `DISTOPIC_ANNOUNCED_IP` | default-route IP | Address advertised to voice clients. **Set the public IP on the internet; required in Docker** |
-| `DISTOPIC_REGISTRATION` | `open` | `closed` disables new sign-ups |
-| `DISTOPIC_MAX_UPLOAD_MB` | `25` | Maximum size per attachment |
-| `DISTOPIC_DATA_DIR` | `./data` | SQLite database and attachments |
+| `DISTOPIC_ANNOUNCED_IP` | default-route IP | Voice addresses for clients, comma-separated: **public IP first, LAN IP second** (each gets its own port: 40000, 40001…). Required in Docker |
+| `DISTOPIC_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
+| `DISTOPIC_CF_SFU_APP_ID` / `_TOKEN` | (empty) | Cloudflare Realtime SFU app credentials, used with `DISTOPIC_VOICE_BACKEND=cloudflare` |
+| `DISTOPIC_REGISTRATION` | `invite` | Initial sign-up mode: `open`, `invite` or `closed`. The admin can change it in the app |
+| `DISTOPIC_ADMIN` | (empty) | Username that is always an instance admin. Otherwise the first account is |
+| `DISTOPIC_MAX_SERVERS_PER_USER` | unlimited | Initial limit of servers per account (admin-editable) |
+| `DISTOPIC_MAX_UPLOAD_MB` | `25` | Initial maximum size per attachment (admin-editable) |
 | `DISTOPIC_DISCORD_CLIENT_ID` | (empty) | Enables "Sign in with Discord" (with the secret) |
 | `DISTOPIC_DISCORD_CLIENT_SECRET` | (empty) | Discord OAuth2 client secret |
 | `DISTOPIC_PUBLIC_URL` | request origin | Public origin for OAuth redirects behind a proxy |
@@ -115,6 +119,47 @@ nginx, Cloudflare Tunnel) in front of port `8787` and connect with
 
 **Backups:** copy `DISTOPIC_DATA_DIR`. It holds `distopic.db` (SQLite, WAL mode) and
 `uploads/`.
+
+## Instance administration
+
+Whoever hosts the instance administers it: the account named in
+`DISTOPIC_ADMIN`, or else the first account created. In the client, open
+**Settings → your account → Administrar instância** to:
+
+- choose how new accounts are created: **open**, **invite only** (default) or **closed**
+- generate and revoke sign-up invites (people type the code on the sign-up screen)
+- suspend, reactivate or delete accounts, promote other admins
+- list and delete any server, and set limits (servers per account, attachment size)
+
+Privacy defaults: request logs never store client IP addresses, and every user
+can delete their own account (optionally with all their messages).
+
+**About data protection:** the person hosting an instance is responsible for
+the data on it, not the authors of this software. A private instance for
+friends, with no commercial purpose, is the simplest case. Opening one to the
+public brings legal duties (in Brazil, the LGPD).
+
+## Voice behind CGNAT
+
+Text and the API work through any HTTP proxy or tunnel, but voice and video
+use WebRTC, which needs a reachable UDP/TCP port. Pick one:
+
+- **Public IP, or a LAN only:** set `DISTOPIC_ANNOUNCED_IP=<public>,<lan>` and
+  forward port `40000` (UDP and TCP) to the host. Friends outside use the
+  public address, people at home use the LAN one.
+- **CGNAT or no port forwarding (e.g. behind a Cloudflare Tunnel):** use
+  Cloudflare Realtime SFU. Create an app in the Cloudflare dashboard under
+  **Realtime → SFU**, then set:
+
+  ```bash
+  DISTOPIC_VOICE_BACKEND=cloudflare
+  DISTOPIC_CF_SFU_APP_ID=<app id>
+  DISTOPIC_CF_SFU_APP_TOKEN=<app token>
+  ```
+
+  Media then flows between each client and Cloudflare. This server still
+  decides who may speak, stream and receive each track; the token never leaves
+  it. Check Cloudflare's pricing page for the current free allowance.
 
 ## Discord integration
 
@@ -178,7 +223,6 @@ copy and syncs it with `npm run sync:protocol`.
 
 - [ ] English UI and localization in the client
 - [ ] Global push-to-talk hotkey in the client
-- [ ] Video and screen sharing in voice channels
 - [ ] Custom avatars and server icons
 - [ ] API rate limiting
 - [ ] Packaged client builds (AppImage, Windows, macOS)

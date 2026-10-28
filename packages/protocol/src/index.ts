@@ -2,7 +2,7 @@
 // The server is the authority; the client uses the same permission
 // computation only to decide which controls to show.
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 // ---------------------------------------------------------------------------
 // Permissions
@@ -24,6 +24,8 @@ export const Permission = {
   MANAGE_ROLES: 1 << 12,
   MANAGE_SERVER: 1 << 13,
   ADMINISTRATOR: 1 << 14,
+  /** Camera and screen sharing in voice channels. */
+  STREAM: 1 << 15,
 } as const;
 
 export type PermissionName = keyof typeof Permission;
@@ -36,6 +38,7 @@ export const DEFAULT_EVERYONE_PERMISSIONS =
   Permission.ATTACH_FILES |
   Permission.CONNECT |
   Permission.SPEAK |
+  Permission.STREAM |
   Permission.CREATE_INVITE;
 
 export const PERMISSION_LABELS: Record<PermissionName, string> = {
@@ -54,6 +57,7 @@ export const PERMISSION_LABELS: Record<PermissionName, string> = {
   MANAGE_ROLES: "Gerenciar cargos",
   MANAGE_SERVER: "Gerenciar servidor",
   ADMINISTRATOR: "Administrador",
+  STREAM: "Transmitir câmera e tela",
 };
 
 export function has(perms: number, flag: number): boolean {
@@ -205,7 +209,14 @@ export interface VoiceState {
   selfDeaf: boolean;
   serverMute: boolean;
   speaking: boolean;
+  /** Sharing a camera. */
+  video: boolean;
+  /** Sharing a screen or window. */
+  screen: boolean;
 }
+
+/** What a producer carries; one camera and one screen per user at most. */
+export type MediaSource = "mic" | "camera" | "screen";
 
 export interface Ban {
   user: User;
@@ -303,11 +314,15 @@ export interface ImportJob {
   error: string | null;
 }
 
+export type RegistrationMode = "open" | "invite" | "closed";
+
 export interface InstanceInfo {
   name: string;
   version: string;
   protocol: number;
+  /** True when sign-up is possible at all (open, or with an invite). */
   registrationOpen: boolean;
+  registration: RegistrationMode;
   /** "Entrar com Discord" (OAuth2) is configured on this instance. */
   discordLogin: boolean;
 }
@@ -326,6 +341,53 @@ export type DiscordLoginPoll =
   /** `auth` is null when linking Discord to an account that is already signed in. */
   | { status: "done"; auth: AuthResponse | null; user: User }
   | { status: "error"; message: string };
+
+// ---------------------------------------------------------------------------
+// Instance administration (the person hosting the instance)
+// ---------------------------------------------------------------------------
+
+export interface InstanceSettings {
+  registration: RegistrationMode;
+  /** null = unlimited */
+  maxServersPerUser: number | null;
+  maxUploadMb: number;
+}
+
+export interface AdminUser {
+  user: User;
+  createdAt: string;
+  isAdmin: boolean;
+  bannedAt: string | null;
+  banReason: string;
+  serverCount: number;
+  discordLinked: boolean;
+  imported: boolean;
+}
+
+export interface AdminServer {
+  server: ServerSummary;
+  owner: User | null;
+  memberCount: number;
+  channelCount: number;
+  createdAt: string;
+}
+
+export interface SignupInvite {
+  code: string;
+  uses: number;
+  maxUses: number | null;
+  expiresAt: string | null;
+  createdAt: string;
+  createdBy: User | null;
+}
+
+export interface AdminOverview {
+  settings: InstanceSettings;
+  userCount: number;
+  serverCount: number;
+  messageCount: number;
+  uploadsBytes: number;
+}
 
 // ---------------------------------------------------------------------------
 // REST payloads
@@ -353,19 +415,36 @@ export type VoiceMethod =
   | "consume"
   | "resumeConsumer"
   | "getProducers"
+  | "closeProducer"
+  // Cloudflare Realtime SFU backend (WebRTC negotiated through this server):
+  | "publish"
+  | "subscribe"
+  | "renegotiate"
   | "leave";
+
+/** Where voice media flows: the built-in mediasoup SFU, or Cloudflare's Realtime SFU (works behind CGNAT). */
+export type VoiceBackend = "builtin" | "cloudflare";
 
 export type ClientOp =
   | { op: "identify"; token: string }
   | { op: "heartbeat" }
   | { op: "typing"; channelId: string }
   | { op: "voice_state"; selfMute: boolean; selfDeaf: boolean }
+  /** Client-measured speaking state; only used where the SFU can't measure levels (Cloudflare). */
+  | { op: "speaking"; speaking: boolean }
   | { op: "voice"; id: number; method: VoiceMethod; data: Record<string, unknown> };
 
 export type GatewayEvent =
   | {
       t: "READY";
-      d: { user: User; servers: ServerSummary[]; dms: DmChannel[]; relationships: Relationship[]; presences: Record<string, Presence> };
+      d: {
+        user: User;
+        servers: ServerSummary[];
+        dms: DmChannel[];
+        relationships: Relationship[];
+        presences: Record<string, Presence>;
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend };
+      };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
   | { t: "SERVER_CREATE"; d: ServerSummary }
@@ -380,7 +459,7 @@ export type GatewayEvent =
   | { t: "PRESENCE_UPDATE"; d: { userId: string; presence: Presence } }
   | { t: "USER_UPDATE"; d: User }
   | { t: "VOICE_STATE_UPDATE"; d: { userId: string; serverId: string; state: VoiceState | null } }
-  | { t: "VOICE_NEW_PRODUCER"; d: { channelId: string; producerId: string; userId: string } }
+  | { t: "VOICE_NEW_PRODUCER"; d: { channelId: string; producerId: string; userId: string; kind: "audio" | "video"; source: MediaSource } }
   | { t: "VOICE_PRODUCER_CLOSED"; d: { producerId: string } }
   | { t: "VOICE_KICKED"; d: { reason: string } }
   | { t: "VOICE_REPLY"; d: { id: number; ok: true; data: unknown } | { id: number; ok: false; message: string } }

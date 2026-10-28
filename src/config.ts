@@ -30,9 +30,13 @@ export function detectRouteAddress(): Promise<string> {
   });
 }
 
-const registration = env("DISTOPIC_REGISTRATION", "open");
-if (registration !== "open" && registration !== "closed") {
-  throw new Error(`DISTOPIC_REGISTRATION must be "open" or "closed", got "${registration}"`);
+if (env("DISTOPIC_VOICE_BACKEND", "builtin") === "cloudflare" && (!process.env.DISTOPIC_CF_SFU_APP_ID || !process.env.DISTOPIC_CF_SFU_APP_TOKEN)) {
+  throw new Error("DISTOPIC_VOICE_BACKEND=cloudflare needs DISTOPIC_CF_SFU_APP_ID and DISTOPIC_CF_SFU_APP_TOKEN");
+}
+
+const registration = env("DISTOPIC_REGISTRATION", "invite");
+if (registration !== "open" && registration !== "invite" && registration !== "closed") {
+  throw new Error(`DISTOPIC_REGISTRATION must be "open", "invite" or "closed", got "${registration}"`);
 }
 
 export const config = {
@@ -40,8 +44,16 @@ export const config = {
   host: env("DISTOPIC_HOST", "0.0.0.0"),
   port: int("DISTOPIC_PORT", 8787),
   dataDir: resolve(env("DISTOPIC_DATA_DIR", "./data")),
-  registrationOpen: registration === "open",
-  maxUploadBytes: int("DISTOPIC_MAX_UPLOAD_MB", 25) * 1024 * 1024,
+  /** Defaults only: the instance admin can change these at runtime (see instance.ts). */
+  defaults: {
+    registration: registration as "open" | "invite" | "closed",
+    maxUploadMb: int("DISTOPIC_MAX_UPLOAD_MB", 25),
+    maxServersPerUser: int("DISTOPIC_MAX_SERVERS_PER_USER", 0) || null,
+  },
+  /** Username that is always an instance admin. Otherwise the first account becomes admin. */
+  adminUsername: env("DISTOPIC_ADMIN", ""),
+  /** Hard ceiling for request parsing; the admin's limit applies per upload below it. */
+  uploadCeilingBytes: 500 * 1024 * 1024,
   /** Public origin clients and browsers use to reach this server (OAuth redirects). */
   publicUrl: env("DISTOPIC_PUBLIC_URL", "").replace(/\/+$/, ""),
   /** "Entrar com Discord" is offered only when both are set. */
@@ -50,8 +62,22 @@ export const config = {
     clientSecret: env("DISTOPIC_DISCORD_CLIENT_SECRET", ""),
   },
   voice: {
+    backend: (env("DISTOPIC_VOICE_BACKEND", "builtin") === "cloudflare" ? "cloudflare" : "builtin") as "builtin" | "cloudflare",
+    /** Cloudflare Realtime SFU application (Dashboard → Realtime → SFU). The token never leaves the server. */
+    cloudflare: {
+      appId: env("DISTOPIC_CF_SFU_APP_ID", ""),
+      appToken: env("DISTOPIC_CF_SFU_APP_TOKEN", ""),
+    },
     port: int("DISTOPIC_VOICE_PORT", 40000),
-    /** Address clients use to reach the media port; set the public IP when hosting on the internet. */
-    announcedAddress: process.env.DISTOPIC_ANNOUNCED_IP || null,
+    /**
+     * Addresses clients use to reach voice media, comma-separated. List the
+     * public IP first and the LAN IP second to serve both outside and home
+     * players: each address gets its own port (port, port+1, ...), and ICE
+     * picks whichever one works for that client.
+     */
+    announcedAddresses: env("DISTOPIC_ANNOUNCED_IP", "")
+      .split(",")
+      .map((a) => a.trim())
+      .filter(Boolean),
   },
 } as const;

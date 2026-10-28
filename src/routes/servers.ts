@@ -17,8 +17,10 @@ import { sendToUser, serverChanged } from "../events.ts";
 import { inviteCode, newId } from "../ids.ts";
 import { channelPermissions, rank, requireOutranks, requireServer } from "../perms.ts";
 import { getChannels, getMembers, getRole, getRoles, getServer, getUsers, isMember } from "../repo.ts";
+import { requireServerQuota } from "../instance.ts";
+import { discardBlobs } from "../uploads.ts";
 import { parse, type Params } from "../validate.ts";
-import { disconnectUser, setServerMute, voiceStatesFor } from "../voice.ts";
+import { disconnectUser, setServerMute, voiceStatesFor } from "../voice-backend.ts";
 
 const name = z.string().trim().min(1).max(LIMITS.nameMax);
 const color = z
@@ -58,6 +60,19 @@ const slug = (s: string) =>
     .replace(/\s+/g, "-")
     .replace(/[^\p{L}\p{N}_-]/gu, "")
     .slice(0, LIMITS.nameMax) || "canal";
+
+/** Removes a server with its channels, messages and attachment files. */
+export async function deleteServer(serverId: string): Promise<void> {
+  const members = all<{ user_id: string }>("SELECT user_id FROM members WHERE server_id = ?", serverId);
+  const blobs = all<{ id: string }>(
+    "SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id JOIN channels c ON c.id = m.channel_id WHERE c.server_id = ?",
+    serverId,
+  ).map((r) => r.id);
+  for (const m of members) disconnectUser(serverId, m.user_id);
+  run("DELETE FROM servers WHERE id = ?", serverId);
+  await discardBlobs(blobs);
+  for (const m of members) sendToUser(m.user_id, { t: "SERVER_REMOVE", d: { serverId } });
+}
 
 export function serverState(serverId: string, userId: string): ServerState {
   const { server, perms } = requireServer(serverId, userId);
@@ -109,6 +124,7 @@ export function serverRoutes(app: FastifyInstance): void {
   app.post("/servers", async (req) => {
     const userId = requireUser(req);
     const body = parse(createServer, req.body);
+    requireServerQuota(userId);
     const id = newId();
     tx(() => {
       const t = now();
@@ -141,10 +157,7 @@ export function serverRoutes(app: FastifyInstance): void {
     const userId = requireUser(req);
     const { server } = requireServer(req.params.id, userId);
     if (server.ownerId !== userId) throw forbidden("Apenas o dono pode excluir o servidor");
-    const members = all<{ user_id: string }>("SELECT user_id FROM members WHERE server_id = ?", server.id);
-    for (const m of members) disconnectUser(server.id, m.user_id);
-    run("DELETE FROM servers WHERE id = ?", server.id);
-    for (const m of members) sendToUser(m.user_id, { t: "SERVER_REMOVE", d: { serverId: server.id } });
+    await deleteServer(server.id);
     return {};
   });
 

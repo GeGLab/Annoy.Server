@@ -1,6 +1,6 @@
 {
   "name": "distopic-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Self-hosted voice and text chat server: TeamSpeak-style hosting with Discord-style features",
   "license": "MIT",

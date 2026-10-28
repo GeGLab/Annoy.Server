@@ -147,6 +147,32 @@ if (!userColumns.includes("discord_id")) db.exec("ALTER TABLE users ADD COLUMN d
 if (!userColumns.includes("avatar_url")) db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_imported_from ON users(imported_from) WHERE imported_from IS NOT NULL");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_discord_id ON users(discord_id) WHERE discord_id IS NOT NULL");
+if (!userColumns.includes("is_admin")) db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
+if (!userColumns.includes("banned_at")) db.exec("ALTER TABLE users ADD COLUMN banned_at TEXT");
+if (!userColumns.includes("ban_reason")) db.exec("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''");
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS instance_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+-- Invites to create an account on this instance (distinct from server invites).
+CREATE TABLE IF NOT EXISTS signup_invites (
+  code       TEXT PRIMARY KEY,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  uses       INTEGER NOT NULL DEFAULT 0,
+  max_uses   INTEGER,
+  expires_at TEXT,
+  created_at TEXT NOT NULL
+);
+`);
+
+// v0.2 added the STREAM permission; existing @everyone roles that could speak may also stream.
+if (!db.prepare("SELECT 1 FROM instance_settings WHERE key = 'migration.stream_permission'").get()) {
+  db.exec("UPDATE roles SET permissions = permissions | 32768 WHERE id = server_id AND (permissions & 64) != 0");
+  db.prepare("INSERT INTO instance_settings (key, value) VALUES ('migration.stream_permission', 'done')").run();
+}
 
 type Row = Record<string, SQLInputValue>;
 

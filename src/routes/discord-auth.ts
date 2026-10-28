@@ -5,7 +5,7 @@ import { beginLogin, completeLogin, discordLoginEnabled, pollLogin } from "../di
 import { badRequest, HttpError } from "../errors.ts";
 import { parse } from "../validate.ts";
 
-const beginBody = z.object({ link: z.boolean().optional() });
+const beginBody = z.object({ link: z.boolean().optional(), inviteCode: z.string().trim().max(64).optional() });
 const pollBody = z.object({ handoff: z.string().min(20).max(100) });
 const callbackQuery = z.object({ state: z.string().max(100), code: z.string().max(500).optional(), error: z.string().max(100).optional() });
 
@@ -17,7 +17,7 @@ export function discordAuthRoutes(app: FastifyInstance): void {
     const body = parse(beginBody, req.body);
     const linkUserId = body.link ? requireUser(req) : null;
     try {
-      return beginLogin(originOf(req), linkUserId);
+      return beginLogin(originOf(req), linkUserId, body.inviteCode);
     } catch (err) {
       throw badRequest((err as Error).message);
     }

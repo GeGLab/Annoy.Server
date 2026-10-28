@@ -2,11 +2,11 @@ import { ALL_PERMISSIONS, has, LIMITS, parseMentions, Permission, type Channel, 
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../auth.ts";
-import { config } from "../config.ts";
-import { now, one, run, tx } from "../db.ts";
+import { all, now, one, run, tx } from "../db.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../errors.ts";
 import { sendToChannel, serverChanged } from "../events.ts";
 import { newId, secretId } from "../ids.ts";
+import { maxUploadBytes } from "../instance.ts";
 import { requireChannel, requireServer } from "../perms.ts";
 import { dmRecipientIds, getChannel, getMessage, getMessages, isMember } from "../repo.ts";
 import { discardBlobs, readBlob, writeBlob } from "../uploads.ts";
@@ -49,7 +49,8 @@ async function readMultipart(req: FastifyRequest): Promise<{ fields: Record<stri
   const fields: Record<string, string> = {};
   const files: StagedFile[] = [];
   try {
-    for await (const part of req.parts()) {
+    const limit = maxUploadBytes();
+    for await (const part of req.parts({ limits: { fileSize: limit, files: LIMITS.attachmentsPerMessage, fields: 10 } })) {
       if (part.type === "field") {
         fields[part.fieldname] = String(part.value);
         continue;
@@ -58,7 +59,7 @@ async function readMultipart(req: FastifyRequest): Promise<{ fields: Record<stri
       const staged = { id: secretId(), filename: safeFilename(part.filename), size: 0, contentType: part.mimetype || "application/octet-stream" };
       files.push(staged);
       staged.size = await writeBlob(staged.id, part.file);
-      if (part.file.truncated) throw new HttpError(413, "too_large", `Arquivo maior que ${config.maxUploadBytes / 1024 / 1024} MB`);
+      if (part.file.truncated) throw new HttpError(413, "too_large", `Arquivo maior que ${Math.round(limit / 1024 / 1024)} MB`);
     }
     return { fields, files };
   } catch (err) {
@@ -107,7 +108,9 @@ export function channelRoutes(app: FastifyInstance): void {
     const { channel } = requireChannel(req.params.id, userId);
     if (!channel.serverId) throw badRequest("DMs não podem ser excluídas");
     requireServer(channel.serverId, userId, Permission.MANAGE_CHANNELS);
+    const blobs = all<{ id: string }>("SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.channel_id = ?", channel.id);
     run("DELETE FROM channels WHERE id = ?", channel.id);
+    await discard(blobs);
     serverChanged(channel.serverId);
     return {};
   });

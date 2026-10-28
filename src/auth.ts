@@ -33,9 +33,17 @@ export function deleteSession(token: string): void {
   run("DELETE FROM sessions WHERE token_hash = ?", hashToken(token));
 }
 
+/** Sessions of suspended accounts are rejected even if a ban raced a request. */
 export function userIdForToken(token: string): string | null {
-  const row = one<{ user_id: string }>("SELECT user_id FROM sessions WHERE token_hash = ?", hashToken(token));
+  const row = one<{ user_id: string }>(
+    "SELECT s.user_id FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.banned_at IS NULL",
+    hashToken(token),
+  );
   return row?.user_id ?? null;
+}
+
+export function deleteSessionsOf(userId: string): void {
+  run("DELETE FROM sessions WHERE user_id = ?", userId);
 }
 
 export function bearerToken(req: FastifyRequest): string | null {
