@@ -59,15 +59,15 @@ cp .env.example .env   # set ANNOY_ANNOUNCED_IP to your public IP (and LAN IP)
 docker compose up -d
 ```
 
-This pulls the published image `ghcr.io/gustavohscruz/annoy-server`. Pin a
-version with `ANNOY_VERSION=0.3.0`, or build from source with
+This pulls the published image `ghcr.io/geglab/annoy-server`. Pin a
+version with `ANNOY_VERSION=0.3.1`, or build from source with
 `docker compose up -d --build`. Without Compose:
 
 ```bash
 docker run -d --name annoy --restart unless-stopped \
   -p 8787:8787 -p 40000:40000/udp -p 40000:40000/tcp \
   -e ANNOY_ANNOUNCED_IP=203.0.113.10 -v annoy-data:/data \
-  ghcr.io/gustavohscruz/annoy-server:latest
+  ghcr.io/geglab/annoy-server:latest
 ```
 
 Replace `203.0.113.10` with the address clients use to reach the machine: your

@@ -1,7 +1,7 @@
 services:
   annoy:
     # Published for every release; `docker compose up --build` builds from source instead.
-    image: ghcr.io/gustavohscruz/annoy-server:${ANNOY_VERSION:-latest}
+    image: ghcr.io/geglab/annoy-server:${ANNOY_VERSION:-latest}
     build: .
     restart: unless-stopped
     ports:
