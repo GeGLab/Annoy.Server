@@ -13,9 +13,13 @@ import { badRequest, forbidden, HttpError, notFound } from "./errors.ts";
 import { onServerChanged, sendToServer, type Connection } from "./events.ts";
 import { channelPermissions } from "./perms.ts";
 import { getChannel } from "./repo.ts";
+import * as budget from "./sfu-budget.ts";
 
 const API = "https://rtc.live.cloudflare.com/v1/apps";
 const ICE_SERVERS = [{ urls: "stun:stun.cloudflare.com:3478" }];
+const BUDGET_TICK_S = 10;
+const VIDEO_PAUSED = "Câmera e tela pausadas: esta instância está perto do limite mensal de tráfego de voz";
+const VOICE_PAUSED = "Esta instância atingiu o limite mensal de tráfego de voz; a voz volta no próximo mês";
 
 interface SessionDescription {
   type: "offer" | "answer";
@@ -88,6 +92,25 @@ export const voiceAddresses = () => ["Cloudflare Realtime SFU"];
 
 export async function startVoice(): Promise<void> {
   onServerChanged(revalidateServer);
+  let lastLevel = budget.level();
+  setInterval(() => {
+    // Cloudflare bills what it sends: every track each peer receives.
+    const sourceOf = new Map<string, MediaSource>();
+    for (const peer of peersByConn.values()) for (const t of peer.published.values()) sourceOf.set(t.trackName, t.source);
+    const received: MediaSource[] = [];
+    for (const peer of peersByConn.values()) {
+      for (const trackName of peer.pulled.keys()) {
+        const source = sourceOf.get(trackName);
+        if (source) received.push(source);
+      }
+    }
+    budget.record(received, BUDGET_TICK_S);
+    const current = budget.level();
+    if (current === lastLevel) return;
+    lastLevel = current;
+    if (current === "off") for (const peer of [...peersByConn.values()]) kick(peer, VOICE_PAUSED);
+    else for (const serverId of new Set([...peersByConn.values()].map((p) => p.serverId))) revalidateServer(serverId);
+  }, BUDGET_TICK_S * 1000).unref();
 }
 
 export function voiceStatesFor(serverId: string): VoiceState[] {
@@ -202,6 +225,7 @@ export function disconnectUser(serverId: string, userId: string): void {
 }
 
 function canPublish(peer: Peer, source: MediaSource): boolean {
+  if (source !== "mic" && budget.level() !== "ok") return false;
   const channel = getChannel(peer.channelId);
   const perms = channel ? channelPermissions(channel, peer.userId) : 0;
   return has(perms, source === "mic" ? Permission.SPEAK : Permission.STREAM);
@@ -246,6 +270,7 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       const perms = channel ? channelPermissions(channel, userId) : 0;
       if (!channel || channel.type !== "voice" || !channel.serverId || !has(perms, Permission.VIEW_CHANNEL)) throw notFound("Canal de voz");
       if (!has(perms, Permission.CONNECT)) throw forbidden("Sem permissão para conectar");
+      if (budget.level() === "off") throw forbidden(VOICE_PAUSED);
       leaveVoice(conn);
       for (const other of [...peersByConn.values()]) if (other.userId === userId) kick(other, "Conectado em outro dispositivo");
       const session = await cf("POST", "/sessions/new");
@@ -264,7 +289,7 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         screen: false,
       });
       publishState(userId, channel.serverId);
-      return { backend: "cloudflare", iceServers: ICE_SERVERS, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM) };
+      return { backend: "cloudflare", iceServers: ICE_SERVERS, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM) && budget.level() === "ok" };
     }
 
     case "publish": {
@@ -272,6 +297,7 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       const kind = data.kind === "video" ? "video" : data.kind === "audio" ? "audio" : null;
       const source = data.source === "camera" || data.source === "screen" ? data.source : kind === "audio" ? "mic" : null;
       if (!kind || !source || (kind === "audio") !== (source === "mic")) throw badRequest("Mídia inválida");
+      if (source !== "mic" && budget.level() !== "ok") throw forbidden(VIDEO_PAUSED);
       if (!canPublish(peer, source)) throw forbidden(source === "mic" ? "Sem permissão para falar" : "Sem permissão para transmitir câmera ou tela");
       const mid = str(data, "mid");
       const trackName = `${source}-${randomUUID()}`;

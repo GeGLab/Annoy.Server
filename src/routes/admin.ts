@@ -13,6 +13,7 @@ import { sendToAudience } from "../events.ts";
 import { inviteCode } from "../ids.ts";
 import { getSettings, requireAdmin, updateSettings } from "../instance.ts";
 import { getServer, getUser, getUsers } from "../repo.ts";
+import { usage as voiceUsage } from "../sfu-budget.ts";
 import { parse, type Params } from "../validate.ts";
 import { deleteServer } from "./servers.ts";
 
@@ -89,6 +90,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     serverCount: one<{ n: number }>("SELECT COUNT(*) AS n FROM servers")!.n,
     messageCount: one<{ n: number }>("SELECT COUNT(*) AS n FROM messages")!.n,
     uploadsBytes: await dirSize(join(config.dataDir, "uploads")),
+    voiceUsage: config.voice.backend === "cloudflare" ? voiceUsage() : null,
   }));
 
   app.patch("/admin/settings", async (req) => updateSettings(parse(settingsBody, req.body)));

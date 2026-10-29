@@ -1,6 +1,6 @@
 <div align="center">
 
-# Distopic Server
+# Annoy Server
 
 **Chat de voz e texto auto-hospedado. Hospede como TeamSpeak, use como Discord.**
 
@@ -10,16 +10,16 @@
 
 [English](README.md) · **Português (Brasil)**
 
-<img src="docs/screenshots/chat-and-voice.png" alt="Distopic: canais de texto, canal de voz com membros conectados e lista de membros com cargos" width="860">
+<img src="docs/screenshots/chat-and-voice.png" alt="Annoy: canais de texto, canal de voz com membros conectados e lista de membros com cargos" width="860">
 
 </div>
 
 ## Por quê?
 
-O chat da sua comunidade deveria rodar numa máquina sua. O Distopic é um único
+O chat da sua comunidade deveria rodar numa máquina sua. O Annoy é um único
 processo que você sobe num servidor de casa, numa VPS ou num mini PC. Não
 precisa de conta em nuvem, telemetria nem banco de dados externo. Você aponta o
-[client desktop](https://github.com/GustavoHSCruz/distopic-client) para o
+[client desktop](https://github.com/GustavoHSCruz/annoy-client) para o
 endereço e tem o que todo mundo espera do Discord: servidores, canais, cargos,
 voz, DMs e amigos. O Discord oficial fica a um clique no próprio client, então
 dá para migrar aos poucos.
@@ -39,18 +39,29 @@ dá para migrar aos poucos.
 ## Começando
 
 > **Só quem hospeda faz isso.** Uma pessoa sobe o servidor, uma vez. O resto
-> instala apenas o [client](https://github.com/GustavoHSCruz/distopic-client)
+> instala apenas o [client](https://github.com/GustavoHSCruz/annoy-client)
 > e entra com o endereço e um convite, como num servidor TeamSpeak.
 
 ```bash
-git clone https://github.com/GustavoHSCruz/distopic-server.git
-cd distopic-server
-DISTOPIC_ANNOUNCED_IP=203.0.113.10 docker compose up -d
+git clone https://github.com/GustavoHSCruz/annoy-server.git
+cd annoy-server
+cp .env.example .env   # defina ANNOY_ANNOUNCED_IP com seu IP público (e o da LAN)
+docker compose up -d
 ```
 
 Troque o IP pelo endereço que os clients usam para chegar na máquina: o da LAN
 em casa, ou o público na internet. Libere a porta `8787/tcp` (API) e a `40000`
 em **UDP e TCP** (voz).
+
+**Vindo do Distopic (0.2):** o projeto agora se chama Annoy. As variáveis
+mudaram de `DISTOPIC_*` para `ANNOY_*`, mas os nomes antigos continuam
+valendo, e os dados ficam no mesmo volume. Aponte o remoto para o novo
+repositório e remova o contêiner antigo:
+
+```bash
+git remote set-url origin https://github.com/GustavoHSCruz/annoy-server.git
+git pull && docker compose pull && docker compose up -d --remove-orphans
+```
 
 Sem Docker (Node.js 22.13 ou mais novo):
 
@@ -64,11 +75,11 @@ npm start
 Tudo é por variável de ambiente; veja [`.env.example`](.env.example) e a
 [tabela completa no README em inglês](README.md#configuration). As principais:
 
-- `DISTOPIC_ANNOUNCED_IP`: o IP anunciado para a voz. Obrigatório no Docker.
-- `DISTOPIC_REGISTRATION=closed`: bloqueia novos cadastros.
-- `DISTOPIC_DISCORD_CLIENT_ID` e `DISTOPIC_DISCORD_CLIENT_SECRET`: habilitam o
+- `ANNOY_ANNOUNCED_IP`: o IP anunciado para a voz. Obrigatório no Docker.
+- `ANNOY_REGISTRATION=closed`: bloqueia novos cadastros.
+- `ANNOY_DISCORD_CLIENT_ID` e `ANNOY_DISCORD_CLIENT_SECRET`: habilitam o
   "Entrar com Discord".
-- `DISTOPIC_DATA_DIR`: onde ficam o banco e os anexos. É a pasta do backup.
+- `ANNOY_DATA_DIR`: onde ficam o banco e os anexos. É a pasta do backup.
 
 Para expor na internet, coloque um proxy com TLS (Caddy, nginx, Cloudflare
 Tunnel) na frente da porta 8787.
@@ -88,8 +99,8 @@ threads, emojis e figurinhas não são importados, e o token nunca é salvo.
 
 **Entrar com Discord:** na mesma aplicação, em **OAuth2 → Redirects**, adicione
 `https://seu.dominio/api/auth/discord/callback` e defina as variáveis
-`DISTOPIC_DISCORD_CLIENT_ID` e `DISTOPIC_DISCORD_CLIENT_SECRET`.
+`ANNOY_DISCORD_CLIENT_ID` e `ANNOY_DISCORD_CLIENT_SECRET`.
 
 ## Licença
 
-[MIT](LICENSE) © Gustavo Cruz. O Distopic não é afiliado ao Discord Inc. nem à TeamSpeak Systems GmbH.
+[MIT](LICENSE) © Gustavo Cruz. O Annoy não é afiliado ao Discord Inc. nem à TeamSpeak Systems GmbH.

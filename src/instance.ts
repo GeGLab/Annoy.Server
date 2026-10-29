@@ -44,7 +44,7 @@ export function requireAdmin(userId: string): void {
   if (!isAdmin(userId)) throw forbidden("Apenas o administrador da instância");
 }
 
-/** DISTOPIC_ADMIN, or else the very first account, administers the instance. */
+/** ANNOY_ADMIN, or else the very first account, administers the instance. */
 export function grantBootstrapAdmin(userId: string, username: string): void {
   const named = config.adminUsername !== "" && config.adminUsername.toLowerCase() === username.toLowerCase();
   const noAdmin = !one("SELECT 1 AS x FROM users WHERE is_admin = 1 AND id != ?", userId);
@@ -52,7 +52,7 @@ export function grantBootstrapAdmin(userId: string, username: string): void {
 }
 
 /**
- * Runs at startup. DISTOPIC_ADMIN is always an admin; otherwise an instance
+ * Runs at startup. ANNOY_ADMIN is always an admin; otherwise an instance
  * with no admin (e.g. a database created before v0.2) promotes its oldest
  * active account, matching "the first account administers the instance".
  */

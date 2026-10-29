@@ -47,7 +47,7 @@ function prune(): void {
   }
 }
 
-/** `origin` is how the client reached us; DISTOPIC_PUBLIC_URL overrides it behind proxies. */
+/** `origin` is how the client reached us; ANNOY_PUBLIC_URL overrides it behind proxies. */
 export function beginLogin(origin: string, linkUserId: string | null, inviteCode?: string): DiscordLoginBegin {
   prune();
   if (byState.size >= MAX_PENDING) throw new Error("Logins pendentes demais; tente de novo em alguns minutos");
@@ -104,7 +104,7 @@ function uniqueUsername(discordName: string): string {
   for (let n = 2; ; n++) if (!taken.has(`${base}_${n}`)) return `${base}_${n}`;
 }
 
-/** Links (or creates) the Distopic account for a Discord identity. Returns the user id. */
+/** Links (or creates) the Annoy account for a Discord identity. Returns the user id. */
 function resolveAccount(d: DUser, linkUserId: string | null, inviteCode: string | undefined): string {
   const displayName = (d.global_name || d.username).slice(0, LIMITS.usernameMax);
   const avatar = avatarUrlOf(d);
@@ -113,7 +113,7 @@ function resolveAccount(d: DUser, linkUserId: string | null, inviteCode: string 
     const ghost = one<{ id: string }>("SELECT id FROM users WHERE imported_from = ?", `discord:${d.id}`)?.id;
 
     if (linkUserId) {
-      if (linked && linked !== linkUserId) throw new Error("Esta conta do Discord já está vinculada a outro usuário do Distopic");
+      if (linked && linked !== linkUserId) throw new Error("Esta conta do Discord já está vinculada a outro usuário do Annoy");
       if (ghost) {
         // Imported history written by this Discord account becomes the user's own.
         run("UPDATE messages SET author_id = ? WHERE author_id = ?", linkUserId, ghost);
@@ -172,11 +172,11 @@ main{max-width:420px;padding:32px;background:#25262d;border-radius:12px;text-ali
 /** Handles Discord's redirect and returns the HTML shown in the browser tab. */
 export async function completeLogin(state: string, code: string | undefined, error: string | undefined): Promise<string> {
   const pending = byState.get(state);
-  if (!pending || pending.expiresAt < Date.now()) return page("Login expirado", "Volte ao Distopic e tente de novo.");
-  if (pending.result.status !== "pending") return page("Já concluído", "Pode voltar ao Distopic.");
+  if (!pending || pending.expiresAt < Date.now()) return page("Login expirado", "Volte ao Annoy e tente de novo.");
+  if (pending.result.status !== "pending") return page("Já concluído", "Pode voltar ao Annoy.");
   if (error || !code) {
     pending.result = { status: "error", message: error === "access_denied" ? "Autorização cancelada no Discord" : "O Discord não autorizou o login" };
-    return page("Login cancelado", "Volte ao Distopic para tentar de novo.");
+    return page("Login cancelado", "Volte ao Annoy para tentar de novo.");
   }
   try {
     const discordUser = await fetchDiscordUser(code, pending.redirectUri);
@@ -184,7 +184,7 @@ export async function completeLogin(state: string, code: string | undefined, err
     const user = getUser(userId)!;
     sendToAudience(userId, { t: "USER_UPDATE", d: user });
     pending.result = { status: "done", auth: pending.linkUserId ? null : { token: createSession(userId), user }, user };
-    return page(pending.linkUserId ? "Discord vinculado" : `Olá, ${user.displayName}!`, "Pronto. Pode fechar esta aba e voltar ao Distopic.");
+    return page(pending.linkUserId ? "Discord vinculado" : `Olá, ${user.displayName}!`, "Pronto. Pode fechar esta aba e voltar ao Annoy.");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Falha no login com Discord";
     pending.result = { status: "error", message };
