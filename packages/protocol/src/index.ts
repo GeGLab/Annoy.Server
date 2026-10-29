@@ -216,7 +216,8 @@ export interface VoiceState {
 }
 
 /** What a producer carries; one camera and one screen per user at most. */
-export type MediaSource = "mic" | "camera" | "screen";
+/** "screen_audio" is the sound shared together with a screen (Windows). */
+export type MediaSource = "mic" | "camera" | "screen" | "screen_audio";
 
 export interface Ban {
   user: User;

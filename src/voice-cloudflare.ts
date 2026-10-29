@@ -9,6 +9,7 @@
 import { randomUUID } from "node:crypto";
 import { has, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
 import { config } from "./config.ts";
+import { sourceFor } from "./media-source.ts";
 import { badRequest, forbidden, HttpError, notFound } from "./errors.ts";
 import { onServerChanged, sendToServer, type Connection } from "./events.ts";
 import { channelPermissions } from "./perms.ts";
@@ -68,6 +69,8 @@ interface Published {
   mid: string;
   kind: "audio" | "video";
   source: MediaSource;
+  /** What each viewer costs in Cloudflare egress, bytes per second. */
+  rate: number;
   /** Server mute or lost permission: nobody may receive it until unblocked. */
   blocked: boolean;
 }
@@ -95,13 +98,13 @@ export async function startVoice(): Promise<void> {
   let lastLevel = budget.level();
   setInterval(() => {
     // Cloudflare bills what it sends: every track each peer receives.
-    const sourceOf = new Map<string, MediaSource>();
-    for (const peer of peersByConn.values()) for (const t of peer.published.values()) sourceOf.set(t.trackName, t.source);
-    const received: MediaSource[] = [];
+    const rateOf = new Map<string, number>();
+    for (const peer of peersByConn.values()) for (const t of peer.published.values()) rateOf.set(t.trackName, t.rate);
+    const received: number[] = [];
     for (const peer of peersByConn.values()) {
       for (const trackName of peer.pulled.keys()) {
-        const source = sourceOf.get(trackName);
-        if (source) received.push(source);
+        const rate = rateOf.get(trackName);
+        if (rate) received.push(rate);
       }
     }
     budget.record(received, BUDGET_TICK_S);
@@ -289,14 +292,14 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         screen: false,
       });
       publishState(userId, channel.serverId);
-      return { backend: "cloudflare", iceServers: ICE_SERVERS, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM) && budget.level() === "ok" };
+      return { backend: "cloudflare", iceServers: ICE_SERVERS, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM) && budget.level() === "ok", screenAudio: true };
     }
 
     case "publish": {
       const peer = peerOf(conn);
       const kind = data.kind === "video" ? "video" : data.kind === "audio" ? "audio" : null;
-      const source = data.source === "camera" || data.source === "screen" ? data.source : kind === "audio" ? "mic" : null;
-      if (!kind || !source || (kind === "audio") !== (source === "mic")) throw badRequest("Mídia inválida");
+      const source = sourceFor(kind, data.source);
+      if (!kind || !source) throw badRequest("Mídia inválida");
       if (source !== "mic" && budget.level() !== "ok") throw forbidden(VIDEO_PAUSED);
       if (!canPublish(peer, source)) throw forbidden(source === "mic" ? "Sem permissão para falar" : "Sem permissão para transmitir câmera ou tela");
       const mid = str(data, "mid");
@@ -314,7 +317,7 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         }
       }
       const blocked = source === "mic" && (states.get(userId)?.serverMute ?? false);
-      const track: Published = { trackName, mid, kind, source, blocked };
+      const track: Published = { trackName, mid, kind, source, rate: budget.rateFor(source, data.maxBitrate), blocked };
       peer.published.set(trackName, track);
       refreshMediaFlags(peer);
       if (!blocked) announce(peer, track);
