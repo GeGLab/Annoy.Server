@@ -17,6 +17,10 @@ export class Connection {
   constructor(readonly socket: WebSocket) {}
 
   send(event: GatewayEvent): void {
+    if (!this.features.has("manualPresence")) {
+      if (event.t === "PRESENCE_UPDATE" && event.d.presence === "dnd") event = { ...event, d: { ...event.d, presence: "online" } };
+      else if (event.t === "READY") event = { ...event, d: { ...event.d, presences: Object.fromEntries(Object.entries(event.d.presences).map(([id, presence]) => [id, presence === "dnd" ? "online" : presence])) } };
+    }
     if (!this.features.has("developmentActivity")) {
       if (event.t === "ACTIVITY_UPDATE") event = { ...event, d: { ...event.d, activities: event.d.activities.filter((activity) => activity.kind !== "development") } };
       else if (event.t === "READY") event = { ...event, d: { ...event.d, activities: Object.fromEntries(Object.entries(event.d.activities ?? {}).map(([id, activities]) => [id, activities.filter((activity) => activity.kind !== "development")])) } };

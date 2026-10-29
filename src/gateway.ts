@@ -3,12 +3,12 @@ import { Permission, type ClientOp } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { userIdForToken } from "./auth.ts";
 import { HttpError } from "./errors.ts";
-import { Connection, register, sendToAudience, sendToChannel, unregister } from "./events.ts";
+import { Connection, register, sendToAudience, sendToChannel, sendToUser, unregister } from "./events.ts";
 import { requireChannel } from "./perms.ts";
-import { addConnection, presenceOf, removeConnection, setConnectionIdle } from "./presence.ts";
+import { addConnection, presenceOf, removeConnection, setConnectionIdle, setManualPresence } from "./presence.ts";
 import { audienceOf, dmChannelsForUser, getRelationships, getUser, serversForUser } from "./repo.ts";
 import { getSettings, isAdmin } from "./instance.ts";
-import { activitiesFor, clearActivity, expireActivities, updateActivity } from "./activity.ts";
+import { activitiesFor, clearActivity, expireActivities, updateActivity, refreshActivityPresence } from "./activity.ts";
 import { detachVoice, handleVoice, setSelfState, setSpeaking, voiceBackend } from "./voice-backend.ts";
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
@@ -65,7 +65,12 @@ export function registerGateway(app: FastifyInstance): void {
       if (userId) clearCalls(userId, conn.id);
       if (userId) {
         removeConnection(userId, conn.id);
-        if (previousPresence !== presenceOf(userId)) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: presenceOf(userId) } });
+        if (previousPresence !== presenceOf(userId)) {
+          const event = { t: "PRESENCE_UPDATE" as const, d: { userId, presence: presenceOf(userId) } };
+          sendToAudience(userId, event);
+          sendToUser(userId, event);
+          refreshActivityPresence(userId);
+        }
       }
     });
   });
@@ -85,8 +90,9 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
     if (Array.isArray(msg.features) && msg.features.length <= 16) conn.features = new Set(msg.features.filter((feature) => typeof feature === "string" && feature.length <= 64));
     register(conn, userId);
     const previousPresence = presenceOf(userId);
+    setManualPresence(userId, msg.presence);
     const cameOnline = addConnection(userId);
-    const presences = Object.fromEntries(audienceOf(userId).map((id) => [id, presenceOf(id)]));
+    const presences = Object.fromEntries([userId, ...audienceOf(userId)].map((id) => [id, presenceOf(id)]));
     conn.send({
       t: "READY",
       d: {
@@ -96,10 +102,15 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         relationships: getRelationships(userId),
         presences,
         activities: activitiesFor(userId),
-        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, developmentActivity: true, directCalls: true, socialProfiles: true, presenceStatus: true },
+        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, developmentActivity: true, directCalls: true, socialProfiles: true, presenceStatus: true, manualPresence: true },
       },
     });
-    if (cameOnline || previousPresence !== presenceOf(userId)) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: presenceOf(userId) } });
+    if (cameOnline || previousPresence !== presenceOf(userId)) {
+      const event = { t: "PRESENCE_UPDATE" as const, d: { userId, presence: presenceOf(userId) } };
+      sendToAudience(userId, event);
+      sendToUser(userId, event);
+      refreshActivityPresence(userId);
+    }
     return;
   }
 
@@ -109,7 +120,12 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
   switch (msg.op) {
     case "call": handleCall(conn, msg); return;
     case "presence":
-      if (setConnectionIdle(userId, conn.id, msg.idle === true)) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: presenceOf(userId) } });
+      if (setConnectionIdle(userId, conn.id, msg.idle === true, msg.status)) {
+        const event = { t: "PRESENCE_UPDATE" as const, d: { userId, presence: presenceOf(userId) } };
+        sendToAudience(userId, event);
+        sendToUser(userId, event);
+        refreshActivityPresence(userId);
+      }
       return;
     case "activity":
       if (!updateActivity(conn, msg.activities)) conn.socket.close(4002, "invalid activity");
