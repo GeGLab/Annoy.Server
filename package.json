@@ -13,7 +13,8 @@
     "test:discovery": "node --import tsx --test tests/discovery.test.ts",
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc -p . && tsc -p packages/protocol"
+    "typecheck": "tsc -p . && tsc -p packages/protocol",
+    "test:global": "node --import tsx --test tests/global.test.ts"
   },
   "engines": {
     "node": ">=22.13"
