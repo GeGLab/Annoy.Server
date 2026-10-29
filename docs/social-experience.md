@@ -44,6 +44,9 @@ TURN credentials and cross-network connectivity must be verified by the host.
 ## Room screen sharing and activities
 
 Clients select 480p, 720p, 1080p, 1440p, 2K (2048×1080) or 4K, with 15–120 FPS.
+Native resolution and uncapped FPS remain available from upstream (`0` in
+selected quality metadata denotes native/uncapped). System audio and upstream
+reconnect/restart recovery remain supported.
 Selected dimensions/FPS constrain capture and bitrate, and `voice_state` carries
 `screenQuality` for the participant/stream label. Hardware may capture less than
 the selected maximum. Both built-in and Cloudflare backends relay this label.
