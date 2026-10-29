@@ -151,3 +151,39 @@ test("a local account starts signing in with its global account (1.7)", { skip }
   const reg2 = await local("/api/auth/register", { username: "outro", password: "senha local longa" });
   assert.equal((await local("/api/users/@me/global", await proof(dani), reg2.json().token)).statusCode, 409);
 });
+
+test("1.9: a local and a global-made user of the same person merge into the local one", { skip }, async () => {
+  const { run, one } = await import("../src/db.ts");
+  const local_ = (await local("/api/auth/register", { username: "eva_local", password: "senha local da eva" })).json();
+  const eva = await globalAccount("eva");
+  const viaGlobal = (await local("/api/auth/global", { ...(await proof(eva)), username: "eva_global" })).json();
+  const keep = local_.user.id, drop = viaGlobal.user.id;
+  const friend = (await local("/api/auth/register", { username: "amigo", password: "senha do amigo 1" })).json().user.id;
+  const t = "2026-01-01";
+  // drop owns a server and has a role there, writes in it, is in keep's server, and has a friend.
+  run("INSERT INTO servers (id, name, owner_id, created_at) VALUES ('s_drop', 'Do global', ?, ?)", drop, t);
+  run("INSERT INTO servers (id, name, owner_id, created_at) VALUES ('s_keep', 'Do local', ?, ?)", keep, t);
+  run("INSERT INTO roles (id, server_id, name, color, permissions, position) VALUES ('r1', 's_drop', 'mod', NULL, 0, 1)");
+  for (const [s, u] of [["s_drop", drop], ["s_keep", keep], ["s_keep", drop]]) run("INSERT INTO members (server_id, user_id, joined_at) VALUES (?, ?, ?)", s, u, t);
+  run("INSERT INTO member_roles (server_id, user_id, role_id) VALUES ('s_drop', ?, 'r1')", drop);
+  run("INSERT INTO channels (id, server_id, type, name, created_at) VALUES ('c1', 's_drop', 'text', 'geral', ?)", t);
+  run("INSERT INTO messages (id, channel_id, author_id, content, created_at, mention_ids) VALUES ('m1', 'c1', ?, 'oi', ?, ?)", drop, t, JSON.stringify([drop]));
+  run("INSERT INTO relationships (user_id, other_id, status) VALUES (?, ?, 'friend'), (?, ?, 'friend')", drop, friend, friend, drop);
+
+  const wrong = await local("/api/users/@me/global/merge", { ...(await proof(eva)), password: "errada" }, local_.token);
+  assert.equal(wrong.statusCode, 401, "the local password confirms the local side");
+  const merged = await local("/api/users/@me/global/merge", { ...(await proof(eva)), password: "senha local da eva" }, local_.token);
+  assert.equal(merged.statusCode, 200, merged.body);
+  assert.equal(merged.json().removedUserId, drop);
+
+  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM users WHERE id = ?", drop)!.n, 0);
+  assert.equal(one<{ owner_id: string }>("SELECT owner_id FROM servers WHERE id = 's_drop'")!.owner_id, keep);
+  assert.equal(one<{ author_id: string; mention_ids: string }>("SELECT author_id, mention_ids FROM messages WHERE id = 'm1'")!.author_id, keep);
+  assert.equal(one<{ mention_ids: string }>("SELECT mention_ids FROM messages WHERE id = 'm1'")!.mention_ids, JSON.stringify([keep]));
+  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM member_roles WHERE user_id = ? AND role_id = 'r1'", keep)!.n, 1);
+  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM members WHERE user_id = ?", keep)!.n, 2);
+  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM relationships WHERE user_id = ? AND other_id = ?", friend, keep)!.n, 1);
+  // From now on the global account signs in to the local user, and so does the password.
+  assert.equal((await local("/api/auth/global", await proof(eva))).json().user.id, keep);
+  assert.equal((await local("/api/auth/login", { username: "eva_local", password: "senha local da eva" })).json().user.id, keep);
+});

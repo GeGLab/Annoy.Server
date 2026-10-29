@@ -2,7 +2,7 @@ import { LIMITS, PROTOCOL_VERSION, type AuthResponse, type InstanceInfo, type Us
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { bearerToken, createSession, deleteSession, hashPassword, requireUser, verifyPassword } from "../auth.ts";
-import { deleteAccount, RESERVED_USERNAME } from "../accounts.ts";
+import { deleteAccount, mergeUsers, RESERVED_USERNAME } from "../accounts.ts";
 import { config } from "../config.ts";
 import { discordLoginEnabled } from "../discord/oauth.ts";
 import { now, one, run, tx } from "../db.ts";
@@ -113,10 +113,36 @@ export function authRoutes(app: FastifyInstance): void {
   app.post("/users/@me/global", async (req) => {
     const userId = requireUser(req);
     const identity = verifyGlobalProof(parse(globalProof, req.body));
-    const holder = one<{ id: string }>("SELECT id FROM users WHERE global_id = ?", identity);
-    if (holder && holder.id !== userId) throw conflict("Esta conta global já entra em outro usuário deste servidor");
+    const holder = one<{ username: string; id: string }>("SELECT id, username FROM users WHERE global_id = ?", identity);
+    // The global account already made its own user here: that's a merge (item 1.9), not a link.
+    if (holder && holder.id !== userId) throw new HttpError(409, "global_in_use", `Sua conta global já tem o usuário @${holder.username} neste servidor`);
     run("UPDATE users SET global_id = ? WHERE id = ?", identity, userId);
     return ownUser(userId);
+  });
+
+  // Item 1.9: the same person has a local user and a global-made user here.
+  // Proven twice: logged in as the local one (and its password, if it has one),
+  // and the global proof for the other. The local user keeps everything of both.
+  app.post("/users/@me/global/merge", async (req) => {
+    const userId = requireUser(req);
+    const body = parse(globalProof.extend({ password: z.string().max(256).optional() }), req.body);
+    const me = one<{ password_hash: string; global_id: string | null; banned_at: string | null; ban_reason: string }>(
+      "SELECT password_hash, global_id, banned_at, ban_reason FROM users WHERE id = ?",
+      userId,
+    )!;
+    if (me.password_hash.startsWith("scrypt$") && !(body.password && (await verifyPassword(body.password, me.password_hash)))) {
+      throw new HttpError(401, "invalid_credentials", "Senha incorreta");
+    }
+    if (me.global_id) throw conflict("Esta conta já entra com uma conta global");
+    const identity = verifyGlobalProof(body);
+    const other = one<{ id: string; banned_at: string | null; ban_reason: string }>("SELECT id, banned_at, ban_reason FROM users WHERE global_id = ?", identity);
+    if (!other) throw notFound("Usuário da conta global");
+    if (other.id === userId) return { user: ownUser(userId), removedUserId: null };
+    // A ban on either side must not be shed by merging.
+    refuseBanned(me);
+    refuseBanned(other);
+    mergeUsers(userId, other.id);
+    return { user: ownUser(userId), removedUserId: other.id };
   });
 
   app.delete("/users/@me/global", async (req) => {
