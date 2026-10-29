@@ -103,4 +103,4 @@ threads, emojis e figurinhas não são importados, e o token nunca é salvo.
 
 ## Licença
 
-[MIT](LICENSE) © Gustavo Cruz. O Annoy não é afiliado ao Discord Inc. nem à TeamSpeak Systems GmbH.
+[MIT](LICENSE) © Gustavo Cruz.
