@@ -60,7 +60,7 @@ docker compose up -d
 ```
 
 This pulls the published image `ghcr.io/geglab/annoy-server`. Pin a
-version with `ANNOY_VERSION=0.4.3`, or build from source with
+version with `ANNOY_VERSION=0.5.0`, or build from source with
 `docker compose up -d --build`. Without Compose:
 
 ```bash

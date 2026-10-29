@@ -69,7 +69,7 @@ export function authRoutes(app: FastifyInstance): void {
     const { registration } = getSettings();
     return {
       name: config.name,
-      version: "0.4.3",
+      version: "0.5.0",
       protocol: PROTOCOL_VERSION,
       registrationOpen: registration !== "closed",
       registration,
