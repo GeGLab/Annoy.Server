@@ -2,6 +2,7 @@ import { has, Permission, type MediaSource, type VoiceMethod, type VoiceState } 
 import * as mediasoup from "mediasoup";
 import type { types as ms } from "mediasoup";
 import { config, detectRouteAddress } from "./config.ts";
+import { sourceFor } from "./media-source.ts";
 import { badRequest, forbidden, notFound } from "./errors.ts";
 import { onServerChanged, sendToServer, type Connection } from "./events.ts";
 import { channelPermissions } from "./perms.ts";
@@ -123,6 +124,11 @@ function roomOf(peer: Peer): Room {
 }
 
 /** Releases every media resource of the connection's voice session. */
+/** Media runs through this process, so a dropped socket ends the session right away. */
+export function detachVoice(conn: Connection): void {
+  leaveVoice(conn);
+}
+
 export function leaveVoice(conn: Connection): void {
   const peer = peersByConn.get(conn.id);
   if (!peer) return;
@@ -260,7 +266,8 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         screen: false,
       });
       publishState(userId, channel.serverId);
-      return { backend: "builtin", rtpCapabilities: room.router.rtpCapabilities, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM) };
+      // screenAudio: this server accepts the "screen_audio" source (0.4.2+); older ones would take it for a mic.
+      return { backend: "builtin", rtpCapabilities: room.router.rtpCapabilities, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM), screenAudio: true };
     }
 
     case "createTransport": {
@@ -295,8 +302,8 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       const channel = getChannel(peer.channelId);
       const perms = channel ? channelPermissions(channel, userId) : 0;
       const kind = data.kind === "video" ? "video" : data.kind === "audio" ? "audio" : null;
-      const source = data.source === "camera" || data.source === "screen" ? data.source : kind === "audio" ? "mic" : null;
-      if (!kind || !source || (kind === "audio") !== (source === "mic")) throw badRequest("Mídia inválida");
+      const source = sourceFor(kind, data.source);
+      if (!kind || !source) throw badRequest("Mídia inválida");
       if (source === "mic" && !has(perms, Permission.SPEAK)) throw forbidden("Sem permissão para falar");
       if (source !== "mic" && !has(perms, Permission.STREAM)) throw forbidden("Sem permissão para transmitir câmera ou tela");
       const transport = peer.transports.get(str(data, "transportId"));

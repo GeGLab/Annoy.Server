@@ -220,7 +220,8 @@ export interface VoiceState {
 }
 
 /** What a producer carries; one camera and one screen per user at most. */
-export type MediaSource = "mic" | "camera" | "screen";
+/** "screen_audio" is the sound shared together with a screen (Windows). */
+export type MediaSource = "mic" | "camera" | "screen" | "screen_audio";
 
 export interface Ban {
   user: User;
@@ -456,6 +457,8 @@ export type VoiceMethod =
   | "publish"
   | "subscribe"
   | "renegotiate"
+  /** Takes back a Cloudflare session after a reconnect or a server restart, without renegotiating media. */
+  | "resume"
   | "leave";
 
 /** Where voice media flows: the built-in mediasoup SFU, or Cloudflare's Realtime SFU (works behind CGNAT). */

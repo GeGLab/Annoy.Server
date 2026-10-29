@@ -9,7 +9,7 @@ import { addConnection, presenceOf, removeConnection, setConnectionIdle } from "
 import { audienceOf, dmChannelsForUser, getRelationships, getUser, serversForUser } from "./repo.ts";
 import { getSettings, isAdmin } from "./instance.ts";
 import { activitiesFor, clearActivity, expireActivities, updateActivity } from "./activity.ts";
-import { handleVoice, leaveVoice, setSelfState, setSpeaking, voiceBackend } from "./voice-backend.ts";
+import { detachVoice, handleVoice, setSelfState, setSpeaking, voiceBackend } from "./voice-backend.ts";
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
 const IDENTIFY_TIMEOUT_MS = 10_000;
@@ -24,6 +24,14 @@ export function registerGateway(app: FastifyInstance): void {
     for (const conn of live) if (conn.lastHeartbeat < cutoff) conn.socket.close(4009, "heartbeat timeout");
   }, 30_000);
   app.addHook("onClose", async () => clearInterval(sweep));
+
+  // Restarting: tell every client so it retries at once, and leave voice sessions
+  // alone so calls on Cloudflare keep flowing and resume on the new process.
+  let restarting = false;
+  app.addHook("preClose", async () => {
+    restarting = true;
+    for (const conn of live) conn.socket.close(4010, "server restarting");
+  });
 
   app.get("/gateway", { websocket: true }, (socket) => {
     const conn = new Connection(socket);
@@ -49,7 +57,7 @@ export function registerGateway(app: FastifyInstance): void {
     socket.on("close", () => {
       clearTimeout(identifyTimer);
       live.delete(conn);
-      leaveVoice(conn);
+      if (!restarting) detachVoice(conn);
       const userId = conn.userId;
       const previousPresence = userId ? presenceOf(userId) : "offline";
       unregister(conn);
