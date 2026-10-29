@@ -22,9 +22,10 @@ interface UserRow {
   username: string;
   display_name: string;
   avatar_url: string | null;
+  bio: string;
 }
 
-const USER_COLS = "id, username, display_name, avatar_url";
+const USER_COLS = "id, username, display_name, avatar_url, bio";
 interface ServerRow {
   id: string;
   name: string;
@@ -77,7 +78,7 @@ const placeholders = (n: number) => Array.from({ length: n }, () => "?").join(",
 
 // Users ----------------------------------------------------------------------
 
-const toUser = (r: UserRow): User => ({ id: r.id, username: r.username, displayName: r.display_name, avatarUrl: r.avatar_url });
+const toUser = (r: UserRow): User => ({ id: r.id, username: r.username, displayName: r.display_name, avatarUrl: r.avatar_url, bio: r.bio ?? "" });
 
 export function getUser(id: string): User | undefined {
   const row = one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, id);
@@ -133,7 +134,7 @@ export function memberRoleIds(serverId: string, userId: string): string[] {
 
 export function getMembers(serverId: string): Member[] {
   const rows = all<UserRow & { nick: string | null; joined_at: string }>(
-    `SELECT u.id, u.username, u.display_name, u.avatar_url, m.nick, m.joined_at
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, m.nick, m.joined_at
        FROM members m JOIN users u ON u.id = m.user_id
       WHERE m.server_id = ? ORDER BY u.display_name COLLATE NOCASE`,
     serverId,
@@ -299,14 +300,14 @@ export function getMessages(channelId: string, before: string | null, limit: num
 // Relationships --------------------------------------------------------------
 
 export function getRelationships(userId: string): Relationship[] {
-  const rows = all<{ other_id: string; status: RelationshipStatus }>(
-    "SELECT other_id, status FROM relationships WHERE user_id = ?",
+  const rows = all<{ other_id: string; status: RelationshipStatus; nickname: string; nickname_by_other: string }>(
+    "SELECT a.other_id, a.status, a.nickname, b.nickname AS nickname_by_other FROM relationships a LEFT JOIN relationships b ON b.user_id=a.other_id AND b.other_id=a.user_id WHERE a.user_id = ?",
     userId,
   );
   const users = getUsers(rows.map((r) => r.other_id));
   return rows.flatMap((r) => {
     const user = users.get(r.other_id);
-    return user ? [{ user, status: r.status }] : [];
+    return user ? [{ user, status: r.status, nickname: r.nickname ?? "", nicknameByOther: r.nickname_by_other ?? "" }] : [];
   });
 }
 

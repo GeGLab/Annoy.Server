@@ -1,10 +1,11 @@
+import { clearCalls, handleCall } from "./calls.ts";
 import { Permission, type ClientOp } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { userIdForToken } from "./auth.ts";
 import { HttpError } from "./errors.ts";
 import { Connection, register, sendToAudience, sendToChannel, unregister } from "./events.ts";
 import { requireChannel } from "./perms.ts";
-import { addConnection, presenceOf, removeConnection } from "./presence.ts";
+import { addConnection, presenceOf, removeConnection, setConnectionIdle } from "./presence.ts";
 import { audienceOf, dmChannelsForUser, getRelationships, getUser, serversForUser } from "./repo.ts";
 import { getSettings, isAdmin } from "./instance.ts";
 import { activitiesFor, clearActivity, expireActivities, updateActivity } from "./activity.ts";
@@ -58,10 +59,13 @@ export function registerGateway(app: FastifyInstance): void {
       live.delete(conn);
       if (!restarting) detachVoice(conn);
       const userId = conn.userId;
+      const previousPresence = userId ? presenceOf(userId) : "offline";
       unregister(conn);
       clearActivity(conn);
-      if (userId && removeConnection(userId)) {
-        sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: "offline" } });
+      if (userId) clearCalls(userId, conn.id);
+      if (userId) {
+        removeConnection(userId, conn.id);
+        if (previousPresence !== presenceOf(userId)) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: presenceOf(userId) } });
       }
     });
   });
@@ -77,7 +81,10 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
       conn.socket.close(4004, "invalid session");
       return;
     }
+    conn.deviceId = typeof msg.deviceId === "string" && msg.deviceId.length <= 64 ? msg.deviceId : null;
+    if (Array.isArray(msg.features) && msg.features.length <= 16) conn.features = new Set(msg.features.filter((feature) => typeof feature === "string" && feature.length <= 64));
     register(conn, userId);
+    const previousPresence = presenceOf(userId);
     const cameOnline = addConnection(userId);
     const presences = Object.fromEntries(audienceOf(userId).map((id) => [id, presenceOf(id)]));
     conn.send({
@@ -89,10 +96,10 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         relationships: getRelationships(userId),
         presences,
         activities: activitiesFor(userId),
-        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend },
+        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, developmentActivity: true, directCalls: true, socialProfiles: true, presenceStatus: true },
       },
     });
-    if (cameOnline) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: "online" } });
+    if (cameOnline || previousPresence !== presenceOf(userId)) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: presenceOf(userId) } });
     return;
   }
 
@@ -100,6 +107,10 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
   if (!userId) return void conn.socket.close(4003, "not identified");
 
   switch (msg.op) {
+    case "call": handleCall(conn, msg); return;
+    case "presence":
+      if (setConnectionIdle(userId, conn.id, msg.idle === true)) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: presenceOf(userId) } });
+      return;
     case "activity":
       if (!updateActivity(conn, msg.activities)) conn.socket.close(4002, "invalid activity");
       return;
@@ -112,7 +123,7 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
       return;
     }
     case "voice_state":
-      setSelfState(conn, msg.selfMute === true, msg.selfDeaf === true);
+      setSelfState(conn, msg.selfMute === true, msg.selfDeaf === true, msg.screenQuality);
       return;
     case "speaking":
       setSpeaking(conn, msg.speaking === true);

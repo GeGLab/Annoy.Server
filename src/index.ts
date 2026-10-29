@@ -1,3 +1,4 @@
+import { callRoutes } from "./calls.ts";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
@@ -50,6 +51,7 @@ await app.register(
     serverRoutes(api);
     channelRoutes(api);
     socialRoutes(api);
+    callRoutes(api);
     searchRoutes(api);
     importRoutes(api);
     await api.register(adminRoutes);

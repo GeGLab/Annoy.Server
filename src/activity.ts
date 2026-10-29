@@ -6,8 +6,8 @@ import { relationshipStatus } from "./repo.ts";
 
 const entry = z
   .object({
-    kind: z.enum(["game", "music"]),
-    provider: z.enum(["steam", "spotify", "apple-music"]),
+    kind: z.enum(["game", "music", "development"]),
+    provider: z.enum(["steam", "spotify", "apple-music", "vscode", "intellij", "dbeaver", "ssms", "visual-studio"]),
     name: z.string().trim().min(1).max(160),
     artist: z.string().max(160).optional(),
     album: z.string().max(160).optional(),
@@ -16,15 +16,22 @@ const entry = z
       .regex(/^\d{1,10}$/)
       .optional(),
     startedAt: z.number().int().min(0).optional(),
+    artwork: z.string().max(24_000).optional(),
+    file: z.string().max(160).optional(),
+    project: z.string().max(160).optional(),
+    language: z.string().max(32).optional(),
   })
   .strict();
 const payload = z
   .array(entry)
-  .max(2)
+  .max(3)
   .refine(
     (items) =>
       new Set(items.map((i) => i.kind)).size === items.length &&
-      items.every((i) => (i.kind === "game" ? i.provider === "steam" && !!i.appId : i.provider !== "steam")),
+      items.every((i) => i.kind === "game" ? i.provider === "steam" && !!i.appId : i.kind === "music" ? ["spotify", "apple-music"].includes(i.provider) : ["vscode", "intellij", "dbeaver", "ssms", "visual-studio"].includes(i.provider)) &&
+      items.every((i) => !i.artwork || (i.kind === "music"
+        ? /^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+={0,2}$/.test(i.artwork)
+        : /^https:\/\/[a-z0-9.-]+\.steamstatic\.com\/(?:store_item_assets\/)?steam\/apps\/\d+\/[a-zA-Z0-9_/.?=&%-]+$/.test(i.artwork))),
   );
 const live = new Map<number, { userId: string; at: number; activities: UserActivity[] }>();
 const TTL = 75_000;
