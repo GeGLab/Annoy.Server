@@ -113,7 +113,7 @@ export interface User {
   avatarUrl: string | null;
 }
 
-export type Presence = "online" | "idle" | "offline";
+export type Presence = "online" | "idle" | "dnd" | "offline";
 
 export interface ServerSummary {
   id: string;
@@ -467,9 +467,9 @@ export type VoiceBackend = "builtin" | "cloudflare";
 export interface DirectCall { callerDeviceId?: string; calleeDeviceId?: string; id: string; callerId: string; calleeId: string; video: boolean; status: "ringing" | "active" | "ended"; reason?: string; iceServers?: { urls: string | string[]; username?: string; credential?: string }[] }
 
 export type ClientOp =
-  | { op: "identify"; features?: string[]; deviceId?: string; token: string }
+  | { op: "identify"; features?: string[]; deviceId?: string; token: string; presence?: Presence }
   | { op: "heartbeat" }
-  | { op: "presence"; idle: boolean }
+  | { op: "presence"; idle: boolean; status?: Presence }
   | { op: "call"; deviceId: string; callId: string; action: "accept" | "reject" | "end" | "signal"; signal?: { description?: { type: "offer" | "answer"; sdp: string }; candidate?: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } } }
   | { op: "activity"; activities: UserActivity[] }
   | { op: "typing"; channelId: string }
@@ -488,7 +488,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; presenceStatus?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; presenceStatus?: boolean; manualPresence?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }

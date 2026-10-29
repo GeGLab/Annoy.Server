@@ -3,6 +3,7 @@ import { z } from "zod";
 import { all } from "./db.ts";
 import { sendToUser, type Connection } from "./events.ts";
 import { relationshipStatus } from "./repo.ts";
+import { presenceOf } from "./presence.ts";
 
 const entry = z
   .object({
@@ -39,6 +40,7 @@ export function areFriends(a: string, b: string) {
   return relationshipStatus(a, b) === "friend" && relationshipStatus(b, a) === "friend";
 }
 export function activityOf(userId: string): UserActivity[] {
+  if (presenceOf(userId) === "offline") return [];
   return [...live.values()].filter((v) => v.userId === userId && Date.now() - v.at < TTL).sort((a, b) => b.at - a.at)[0]?.activities ?? [];
 }
 function friendIds(userId: string) {
@@ -51,6 +53,9 @@ function broadcast(userId: string) {
   const activities = activityOf(userId);
   for (const id of [userId, ...friendIds(userId)]) sendToUser(id, { t: "ACTIVITY_UPDATE", d: { userId, activities } });
 }
+export const refreshActivityPresence = (userId: string) => {
+  if ([...live.values()].some((entry) => entry.userId === userId)) broadcast(userId);
+};
 export function activitiesFor(userId: string) {
   return Object.fromEntries([userId, ...friendIds(userId)].map((id) => [id, activityOf(id)]));
 }

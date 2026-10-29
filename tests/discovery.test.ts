@@ -175,6 +175,42 @@ test("activity artwork rejects oversized images, executable data and non-Steam r
   for (const activity of invalid) assert.equal(updateActivity({ userId: "alice", activityWindowAt: 0, activityCount: 0 } as any, [activity]), false);
 });
 
+test("manual presence is shared with self and friends, keeps idle overrides and hides invisible activity", async (t) => {
+  if (!app.server.listening) await app.listen({ host: "127.0.0.1", port: 0 });
+  const address = app.server.address() as { port: number };
+  const sockets: WebSocket[] = [], events: Record<string, any[]> = {};
+  t.after(() => sockets.forEach((socket) => socket.terminate()));
+  const waitFor = async (check: () => boolean) => { const end = Date.now() + 3000; while (!check()) { if (Date.now() > end) throw new Error("Timed out waiting for manual presence"); await new Promise((resolve) => setTimeout(resolve, 10)); } };
+  const connect = async (id: string, user: string, presence = "online") => {
+    const socket = new WebSocket(`ws://127.0.0.1:${address.port}/gateway`); sockets.push(socket); events[id] = [];
+    socket.on("message", (raw) => events[id]!.push(JSON.parse(raw.toString())));
+    await once(socket, "open"); socket.send(JSON.stringify({ op: "identify", token: tokens[user], presence, features: ["manualPresence", "idlePresence", "developmentActivity"] }));
+    await waitFor(() => events[id]!.some((event) => event.t === "READY")); return socket;
+  };
+  const alice = await connect("alice", "alice");
+  await connect("bob", "bob");
+  const { presenceOf } = await import("../src/presence.ts");
+  const { activityOf } = await import("../src/activity.ts");
+  alice.send(JSON.stringify({ op: "activity", activities: [{ kind: "development", provider: "vscode", name: "Annoy", file: "package.json", language: "json" }] }));
+  await waitFor(() => activityOf("alice").length === 1);
+  alice.send(JSON.stringify({ op: "presence", idle: false, status: "idle" }));
+  await waitFor(() => presenceOf("alice") === "idle");
+  alice.send(JSON.stringify({ op: "presence", idle: false }));
+  alice.send(JSON.stringify({ op: "presence", idle: true, status: "dnd" }));
+  await waitFor(() => events.bob!.some((event) => event.t === "PRESENCE_UPDATE" && event.d.userId === "alice" && event.d.presence === "dnd"));
+  assert.ok(events.alice!.some((event) => event.t === "PRESENCE_UPDATE" && event.d.presence === "dnd"));
+  alice.send(JSON.stringify({ op: "presence", idle: false, status: "offline" }));
+  await waitFor(() => events.bob!.some((event) => event.t === "ACTIVITY_UPDATE" && event.d.userId === "alice" && event.d.activities.length === 0));
+  assert.equal(presenceOf("alice"), "offline"); assert.deepEqual(activityOf("alice"), []);
+  const observer = await connect("bob2", "bob");
+  const ready = events.bob2!.find((event) => event.t === "READY");
+  assert.equal(ready.d.presences.alice, "offline"); assert.deepEqual(ready.d.activities.alice, []);
+  events.bob = [];
+  alice.send(JSON.stringify({ op: "presence", idle: false, status: "online" }));
+  await waitFor(() => presenceOf("alice") === "online" && events.bob!.some((event) => event.t === "ACTIVITY_UPDATE" && event.d.userId === "alice" && event.d.activities.length === 1));
+  observer.close();
+});
+
 test("biographies and friend nicknames persist, validate and expose both directions", async () => {
   assert.equal((await app.inject({ method: "PATCH", url: "/users/@me", headers: auth("alice"), payload: { bio: "A".repeat(1000) } })).statusCode, 200);
   assert.equal((await app.inject({ method: "PATCH", url: "/users/@me", headers: auth("alice"), payload: { bio: "A".repeat(1001) } })).statusCode, 400);
