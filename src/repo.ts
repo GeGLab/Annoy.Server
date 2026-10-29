@@ -54,7 +54,7 @@ interface RoleRow {
   permissions: number;
   position: number;
 }
-interface MessageRow {
+export interface MessageRow {
   id: string;
   channel_id: string;
   author_id: string;
@@ -261,7 +261,7 @@ const toAttachment = (r: AttachmentRow): Attachment => ({
   url: `/api/uploads/${r.id}/${encodeURIComponent(r.filename)}`,
 });
 
-function hydrate(rows: MessageRow[]): Message[] {
+export function hydrate(rows: MessageRow[]): Message[] {
   if (rows.length === 0) return [];
   const users = getUsers(rows.map((r) => r.author_id));
   const ids = rows.map((r) => r.id);

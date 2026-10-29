@@ -9,6 +9,8 @@ export class Connection {
   readonly id = ++Connection.seq;
   userId: string | null = null;
   lastHeartbeat = Date.now();
+  activityWindowAt = 0;
+  activityCount = 0;
 
   constructor(readonly socket: WebSocket) {}
 

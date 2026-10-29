@@ -10,6 +10,7 @@ import { maxUploadBytes } from "../instance.ts";
 import { requireChannel, requireServer } from "../perms.ts";
 import { dmRecipientIds, getChannel, getMessage, getMessages, isMember } from "../repo.ts";
 import { discardBlobs, readBlob, writeBlob } from "../uploads.ts";
+import { byteRange } from "../ranges.ts";
 import { parse, type Params } from "../validate.ts";
 
 const INLINE_TYPES = /^(image\/(png|jpeg|gif|webp)|audio\/|video\/)/;
@@ -31,6 +32,7 @@ const messageBody = z.object({
 });
 const editBody = z.object({ content: z.string().min(1).max(LIMITS.messageMax) });
 const listQuery = z.object({
+  around: z.string().max(100).optional(),
   before: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -149,6 +151,12 @@ export function channelRoutes(app: FastifyInstance): void {
     const { channel } = requireChannel(req.params.id, requireUser(req));
     if (channel.type === "category" || channel.type === "voice") return [];
     const q = parse(listQuery, req.query);
+    if (q.around) {
+      const target=getMessage(q.around); if (!target || target.channelId!==channel.id) throw notFound("Mensagem");
+      const before=getMessages(channel.id,target.id,25);
+      const after=all<{id:string}>("SELECT id FROM messages WHERE channel_id=? AND id>? ORDER BY id LIMIT 25",channel.id,target.id).map(row=>getMessage(row.id)!);
+      return [...before,target,...after];
+    }
     return getMessages(channel.id, q.before ?? null, q.limit);
   });
 
@@ -236,10 +244,17 @@ export function channelRoutes(app: FastifyInstance): void {
     reply
       .header("Content-Type", inline ? row.content_type : "application/octet-stream")
       .header("Content-Length", row.size)
+      .header("Accept-Ranges", "bytes")
       .header("X-Content-Type-Options", "nosniff")
       .header("Content-Security-Policy", "sandbox; default-src 'none'")
       .header("Cache-Control", "private, max-age=31536000, immutable")
       .header("Content-Disposition", `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.filename)}`);
+    if (req.headers.range) {
+      const range = byteRange(req.headers.range, row.size);
+      if (!range) return reply.status(416).header("Content-Range", `bytes */${row.size}`).header("Content-Length", 0).send();
+      reply.status(206).header("Content-Range", `bytes ${range.start}-${range.end}/${row.size}`).header("Content-Length", range.end - range.start + 1);
+      return reply.send(readBlob(req.params.id, range));
+    }
     return reply.send(readBlob(req.params.id));
   });
 }

@@ -79,10 +79,22 @@ Tudo é por variável de ambiente; veja [`.env.example`](.env.example) e a
 - `ANNOY_REGISTRATION=closed`: bloqueia novos cadastros.
 - `ANNOY_DISCORD_CLIENT_ID` e `ANNOY_DISCORD_CLIENT_SECRET`: habilitam o
   "Entrar com Discord".
-- `ANNOY_DATA_DIR`: onde ficam o banco e os anexos. É a pasta do backup.
+- `ANNOY_DATA_DIR`: onde ficam o banco, os anexos e as fotos de perfil. É a pasta do backup.
+- `ANNOY_PUBLIC_URL`: endereço externo da instância; configure ao usar um proxy.
+
 
 Para expor na internet, coloque um proxy com TLS (Caddy, nginx, Cloudflare
 Tunnel) na frente da porta 8787.
+
+Fotos de perfil agora podem ser enviadas, recortadas e removidas pelo cliente.
+Após atualizar as dependências com `npm ci`, reinicie o servidor. As rotas e o
+suporte a busca em áudio/vídeo estão em [perfil e mídia](docs/profile-media.md).
+Validação local: `npm run typecheck` e `npm run test:profile`.
+
+A busca de mensagens usa um índice local com verificação de permissões.
+Atividades de jogos/música são efêmeras e compartilhadas somente entre amigos
+confirmados. Veja [busca e atividades](docs/search-activity.md); valide com
+`npm run test:discovery` antes de publicar a atualização.
 
 ## Integração com o Discord
 

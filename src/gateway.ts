@@ -7,6 +7,7 @@ import { requireChannel } from "./perms.ts";
 import { addConnection, presenceOf, removeConnection } from "./presence.ts";
 import { audienceOf, dmChannelsForUser, getRelationships, getUser, serversForUser } from "./repo.ts";
 import { getSettings, isAdmin } from "./instance.ts";
+import { activitiesFor, clearActivity, expireActivities, updateActivity } from "./activity.ts";
 import { handleVoice, leaveVoice, setSelfState, setSpeaking, voiceBackend } from "./voice-backend.ts";
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
@@ -17,6 +18,7 @@ export function registerGateway(app: FastifyInstance): void {
   const live = new Set<Connection>();
 
   const sweep = setInterval(() => {
+    expireActivities();
     const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
     for (const conn of live) if (conn.lastHeartbeat < cutoff) conn.socket.close(4009, "heartbeat timeout");
   }, 30_000);
@@ -49,6 +51,7 @@ export function registerGateway(app: FastifyInstance): void {
       leaveVoice(conn);
       const userId = conn.userId;
       unregister(conn);
+      clearActivity(conn);
       if (userId && removeConnection(userId)) {
         sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: "offline" } });
       }
@@ -77,6 +80,7 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         dms: dmChannelsForUser(userId),
         relationships: getRelationships(userId),
         presences,
+        activities: activitiesFor(userId),
         instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend },
       },
     });
@@ -88,6 +92,9 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
   if (!userId) return void conn.socket.close(4003, "not identified");
 
   switch (msg.op) {
+    case "activity":
+      if (!updateActivity(conn, msg.activities)) conn.socket.close(4002, "invalid activity");
+      return;
     case "heartbeat":
       conn.send({ t: "HEARTBEAT_ACK", d: null });
       return;

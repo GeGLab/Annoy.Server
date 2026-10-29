@@ -5,7 +5,8 @@ import { bearerToken, createSession, deleteSession, hashPassword, requireUser, v
 import { deleteAccount, RESERVED_USERNAME } from "../accounts.ts";
 import { config } from "../config.ts";
 import { discordLoginEnabled } from "../discord/oauth.ts";
-import { now, one, run } from "../db.ts";
+import { now, one, run, tx } from "../db.ts";
+import { createAvatar, discardAvatar, MAX_AVATAR_BYTES, readAvatar } from "../avatars.ts";
 import { badRequest, conflict, HttpError, notFound } from "../errors.ts";
 import { checkRegistration, consumeSignupInvite, getSettings, grantBootstrapAdmin } from "../instance.ts";
 import { sendToAudience } from "../events.ts";
@@ -34,7 +35,9 @@ const deleteMe = z.object({
   deleteMessages: z.boolean().default(false),
 });
 const loginBody = z.object({ username: z.string(), password: z.string() });
-const patchMe = z.object({ displayName });
+const patchMe = z
+  .object({ displayName: displayName.optional(), avatarUrl: z.null().optional() })
+  .refine((body) => body.displayName !== undefined || body.avatarUrl === null, "Nenhuma alteração informada");
 
 export function authRoutes(app: FastifyInstance): void {
   app.get("/info", async (): Promise<InstanceInfo> => {
@@ -92,10 +95,52 @@ export function authRoutes(app: FastifyInstance): void {
   app.patch("/users/@me", async (req) => {
     const userId = requireUser(req);
     const body = parse(patchMe, req.body);
-    run("UPDATE users SET display_name = ? WHERE id = ?", body.displayName, userId);
+    const previous = tx(() => {
+      const old = getUser(userId)!;
+      if (body.displayName !== undefined) run("UPDATE users SET display_name = ? WHERE id = ?", body.displayName, userId);
+      if (body.avatarUrl === null) run("UPDATE users SET avatar_url = NULL WHERE id = ?", userId);
+      return old.avatarUrl;
+    });
     const user = getUser(userId)!;
     sendToAudience(userId, { t: "USER_UPDATE", d: user });
+    if (body.avatarUrl === null) await discardAvatar(previous).catch((error) => app.log.warn(error, "Could not remove old avatar"));
     return user;
+  });
+
+  app.post("/users/@me/avatar", async (req) => {
+    const userId = requireUser(req);
+    const file = await req.file({ limits: { fileSize: MAX_AVATAR_BYTES, files: 1, fields: 0 } });
+    if (!file) throw badRequest("Selecione uma foto");
+    const bytes = await file.toBuffer();
+    if (file.file.truncated) throw new HttpError(413, "too_large", "A foto deve ter no máximo 8 MB");
+    const path = await createAvatar(bytes);
+    const origin = config.publicUrl || `${req.protocol}://${req.host}`;
+    let previous: string | null = null;
+    try {
+      tx(() => {
+        const current = getUser(userId);
+        if (!current || current.username.startsWith("deleted.")) throw notFound("Usuário");
+        previous = current.avatarUrl;
+        run("UPDATE users SET avatar_url = ? WHERE id = ?", new URL(path, origin).toString(), userId);
+      });
+    } catch (error) {
+      await discardAvatar(path);
+      throw error;
+    }
+    const user = getUser(userId)!;
+    sendToAudience(userId, { t: "USER_UPDATE", d: user });
+    await discardAvatar(previous).catch((error) => app.log.warn(error, "Could not remove old avatar"));
+    return user;
+  });
+
+  app.get<{ Params: { id: string } }>("/avatars/:id.webp", async (req, reply) => {
+    const bytes = await readAvatar(req.params.id);
+    return reply
+      .type("image/webp")
+      .header("X-Content-Type-Options", "nosniff")
+      .header("Cache-Control", "public, max-age=31536000, immutable")
+      .header("Content-Security-Policy", "sandbox; default-src 'none'")
+      .send(bytes);
   });
 
   // Self-service deletion: personal data is erased, optionally with every message.
