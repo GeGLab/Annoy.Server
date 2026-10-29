@@ -235,12 +235,13 @@ function kick(peer: Peer, reason: string): void {
   peer.conn.send({ t: "VOICE_KICKED", d: { reason } });
 }
 
-export function setSelfState(conn: Connection, selfMute: boolean, selfDeaf: boolean): void {
+export function setSelfState(conn: Connection, selfMute: boolean, selfDeaf: boolean, quality?: { width?: number; height: number; fps: number }): void {
   const peer = peersByConn.get(conn.id);
   const state = peer && states.get(peer.userId);
   if (!peer || !state) return;
   state.selfMute = selfMute || selfDeaf;
   state.selfDeaf = selfDeaf;
+  if (quality && [0, 480, 720, 1080, 1440, 2160].includes(quality.height) && [0, 15, 24, 30, 60, 120].includes(quality.fps)) state.screenQuality = { height: quality.height, fps: quality.fps, ...([0, 854, 1280, 1920, 2048, 2560, 3840].includes(quality.width ?? 0) && { width: quality.width }) };
   if (state.selfMute) state.speaking = false;
   publishState(peer.userId, peer.serverId);
 }

@@ -7,6 +7,7 @@ import Fastify from "fastify";
 import websocket from "@fastify/websocket";
 import { WebSocket } from "ws";
 import { once } from "node:events";
+import sharp from "sharp";
 const root = resolve(tmpdir()),
   directory = await mkdtemp(join(root, "distopic-discovery-"));
 process.env.ANNOY_DATA_DIR = directory;
@@ -15,6 +16,8 @@ const { db, run } = await import("../src/db.ts"),
   { createSession } = await import("../src/auth.ts"),
   { searchRoutes } = await import("../src/routes/search.ts"),
   { socialRoutes } = await import("../src/routes/social.ts"),
+  { authRoutes } = await import("../src/routes/auth.ts"),
+  { callRoutes } = await import("../src/calls.ts"),
   { registerGateway } = await import("../src/gateway.ts"),
   { HttpError } = await import("../src/errors.ts"),
   { Permission } = await import("@distopic/protocol");
@@ -23,6 +26,8 @@ await app.register(websocket);
 app.setErrorHandler((e, _req, reply) => reply.status(e instanceof HttpError ? e.status : 500).send({ message: (e as Error).message }));
 searchRoutes(app);
 socialRoutes(app);
+authRoutes(app);
+callRoutes(app);
 registerGateway(app);
 const users = ["alice", "bob", "stranger"],
   tokens: Record<string, string> = {};
@@ -121,9 +126,17 @@ test("real gateway sends activity only to mutual friends, clears on unfriend/dis
     socket.send(JSON.stringify({ op: "identify", token: tokens[id] }));
     await waitFor(() => streams[id]!.some((e) => e.t === "READY"));
   }
-  const activity = { kind: "game", provider: "steam", name: "Synthetic Game", appId: "480" };
+  assert.equal(streams.alice!.find((event) => event.t === "READY").d.instance.activityArtwork, true);
+  const activity = { kind: "game", provider: "steam", name: "Synthetic Game", appId: "480", artwork: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/480/header.jpg" };
   sockets.alice.send(JSON.stringify({ op: "activity", activities: [activity] }));
   await waitFor(() => streams.bob!.some((e) => e.t === "ACTIVITY_UPDATE" && e.d.activities.length === 1));
+  const cover = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#ab5342" } }).jpeg().toBuffer();
+  const music = { kind: "music", provider: "spotify", name: "Synthetic Song", artist: "Artist", artwork: `data:image/jpeg;base64,${cover.toString("base64")}` };
+  sockets.alice.send(JSON.stringify({ op: "activity", activities: [activity, music] }));
+  await waitFor(() => streams.bob!.some((e) => e.t === "ACTIVITY_UPDATE" && e.d.activities.length === 2));
+  const received = streams.bob!.find((e) => e.t === "ACTIVITY_UPDATE" && e.d.activities.length === 2).d.activities;
+  assert.equal(received[0].artwork, activity.artwork);
+  assert.equal(received[1].artwork, music.artwork);
   assert.equal(
     streams.stranger!.some((e) => e.t === "ACTIVITY_UPDATE"),
     false,
@@ -148,4 +161,68 @@ test("real gateway sends activity only to mutual friends, clears on unfriend/dis
   sockets.alice.close();
   await waitFor(() => streams.bob.some((e) => e.t === "ACTIVITY_UPDATE" && e.d.userId === "alice" && e.d.activities.length === 0));
   for (const socket of Object.values(sockets)) socket.close();
+});
+
+test("activity artwork rejects oversized images, executable data and non-Steam remote hosts", async () => {
+  const { updateActivity } = await import("../src/activity.ts");
+  const invalid = [
+    { kind: "music", provider: "spotify", name: "Test", artwork: "data:image/svg+xml;base64,PHN2Zz4=" },
+    { kind: "music", provider: "spotify", name: "Test", artwork: "data:image/jpeg;base64,/9j/" + "A".repeat(24_000) },
+    { kind: "music", provider: "spotify", name: "Test", artwork: "https://example.com/cover.jpg" },
+    { kind: "game", provider: "steam", name: "Test", appId: "480", artwork: "https://steamstatic.com.example.com/steam/apps/480/header.jpg" },
+    { kind: "game", provider: "steam", name: "Test", appId: "480", artwork: "file:///local/image.jpg" },
+  ];
+  for (const activity of invalid) assert.equal(updateActivity({ userId: "alice", activityWindowAt: 0, activityCount: 0 } as any, [activity]), false);
+});
+
+test("biographies and friend nicknames persist, validate and expose both directions", async () => {
+  assert.equal((await app.inject({ method: "PATCH", url: "/users/@me", headers: auth("alice"), payload: { bio: "A".repeat(1000) } })).statusCode, 200);
+  assert.equal((await app.inject({ method: "PATCH", url: "/users/@me", headers: auth("alice"), payload: { bio: "A".repeat(1001) } })).statusCode, 400);
+  const me = await app.inject({ method: "GET", url: "/users/@me", headers: auth("alice") });
+  assert.equal(me.json().bio.length, 1000);
+  const nickname = await app.inject({ method: "PATCH", url: "/relationships/bob/nickname", headers: auth("alice"), payload: { nickname: "Bobby" } });
+  assert.equal(nickname.statusCode, 200);
+  const bob = (await app.inject({ method: "GET", url: "/relationships", headers: auth("bob") })).json();
+  assert.equal(bob.find((r: any) => r.user.id === "alice").nicknameByOther, "Bobby");
+  assert.equal((await app.inject({ method: "PATCH", url: "/relationships/stranger/nickname", headers: auth("alice"), payload: { nickname: "No" } })).statusCode, 403);
+});
+
+test("private calls authorize friends, isolate signaling and end on disconnect; idle respects multiple sessions", async (t) => {
+  if (!app.server.listening) await app.listen({ host: "127.0.0.1", port: 0 });
+  const address = app.server.address() as { port: number };
+  const sockets: Record<string, WebSocket> = {}, streams: Record<string, any[]> = {};
+  t.after(() => Object.values(sockets).forEach((socket) => socket.terminate()));
+  const waitFor = async (check: () => boolean) => { const until = Date.now() + 3000; while (!check()) { if (Date.now() > until) throw new Error("Timed out waiting for call event"); await new Promise((resolve) => setTimeout(resolve, 10)); } };
+  for (const id of ["alice", "bob", "stranger", "alice2"]) {
+    streams[id] = [];
+    const socket = new WebSocket(`ws://127.0.0.1:${address.port}/gateway`); sockets[id] = socket;
+    socket.on("message", (raw) => streams[id]!.push(JSON.parse(raw.toString())));
+    await once(socket, "open"); socket.send(JSON.stringify({ op: "identify", features: ["developmentActivity", "idlePresence", "directCalls"], deviceId: id === "alice" ? "a" : id === "bob" ? "b" : id, token: tokens[id === "alice2" ? "alice" : id] }));
+    await waitFor(() => streams[id]!.some((event) => event.t === "READY"));
+  }
+  const { presenceOf } = await import("../src/presence.ts");
+  sockets.alice!.send(JSON.stringify({ op: "presence", idle: true }));
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(presenceOf("alice"), "online");
+  sockets.alice2!.send(JSON.stringify({ op: "presence", idle: true }));
+  await waitFor(() => presenceOf("alice") === "idle");
+  sockets.alice!.send(JSON.stringify({ op: "presence", idle: false }));
+  await waitFor(() => presenceOf("alice") === "online");
+  assert.equal((await app.inject({ method: "POST", url: "/calls", headers: auth("alice"), payload: { userId: "stranger", video: false, deviceId: "a" } })).statusCode, 403);
+  const result = await app.inject({ method: "POST", url: "/calls", headers: auth("alice"), payload: { userId: "bob", video: true, deviceId: "a" } });
+  assert.equal(result.statusCode, 200);
+  const call = result.json();
+  await waitFor(() => streams.bob!.some((event) => event.t === "CALL_UPDATE" && event.d.status === "ringing"));
+  sockets.stranger!.send(JSON.stringify({ op: "call", callId: call.id, action: "accept", deviceId: "s" }));
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  assert.equal(streams.alice!.some((event) => event.t === "CALL_UPDATE" && event.d.status === "active"), false);
+  sockets.bob!.send(JSON.stringify({ op: "call", callId: call.id, action: "accept", deviceId: "b" }));
+  await waitFor(() => streams.alice!.some((event) => event.t === "CALL_UPDATE" && event.d.status === "active"));
+  sockets.alice!.send(JSON.stringify({ op: "call", callId: call.id, action: "signal", deviceId: "wrong-device", signal: { description: { type: "offer", sdp: "wrong" } } }));
+  sockets.alice!.send(JSON.stringify({ op: "call", callId: call.id, action: "signal", deviceId: "a", signal: { description: { type: "offer", sdp: "synthetic-offer" } } }));
+  await waitFor(() => streams.bob!.some((event) => event.t === "CALL_SIGNAL"));
+  assert.equal(streams.bob!.find((event) => event.t === "CALL_SIGNAL").d.signal.description.sdp, "synthetic-offer");
+  assert.equal(streams.stranger!.some((event) => event.t.startsWith("CALL_")), false);
+  sockets.bob!.close();
+  await waitFor(() => streams.alice!.some((event) => event.t === "CALL_UPDATE" && event.d.status === "ended"));
 });

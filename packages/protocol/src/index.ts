@@ -106,6 +106,7 @@ export function computePermissions(input: PermissionInput): number {
 // ---------------------------------------------------------------------------
 
 export interface User {
+  bio?: string;
   id: string;
   username: string;
   displayName: string;
@@ -114,7 +115,7 @@ export interface User {
   global?: boolean;
 }
 
-export type Presence = "online" | "offline";
+export type Presence = "online" | "idle" | "offline";
 
 export interface ServerSummary {
   id: string;
@@ -199,6 +200,8 @@ export interface Invite {
 export type RelationshipStatus = "friend" | "incoming" | "outgoing";
 
 export interface Relationship {
+  nickname?: string;
+  nicknameByOther?: string;
   user: User;
   status: RelationshipStatus;
 }
@@ -215,6 +218,7 @@ export interface VoiceState {
   video: boolean;
   /** Sharing a screen or window. */
   screen: boolean;
+  screenQuality?: { height: number; fps: number; width?: number };
 }
 
 /** What a producer carries; one camera and one screen per user at most. */
@@ -444,13 +448,18 @@ export interface ApiError {
 
 /** Ephemeral, opt-in desktop metadata; sent only to confirmed friends. No paths or tokens. */
 export interface UserActivity {
-  kind: "game" | "music";
-  provider: "steam" | "spotify" | "apple-music";
+  kind: "game" | "music" | "development";
+  provider: "steam" | "spotify" | "apple-music" | "vscode" | "intellij" | "dbeaver" | "ssms" | "visual-studio";
   name: string;
   artist?: string;
   album?: string;
   appId?: string;
   startedAt?: number;
+  /** Small JPEG thumbnail, or an official Steam artwork URL. Ephemeral, like activity. */
+  artwork?: string;
+  file?: string;
+  project?: string;
+  language?: string;
 }
 export interface MessageSearchPage {
   items: { message: Message; channelName: string; serverId: string | null }[];
@@ -481,12 +490,16 @@ export type VoiceMethod =
 /** Where voice media flows: the built-in mediasoup SFU, or Cloudflare's Realtime SFU (works behind CGNAT). */
 export type VoiceBackend = "builtin" | "cloudflare";
 
+export interface DirectCall { callerDeviceId?: string; calleeDeviceId?: string; id: string; callerId: string; calleeId: string; video: boolean; status: "ringing" | "active" | "ended"; reason?: string; iceServers?: { urls: string | string[]; username?: string; credential?: string }[] }
+
 export type ClientOp =
-  | { op: "identify"; token: string }
+  | { op: "identify"; features?: string[]; deviceId?: string; token: string }
   | { op: "heartbeat" }
+  | { op: "presence"; idle: boolean }
+  | { op: "call"; deviceId: string; callId: string; action: "accept" | "reject" | "end" | "signal"; signal?: { description?: { type: "offer" | "answer"; sdp: string }; candidate?: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } } }
   | { op: "activity"; activities: UserActivity[] }
   | { op: "typing"; channelId: string }
-  | { op: "voice_state"; selfMute: boolean; selfDeaf: boolean }
+  | { op: "voice_state"; selfMute: boolean; selfDeaf: boolean; screenQuality?: { height: number; fps: number; width?: number } }
   /** Client-measured speaking state; only used where the SFU can't measure levels (Cloudflare). */
   | { op: "speaking"; speaking: boolean }
   | { op: "voice"; id: number; method: VoiceMethod; data: Record<string, unknown> };
@@ -501,7 +514,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; presenceStatus?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
@@ -523,6 +536,8 @@ export type GatewayEvent =
   | { t: "VOICE_KICKED"; d: { reason: string } }
   | { t: "VOICE_REPLY"; d: { id: number; ok: true; data: unknown } | { id: number; ok: false; message: string } }
   | { t: "DM_CREATE"; d: DmChannel }
+  | { t: "CALL_UPDATE"; d: DirectCall }
+  | { t: "CALL_SIGNAL"; d: { callId: string; signal: { description?: { type: "offer" | "answer"; sdp: string }; candidate?: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } } } }
   | { t: "RELATIONSHIP_UPDATE"; d: Relationship }
   | { t: "RELATIONSHIP_REMOVE"; d: { userId: string } }
   | { t: "INVALID_SESSION"; d: { reason: string } }
