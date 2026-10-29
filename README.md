@@ -257,6 +257,6 @@ tests when you touch `voice.ts`.
 
 ## License
 
-[MIT](LICENSE) © GeGLab
+[MIT](LICENSE) © Gustavo Cruz
 
 Annoy is not affiliated with or endorsed by Discord Inc. or TeamSpeak Systems GmbH.
