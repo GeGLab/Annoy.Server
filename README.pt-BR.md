@@ -53,6 +53,12 @@ Troque o IP pelo endereço que os clients usam para chegar na máquina: o da LAN
 em casa, ou o público na internet. Libere a porta `8787/tcp` (API) e a `40000`
 em **UDP e TCP** (voz).
 
+**Atualização automática (opcional):** coloque `COMPOSE_PROFILES=autoupdate`
+no `.env` e rode `docker compose up -d`. Um contêiner `updater` confere a cada
+6 horas (`ANNOY_UPDATE_INTERVAL_HOURS`) e reinicia o servidor com a imagem mais
+nova de `ANNOY_VERSION`: `latest` segue todas as versões, `0.4` só recebe
+correções da 0.4.x. Ele usa o socket do Docker para recriar o contêiner.
+
 **Vindo do Distopic (0.2):** o projeto agora se chama Annoy. As variáveis
 mudaram de `DISTOPIC_*` para `ANNOY_*`, mas os nomes antigos continuam
 valendo, e os dados ficam no mesmo volume. Aponte o remoto para o novo

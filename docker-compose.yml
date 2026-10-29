@@ -18,5 +18,19 @@ services:
       # Named before the rename to Annoy; keeps existing data.
       - distopic-data:/data
 
+  # Optional automatic updates: set COMPOSE_PROFILES=autoupdate in .env.
+  updater:
+    image: docker:28-cli
+    profiles: [autoupdate]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/project/scripts/auto-update.sh"]
+    environment:
+      ANNOY_UPDATE_INTERVAL_HOURS: ${ANNOY_UPDATE_INTERVAL_HOURS:-6}
+    volumes:
+      # The Docker socket lets it recreate the server container; the project
+      # folder gives it this compose file and .env.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/project:ro
+
 volumes:
   distopic-data:
