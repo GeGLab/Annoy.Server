@@ -403,6 +403,21 @@ export interface ApiError {
   message: string;
 }
 
+/** Ephemeral, opt-in desktop metadata; sent only to confirmed friends. No paths or tokens. */
+export interface UserActivity {
+  kind: "game" | "music";
+  provider: "steam" | "spotify" | "apple-music";
+  name: string;
+  artist?: string;
+  album?: string;
+  appId?: string;
+  startedAt?: number;
+}
+export interface MessageSearchPage {
+  items: { message: Message; channelName: string; serverId: string | null }[];
+  nextCursor: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Gateway
 // ---------------------------------------------------------------------------
@@ -428,6 +443,7 @@ export type VoiceBackend = "builtin" | "cloudflare";
 export type ClientOp =
   | { op: "identify"; token: string }
   | { op: "heartbeat" }
+  | { op: "activity"; activities: UserActivity[] }
   | { op: "typing"; channelId: string }
   | { op: "voice_state"; selfMute: boolean; selfDeaf: boolean }
   /** Client-measured speaking state; only used where the SFU can't measure levels (Cloudflare). */
@@ -443,6 +459,7 @@ export type GatewayEvent =
         dms: DmChannel[];
         relationships: Relationship[];
         presences: Record<string, Presence>;
+        activities?: Record<string, UserActivity[]>;
         instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend };
       };
     }
@@ -457,6 +474,7 @@ export type GatewayEvent =
   | { t: "MESSAGE_DELETE"; d: { channelId: string; messageId: string } }
   | { t: "TYPING_START"; d: { channelId: string; userId: string } }
   | { t: "PRESENCE_UPDATE"; d: { userId: string; presence: Presence } }
+  | { t: "ACTIVITY_UPDATE"; d: { userId: string; activities: UserActivity[] } }
   | { t: "USER_UPDATE"; d: User }
   | { t: "VOICE_STATE_UPDATE"; d: { userId: string; serverId: string; state: VoiceState | null } }
   | { t: "VOICE_NEW_PRODUCER"; d: { channelId: string; producerId: string; userId: string; kind: "audio" | "video"; source: MediaSource } }

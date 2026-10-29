@@ -16,7 +16,7 @@ export async function writeBlob(id: string, source: Readable): Promise<number> {
   return (await stat(blobPath(id))).size;
 }
 
-export const readBlob = (id: string) => createReadStream(blobPath(id));
+export const readBlob = (id: string, range?: { start: number; end: number }) => createReadStream(blobPath(id), range);
 
 export async function discardBlobs(ids: readonly string[]): Promise<void> {
   await Promise.all(ids.map((id) => rm(join(uploadsDir, id), { recursive: true, force: true })));

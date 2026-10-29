@@ -5,12 +5,15 @@ import { conflict } from "./errors.ts";
 import { connectionsOf, sendToAudience, serverChanged } from "./events.ts";
 import { getUser } from "./repo.ts";
 import { discardBlobs } from "./uploads.ts";
+import { discardAvatar } from "./avatars.ts";
+import { clearUserActivity } from "./activity.ts";
 
 /** Prefixes that registration refuses, so system-made usernames can't be claimed. */
 export const RESERVED_USERNAME = /^(dc|deleted)\./i;
 
 /** Ends every live session of the user (gateway sockets close; voice is released on close). */
 export function disconnectEverywhere(userId: string, reason: string): void {
+  clearUserActivity(userId);
   deleteSessionsOf(userId);
   for (const conn of [...connectionsOf(userId)]) {
     conn.send({ t: "INVALID_SESSION", d: { reason } });
@@ -28,11 +31,14 @@ export function ownedServerNames(userId: string): string[] {
  * `deleteMessages`, the user's messages and attachments are removed too.
  */
 export async function deleteAccount(userId: string, options: { deleteMessages: boolean }): Promise<void> {
+  const avatar = getUser(userId)?.avatarUrl;
   const owned = ownedServerNames(userId);
   if (owned.length > 0) throw conflict(`Exclua ou transfira estes servidores antes: ${owned.join(", ")}`);
   const servers = all<{ server_id: string }>("SELECT server_id FROM members WHERE user_id = ?", userId).map((r) => r.server_id);
   const blobs = options.deleteMessages
-    ? all<{ id: string }>("SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.author_id = ?", userId).map((r) => r.id)
+    ? all<{ id: string }>("SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.author_id = ?", userId).map(
+        (r) => r.id,
+      )
     : [];
   disconnectEverywhere(userId, "Conta excluída");
   tx(() => {
@@ -47,6 +53,7 @@ export async function deleteAccount(userId: string, options: { deleteMessages: b
     );
   });
   await discardBlobs(blobs);
+  await discardAvatar(avatar);
   const user = getUser(userId);
   if (user) sendToAudience(userId, { t: "USER_UPDATE", d: user });
   for (const serverId of servers) serverChanged(serverId);
