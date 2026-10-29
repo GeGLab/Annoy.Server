@@ -43,6 +43,7 @@ export async function deleteAccount(userId: string, options: { deleteMessages: b
   disconnectEverywhere(userId, "Conta excluída");
   tx(() => {
     if (options.deleteMessages) run("DELETE FROM messages WHERE author_id = ?", userId);
+    run("DELETE FROM steam_connections WHERE user_id = ?", userId);
     run("DELETE FROM members WHERE user_id = ?", userId);
     run("DELETE FROM relationships WHERE user_id = ? OR other_id = ?", userId, userId);
     run(
@@ -75,6 +76,9 @@ export function mergeUsers(keep: string, drop: string): void {
   const servers = all<{ server_id: string }>("SELECT server_id FROM members WHERE user_id IN (?, ?)", keep, drop).map((r) => r.server_id);
   const dropRow = one<{ global_id: string; is_admin: number; avatar_url: string | null }>("SELECT global_id, is_admin, avatar_url FROM users WHERE id = ?", drop)!;
   tx(() => {
+    // Keep an existing Steam connection; otherwise carry over the merged account's.
+    if (!one("SELECT 1 FROM steam_connections WHERE user_id = ?", keep))
+      run("UPDATE steam_connections SET user_id = ? WHERE user_id = ?", keep, drop);
     run("UPDATE servers SET owner_id = ? WHERE owner_id = ?", keep, drop);
     // Membership first, so the roles below have a member row to hang on.
     run("INSERT OR IGNORE INTO members (server_id, user_id, nick, joined_at) SELECT server_id, ?, nick, joined_at FROM members WHERE user_id = ?", keep, drop);

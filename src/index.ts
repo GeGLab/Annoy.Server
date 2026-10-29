@@ -13,6 +13,7 @@ import { adminRoutes } from "./routes/admin.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { channelRoutes } from "./routes/channels.ts";
 import { discordAuthRoutes } from "./routes/discord-auth.ts";
+import { steamRoutes } from "./routes/steam.ts";
 import { importRoutes } from "./routes/import.ts";
 import { serverRoutes } from "./routes/servers.ts";
 import { socialRoutes } from "./routes/social.ts";
@@ -50,6 +51,7 @@ await app.register(
   async (api) => {
     authRoutes(api);
     discordAuthRoutes(api);
+    steamRoutes(api);
     serverRoutes(api);
     channelRoutes(api);
     socialRoutes(api);

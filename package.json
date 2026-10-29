@@ -11,6 +11,7 @@
   "scripts": {
     "test:profile": "node --import tsx --test tests/profile-media.test.ts",
     "test:discovery": "node --import tsx --test tests/discovery.test.ts",
+    "test:steam": "node --import tsx --test tests/steam.test.ts",
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p . && tsc -p packages/protocol",

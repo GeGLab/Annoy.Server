@@ -373,6 +373,17 @@ export type DiscordLoginPoll =
   | { status: "done"; auth: AuthResponse | null; user: User }
   | { status: "error"; message: string };
 
+/** Private connection information: returned only to the account owner. */
+export interface SteamConnectionStatus {
+  connection: { steamId: string; profileUrl: string } | null;
+  onlineActivityAvailable: boolean;
+}
+export interface SteamLinkBegin { url: string; handoff: string }
+export type SteamLinkPoll =
+  | { status: "pending" }
+  | { status: "done"; connection: NonNullable<SteamConnectionStatus["connection"]> }
+  | { status: "error"; message: string };
+
 // ---------------------------------------------------------------------------
 // Instance administration (the person hosting the instance)
 // ---------------------------------------------------------------------------
@@ -514,7 +525,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; presenceStatus?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; presenceStatus?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }

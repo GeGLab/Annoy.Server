@@ -61,6 +61,8 @@ export const config = {
   uploadCeilingBytes: 500 * 1024 * 1024,
   /** Public origin clients and browsers use to reach this server (OAuth redirects). */
   publicUrl: env("ANNOY_PUBLIC_URL", "").replace(/\/+$/, ""),
+  /** Optional: OpenID linking works without a key; online game lookup needs one. */
+  steamApiKey: env("ANNOY_STEAM_API_KEY", ""),
   /** "Entrar com Discord" is offered only when both are set. */
   discord: {
     clientId: env("ANNOY_DISCORD_CLIENT_ID", ""),

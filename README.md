@@ -131,6 +131,7 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_DISCORD_CLIENT_ID` | (empty) | Enables "Sign in with Discord" (with the secret) |
 | `ANNOY_DISCORD_CLIENT_SECRET` | (empty) | Discord OAuth2 client secret |
 | `ANNOY_PUBLIC_URL` | request origin | Public origin for OAuth redirects behind a proxy |
+| `ANNOY_STEAM_API_KEY` | (empty) | Optional online Steam game lookup; OpenID linking and local detection work without it ([setup](docs/steam.md)) |
 
 The API speaks plain HTTP. For internet exposure, put a TLS reverse proxy (Caddy,
 nginx, Cloudflare Tunnel) in front of port `8787` and connect with

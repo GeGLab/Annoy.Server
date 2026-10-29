@@ -138,6 +138,11 @@ CREATE TABLE IF NOT EXISTS relationships (
 `);
 
 // Additive migrations for databases created by earlier versions.
+db.exec(`CREATE TABLE IF NOT EXISTS steam_connections (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  steam_id TEXT NOT NULL UNIQUE,
+  connected_at TEXT NOT NULL
+)`);
 const userColumns = (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name);
 if (!userColumns.includes("imported_from")) {
   // "discord:<snowflake>" for authors recreated by the importer; they cannot log in.
