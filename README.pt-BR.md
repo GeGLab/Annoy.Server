@@ -19,7 +19,7 @@
 O chat da sua comunidade deveria rodar numa máquina sua. O Annoy é um único
 processo que você sobe num servidor de casa, numa VPS ou num mini PC. Não
 precisa de conta em nuvem, telemetria nem banco de dados externo. Você aponta o
-[client desktop](https://github.com/GustavoHSCruz/annoy-client) para o
+[client desktop](https://github.com/GeGLab/annoy-client) para o
 endereço e tem o que todo mundo espera do Discord: servidores, canais, cargos,
 voz, DMs e amigos. O Discord oficial fica a um clique no próprio client, então
 dá para migrar aos poucos.
@@ -39,11 +39,11 @@ dá para migrar aos poucos.
 ## Começando
 
 > **Só quem hospeda faz isso.** Uma pessoa sobe o servidor, uma vez. O resto
-> instala apenas o [client](https://github.com/GustavoHSCruz/annoy-client)
+> instala apenas o [client](https://github.com/GeGLab/annoy-client)
 > e entra com o endereço e um convite, como num servidor TeamSpeak.
 
 ```bash
-git clone https://github.com/GustavoHSCruz/annoy-server.git
+git clone https://github.com/GeGLab/annoy-server.git
 cd annoy-server
 cp .env.example .env   # defina ANNOY_ANNOUNCED_IP com seu IP público (e o da LAN)
 docker compose up -d
@@ -59,7 +59,7 @@ valendo, e os dados ficam no mesmo volume. Aponte o remoto para o novo
 repositório e remova o contêiner antigo:
 
 ```bash
-git remote set-url origin https://github.com/GustavoHSCruz/annoy-server.git
+git remote set-url origin https://github.com/GeGLab/annoy-server.git
 git pull && docker compose pull && docker compose up -d --remove-orphans
 ```
 
@@ -103,4 +103,4 @@ threads, emojis e figurinhas não são importados, e o token nunca é salvo.
 
 ## Licença
 
-[MIT](LICENSE) © Gustavo Cruz. O Annoy não é afiliado ao Discord Inc. nem à TeamSpeak Systems GmbH.
+[MIT](LICENSE) © GeGLab. O Annoy não é afiliado ao Discord Inc. nem à TeamSpeak Systems GmbH.

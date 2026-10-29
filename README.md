@@ -11,7 +11,7 @@
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
-[Features](#features) · [Quick start](#quick-start) · [Configuration](#configuration) · [Discord integration](#discord-integration) · [API](#architecture) · [Client](https://github.com/GustavoHSCruz/annoy-client)
+[Features](#features) · [Quick start](#quick-start) · [Configuration](#configuration) · [Discord integration](#discord-integration) · [API](#architecture) · [Client](https://github.com/GeGLab/annoy-client)
 
 <img src="docs/screenshots/chat-and-voice.png" alt="Annoy: text channels, voice channel with connected members, member list with roles" width="860">
 
@@ -24,7 +24,7 @@
 Your community's chat should run on hardware you control. Annoy is a single
 process you start on a home server, VPS or Raspberry-class machine. It has no
 cloud account, telemetry or external database. You point the
-[desktop client](https://github.com/GustavoHSCruz/annoy-client) at its
+[desktop client](https://github.com/GeGLab/annoy-client) at its
 address and get the features people expect from Discord: servers, channels,
 roles, voice, DMs and friends.
 
@@ -47,13 +47,13 @@ community gradually instead of all at once.
 ## Quick start
 
 > **Only the host runs this.** One person sets up the server, once. Everyone
-> else just installs the [client](https://github.com/GustavoHSCruz/annoy-client)
+> else just installs the [client](https://github.com/GeGLab/annoy-client)
 > and joins with the server address and an invite code, like a TeamSpeak server.
 
 ### Docker (recommended)
 
 ```bash
-git clone https://github.com/GustavoHSCruz/annoy-server.git
+git clone https://github.com/GeGLab/annoy-server.git
 cd annoy-server
 cp .env.example .env   # set ANNOY_ANNOUNCED_IP to your public IP (and LAN IP)
 docker compose up -d
@@ -84,7 +84,7 @@ in the same volume. Point the remote at the new repository and remove the old
 container:
 
 ```bash
-git remote set-url origin https://github.com/GustavoHSCruz/annoy-server.git
+git remote set-url origin https://github.com/GeGLab/annoy-server.git
 git pull && docker compose pull && docker compose up -d --remove-orphans
 ```
 
@@ -98,7 +98,7 @@ npm run dev      # watch mode
 npm start        # production
 ```
 
-Then open the [Annoy client](https://github.com/GustavoHSCruz/annoy-client),
+Then open the [Annoy client](https://github.com/GeGLab/annoy-client),
 choose **Conectar a um servidor Annoy** (Connect to an Annoy server), type the address (port `8787` is the
 default) and create an account. The first person creates a server and shares
 an invite.
@@ -257,6 +257,6 @@ tests when you touch `voice.ts`.
 
 ## License
 
-[MIT](LICENSE) © Gustavo Cruz
+[MIT](LICENSE) © GeGLab
 
 Annoy is not affiliated with or endorsed by Discord Inc. or TeamSpeak Systems GmbH.
