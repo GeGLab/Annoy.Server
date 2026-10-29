@@ -66,6 +66,15 @@ export const config = {
     clientId: env("ANNOY_DISCORD_CLIENT_ID", ""),
     clientSecret: env("ANNOY_DISCORD_CLIENT_SECRET", ""),
   },
+  /**
+   * Annoy Global (accounts across servers, integrations). On by default; the
+   * host can turn it off (ANNOY_GLOBAL=off) and restart. Off, global accounts
+   * can't log in here and features that need Global are unavailable.
+   */
+  global: {
+    enabled: env("ANNOY_GLOBAL", "on") !== "off",
+    url: env("ANNOY_GLOBAL_URL", "https://global.geg.dev.br").replace(/\/+$/, ""),
+  },
   voice: {
     backend: (env("ANNOY_VOICE_BACKEND", "builtin") === "cloudflare" ? "cloudflare" : "builtin") as "builtin" | "cloudflare",
     /** Cloudflare Realtime SFU application (Dashboard → Realtime → SFU). The token never leaves the server. */

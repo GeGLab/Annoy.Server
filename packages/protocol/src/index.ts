@@ -111,6 +111,8 @@ export interface User {
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  /** Signs in with an Annoy Global account. Only sent for the user's own profile. */
+  global?: boolean;
 }
 
 export type Presence = "online" | "idle" | "dnd" | "offline";
@@ -330,6 +332,30 @@ export interface InstanceInfo {
   registration: RegistrationMode;
   /** "Entrar com Discord" (OAuth2) is configured on this instance. */
   discordLogin: boolean;
+  /**
+   * This server's Annoy Global ID when global accounts can log in here; null
+   * when the host turned Global off or it isn't reachable. Older servers omit it.
+   */
+  globalServerId?: string | null;
+}
+
+/** Proof of a global account for one server (Annoy-api-global DESIGN.md). */
+export interface GlobalProof {
+  /** This account's identity on this server: an Ed25519 public key (JWK "x"). */
+  identity: string;
+  /** From POST /auth/global/challenge. */
+  challenge: string;
+  /** Ed25519 signature over "annoy-login:<challenge>", base64url. */
+  signature: string;
+  /** Blind token from Annoy Global, bound to this server and identity. */
+  token: { kid: string; message: string; signature: string };
+}
+
+export interface GlobalLogin extends GlobalProof {
+  /** First time on this server: the username to create; ignored when the account exists. */
+  username?: string;
+  displayName?: string;
+  inviteCode?: string;
 }
 
 export interface DiscordLoginBegin {

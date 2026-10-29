@@ -60,7 +60,7 @@ docker compose up -d
 ```
 
 This pulls the published image `ghcr.io/geglab/annoy-server`. Pin a
-version with `ANNOY_VERSION=0.4.3`, or build from source with
+version with `ANNOY_VERSION=0.5.0`, or build from source with
 `docker compose up -d --build`. Without Compose:
 
 ```bash
@@ -119,6 +119,8 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_HOST` | `0.0.0.0` | Bind address |
 | `ANNOY_PORT` | `8787` | API and gateway port |
 | `ANNOY_VOICE_PORT` | `40000` | Voice media port (UDP and TCP) |
+| `ANNOY_GLOBAL` | `on` | `off` stops talking to Annoy Global (needs a restart): no global accounts or Global-backed features here |
+| `ANNOY_GLOBAL_URL` | `https://global.geg.dev.br` | Annoy Global API |
 | `ANNOY_ANNOUNCED_IP` | default-route IP | Voice addresses for clients, comma-separated: **public IP first, LAN IP second** (each gets its own port: 40000, 40001…). Required in Docker |
 | `ANNOY_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
 | `ANNOY_CF_SFU_APP_ID` / `_TOKEN` | (empty) | Cloudflare Realtime SFU app credentials, used with `ANNOY_VOICE_BACKEND=cloudflare` |
