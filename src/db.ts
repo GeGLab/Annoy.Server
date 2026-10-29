@@ -150,6 +150,15 @@ db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_discord_id ON users(discord_id)
 if (!userColumns.includes("is_admin")) db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
 if (!userColumns.includes("banned_at")) db.exec("ALTER TABLE users ADD COLUMN banned_at TEXT");
 if (!userColumns.includes("ban_reason")) db.exec("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''");
+// Annoy Global (item 1.8): this server's identity for a global account, an Ed25519
+// public key unique to this server. Not the account's global ID, which no server sees.
+if (!userColumns.includes("global_id")) db.exec("ALTER TABLE users ADD COLUMN global_id TEXT");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_global_id ON users(global_id) WHERE global_id IS NOT NULL");
+db.exec(`CREATE TABLE IF NOT EXISTS global_spent_tokens (
+  hash     TEXT PRIMARY KEY,
+  kid      TEXT NOT NULL,
+  spent_at TEXT NOT NULL
+)`);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS instance_settings (

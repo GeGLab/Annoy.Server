@@ -7,6 +7,7 @@ import { db } from "./db.ts";
 import { HttpError } from "./errors.ts";
 import { registerGateway } from "./gateway.ts";
 import { syncConfiguredAdmin } from "./instance.ts";
+import { startGlobal } from "./global.ts";
 import { adminRoutes } from "./routes/admin.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { channelRoutes } from "./routes/channels.ts";
@@ -41,6 +42,7 @@ app.setErrorHandler((err, _req, reply) => {
 });
 
 syncConfiguredAdmin();
+startGlobal((msg) => app.log.info(msg));
 await startVoice();
 registerGateway(app);
 await app.register(

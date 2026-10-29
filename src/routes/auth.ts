@@ -1,4 +1,4 @@
-import { LIMITS, PROTOCOL_VERSION, type AuthResponse, type InstanceInfo } from "@distopic/protocol";
+import { LIMITS, PROTOCOL_VERSION, type AuthResponse, type InstanceInfo, type User } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { bearerToken, createSession, deleteSession, hashPassword, requireUser, verifyPassword } from "../auth.ts";
@@ -12,6 +12,7 @@ import { checkRegistration, consumeSignupInvite, getSettings, grantBootstrapAdmi
 import { sendToAudience } from "../events.ts";
 import { newId } from "../ids.ts";
 import { getUser } from "../repo.ts";
+import { globalLoginAvailable, globalServerId, newChallenge, verifyGlobalProof } from "../global.ts";
 import { parse } from "../validate.ts";
 
 const username = z
@@ -35,6 +36,28 @@ const deleteMe = z.object({
   deleteMessages: z.boolean().default(false),
 });
 const loginBody = z.object({ username: z.string(), password: z.string() });
+const b64url = z.string().max(2048).regex(/^[A-Za-z0-9_-]+$/);
+const globalProof = z.object({
+  identity: b64url,
+  challenge: b64url,
+  signature: b64url,
+  token: z.object({ kid: z.string().max(32), message: b64url, signature: b64url }),
+});
+const globalLogin = globalProof.extend({
+  username: username.optional(),
+  displayName: displayName.optional(),
+  inviteCode: z.string().trim().max(64).optional(),
+});
+
+/** The signed-in user's own profile, which also says whether it signs in with Annoy Global. */
+export function ownUser(id: string): User {
+  const global = one<{ global_id: string | null }>("SELECT global_id FROM users WHERE id = ?", id)?.global_id;
+  return { ...getUser(id)!, global: !!global };
+}
+
+function refuseBanned(row: { banned_at: string | null; ban_reason: string }): void {
+  if (row.banned_at) throw new HttpError(403, "banned", `Conta suspensa nesta instância${row.ban_reason ? `: ${row.ban_reason}` : ""}`);
+}
 const patchMe = z
   .object({ displayName: displayName.optional(), avatarUrl: z.null().optional() })
   .refine((body) => body.displayName !== undefined || body.avatarUrl === null, "Nenhuma alteração informada");
@@ -49,7 +72,60 @@ export function authRoutes(app: FastifyInstance): void {
       registrationOpen: registration !== "closed",
       registration,
       discordLogin: discordLoginEnabled(),
+      globalServerId: globalLoginAvailable() ? globalServerId() : null,
     };
+  });
+
+  // Annoy Global login (Annoy-api-global DESIGN.md): the client signs a one-time
+  // challenge with its identity for this server and shows a blind token.
+  app.post("/auth/global/challenge", async () => ({ challenge: newChallenge() }));
+
+  app.post("/auth/global", async (req): Promise<AuthResponse> => {
+    const body = parse(globalLogin, req.body);
+    const identity = verifyGlobalProof(body);
+    const existing = one<{ id: string; banned_at: string | null; ban_reason: string }>("SELECT id, banned_at, ban_reason FROM users WHERE global_id = ?", identity);
+    if (existing) {
+      refuseBanned(existing);
+      return { token: createSession(existing.id), user: ownUser(existing.id) };
+    }
+    // First time here: a new account on this server, under its registration rules.
+    if (!body.username) throw new HttpError(404, "global_new_account", "Escolha um nome de usuário para este servidor");
+    const invite = checkRegistration(body.inviteCode);
+    if (RESERVED_USERNAME.test(body.username)) throw badRequest('Os prefixos "dc." e "deleted." são reservados');
+    if (one("SELECT 1 AS x FROM users WHERE username = ?", body.username)) throw conflict("Nome de usuário em uso");
+    const id = newId();
+    // No password: "!" never matches a scrypt hash, so only the global login opens it.
+    run(
+      "INSERT INTO users (id, username, display_name, password_hash, global_id, created_at) VALUES (?, ?, ?, '!', ?, ?)",
+      id,
+      body.username,
+      body.displayName ?? body.username,
+      identity,
+      now(),
+    );
+    consumeSignupInvite(invite);
+    grantBootstrapAdmin(id, body.username);
+    return { token: createSession(id), user: ownUser(id) };
+  });
+
+  // Items 1.7 and 1.9: a local account starts signing in with Annoy Global too.
+  // Being logged in proves the local account; the proof, the global one.
+  app.post("/users/@me/global", async (req) => {
+    const userId = requireUser(req);
+    const identity = verifyGlobalProof(parse(globalProof, req.body));
+    const holder = one<{ id: string }>("SELECT id FROM users WHERE global_id = ?", identity);
+    if (holder && holder.id !== userId) throw conflict("Esta conta global já entra em outro usuário deste servidor");
+    run("UPDATE users SET global_id = ? WHERE id = ?", identity, userId);
+    return ownUser(userId);
+  });
+
+  app.delete("/users/@me/global", async (req) => {
+    const userId = requireUser(req);
+    const row = one<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = ?", userId)!;
+    // Without a password the account would have no way in left.
+    if (!row.password_hash.startsWith("scrypt$")) throw badRequest("Defina uma senha local antes de desligar a conta global");
+    run("UPDATE users SET global_id = NULL WHERE id = ?", userId);
+    return ownUser(userId);
   });
 
   app.post("/auth/register", async (req): Promise<AuthResponse> => {
@@ -68,7 +144,7 @@ export function authRoutes(app: FastifyInstance): void {
     );
     consumeSignupInvite(invite);
     grantBootstrapAdmin(id, body.username);
-    return { token: createSession(id), user: getUser(id)! };
+    return { token: createSession(id), user: ownUser(id) };
   });
 
   app.post("/auth/login", async (req): Promise<AuthResponse> => {
@@ -80,8 +156,8 @@ export function authRoutes(app: FastifyInstance): void {
     if (!row || !(await verifyPassword(body.password, row.password_hash))) {
       throw new HttpError(401, "invalid_credentials", "Usuário ou senha incorretos");
     }
-    if (row.banned_at) throw new HttpError(403, "banned", `Conta suspensa nesta instância${row.ban_reason ? `: ${row.ban_reason}` : ""}`);
-    return { token: createSession(row.id), user: getUser(row.id)! };
+    refuseBanned(row);
+    return { token: createSession(row.id), user: ownUser(row.id) };
   });
 
   app.post("/auth/logout", async (req) => {
@@ -90,7 +166,7 @@ export function authRoutes(app: FastifyInstance): void {
     return {};
   });
 
-  app.get("/users/@me", async (req) => getUser(requireUser(req)) ?? Promise.reject(notFound("Usuário")));
+  app.get("/users/@me", async (req) => ownUser(requireUser(req)));
 
   app.patch("/users/@me", async (req) => {
     const userId = requireUser(req);
