@@ -173,7 +173,7 @@ export function setSelfState(conn: Connection, selfMute: boolean, selfDeaf: bool
   if (!peer || !state) return;
   state.selfMute = selfMute || selfDeaf;
   state.selfDeaf = selfDeaf;
-  if (quality && [480, 720, 1080, 1440, 2160].includes(quality.height) && [15, 24, 30, 60, 120].includes(quality.fps)) state.screenQuality = { height: quality.height, fps: quality.fps, ...([854, 1280, 1920, 2048, 2560, 3840].includes(quality.width ?? 0) && { width: quality.width }) };
+  if (quality && [0, 480, 720, 1080, 1440, 2160].includes(quality.height) && [0, 15, 24, 30, 60, 120].includes(quality.fps)) state.screenQuality = { height: quality.height, fps: quality.fps, ...([0, 854, 1280, 1920, 2048, 2560, 3840].includes(quality.width ?? 0) && { width: quality.width }) };
   publishState(peer.userId, peer.serverId);
 }
 
