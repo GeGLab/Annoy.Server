@@ -448,6 +448,8 @@ export type VoiceMethod =
   | "publish"
   | "subscribe"
   | "renegotiate"
+  /** Takes back a Cloudflare session after a reconnect or a server restart, without renegotiating media. */
+  | "resume"
   | "leave";
 
 /** Where voice media flows: the built-in mediasoup SFU, or Cloudflare's Realtime SFU (works behind CGNAT). */

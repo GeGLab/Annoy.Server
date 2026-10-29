@@ -6,7 +6,7 @@
 // Each client has one Cloudflare session (one RTCPeerConnection). Publishing
 // sends the client's offer; subscribing asks Cloudflare for an offer that the
 // client answers through `renegotiate`.
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { has, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
 import { config } from "./config.ts";
 import { sourceFor } from "./media-source.ts";
@@ -77,6 +77,8 @@ interface Published {
 
 interface Peer {
   conn: Connection;
+  /** Set while the socket is gone: the session keeps flowing until the client resumes or the grace ends. */
+  detached?: ReturnType<typeof setTimeout>;
   userId: string;
   serverId: string;
   channelId: string;
@@ -165,9 +167,52 @@ async function setBlocked(peer: Peer, track: Published, blocked: boolean): Promi
   else announce(peer, track);
 }
 
+/** How long a dropped socket keeps its voice session for the client to resume. */
+const DETACH_GRACE_MS = 20_000;
+/** After a server restart, tracks still pulled from peers that never came back are dropped after this. */
+const ORPHAN_GRACE_MS = 25_000;
+
+/**
+ * The gateway socket closed, but media flows through Cloudflare, not through
+ * this server: keep the session so a reconnecting client resumes without a gap.
+ */
+export function detachVoice(conn: Connection): void {
+  const peer = peersByConn.get(conn.id);
+  if (!peer || peer.detached) return;
+  peer.detached = setTimeout(() => {
+    if (peersByConn.get(conn.id) === peer) leaveVoice(conn);
+  }, DETACH_GRACE_MS);
+}
+
+/** Proves a client owns a Cloudflare session, across restarts (the app token is the key). */
+const resumeToken = (userId: string, sessionId: string) =>
+  createHmac("sha256", config.voice.cloudflare.appToken).update(`annoy-voice-resume:${userId}:${sessionId}`).digest("base64url");
+
+function validResumeToken(userId: string, sessionId: string, token: unknown): boolean {
+  if (typeof token !== "string") return false;
+  const expected = Buffer.from(resumeToken(userId, sessionId));
+  const given = Buffer.from(token);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+/** Tells receivers to drop tracks whose publisher never resumed after a restart. */
+function dropOrphanPulls(): void {
+  const live = new Set<string>();
+  for (const peer of peersByConn.values()) for (const name of peer.published.keys()) live.add(name);
+  for (const peer of peersByConn.values()) {
+    for (const [trackName, mid] of [...peer.pulled]) {
+      if (live.has(trackName)) continue;
+      peer.pulled.delete(trackName);
+      peer.conn.send({ t: "VOICE_PRODUCER_CLOSED", d: { producerId: trackName } });
+      void cf("PUT", `/sessions/${peer.sessionId}/tracks/close`, { tracks: [{ mid }], force: true }).catch(() => undefined);
+    }
+  }
+}
+
 export function leaveVoice(conn: Connection): void {
   const peer = peersByConn.get(conn.id);
   if (!peer) return;
+  clearTimeout(peer.detached);
   peersByConn.delete(conn.id);
   // Receivers drop the tracks; Cloudflare ends the session when the client's connection closes.
   for (const track of peer.published.values()) {
@@ -292,7 +337,81 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         screen: false,
       });
       publishState(userId, channel.serverId);
-      return { backend: "cloudflare", iceServers: ICE_SERVERS, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM) && budget.level() === "ok", screenAudio: true };
+      return {
+        backend: "cloudflare",
+        iceServers: ICE_SERVERS,
+        canSpeak: has(perms, Permission.SPEAK),
+        canStream: has(perms, Permission.STREAM) && budget.level() === "ok",
+        screenAudio: true,
+        sessionId: session.sessionId,
+        resumeToken: resumeToken(userId, session.sessionId),
+      };
+    }
+
+    case "resume": {
+      const channelId = str(data, "channelId");
+      const sessionId = str(data, "sessionId");
+      if (!validResumeToken(userId, sessionId, data.resumeToken)) throw forbidden("Sessão de voz inválida");
+      const channel = getChannel(channelId);
+      const perms = channel ? channelPermissions(channel, userId) : 0;
+      if (!channel || channel.type !== "voice" || !channel.serverId || !has(perms, Permission.VIEW_CHANNEL)) throw notFound("Canal de voz");
+      if (!has(perms, Permission.CONNECT)) throw forbidden("Sem permissão para conectar");
+      if (budget.level() === "off") throw forbidden(VOICE_PAUSED);
+      // Same server process: the session is still here, just re-attach it to the new socket.
+      let peer = [...peersByConn.values()].find((p) => p.userId === userId && p.sessionId === sessionId);
+      if (peer) {
+        clearTimeout(peer.detached);
+        peer.detached = undefined;
+        peersByConn.delete(peer.conn.id);
+        peer.conn = conn;
+      } else {
+        // The server restarted: rebuild what the client says its session carries.
+        const published = new Map<string, Published>();
+        for (const raw of Array.isArray(data.published) ? (data.published as Record<string, unknown>[]) : []) {
+          const kind = raw.kind === "video" ? "video" : raw.kind === "audio" ? "audio" : null;
+          const source = sourceFor(kind, raw.source);
+          const trackName = typeof raw.trackName === "string" ? raw.trackName : "";
+          const mid = typeof raw.mid === "string" ? raw.mid : "";
+          if (!kind || !source || !trackName.startsWith(`${source}-`) || !mid) continue;
+          published.set(trackName, { trackName, mid, kind, source, rate: budget.rateFor(source, raw.maxBitrate), blocked: false });
+        }
+        const pulled = new Map<string, string>();
+        for (const raw of Array.isArray(data.pulled) ? (data.pulled as Record<string, unknown>[]) : []) {
+          if (typeof raw.trackName === "string" && typeof raw.mid === "string") pulled.set(raw.trackName, raw.mid);
+        }
+        peer = { conn, userId, serverId: channel.serverId, channelId, sessionId, published, pulled };
+        setTimeout(dropOrphanPulls, ORPHAN_GRACE_MS).unref();
+      }
+      for (const other of [...peersByConn.values()]) if (other.userId === userId && other !== peer) kick(other, "Conectado em outro dispositivo");
+      peersByConn.set(conn.id, peer);
+      const previous = states.get(userId);
+      states.set(userId, {
+        userId,
+        serverId: channel.serverId,
+        channelId,
+        selfMute: data.selfMute === true,
+        selfDeaf: data.selfDeaf === true,
+        serverMute: previous?.channelId === channelId ? previous.serverMute : false,
+        speaking: false,
+        video: false,
+        screen: false,
+      });
+      refreshMediaFlags(peer);
+      publishState(userId, channel.serverId);
+      // Permissions may have changed while away; blocked tracks stop reaching others.
+      for (const track of peer.published.values()) {
+        void setBlocked(peer, track, !canPublish(peer, track.source) || (track.source === "mic" && (states.get(userId)?.serverMute ?? false)));
+      }
+      const producers: { producerId: string; userId: string; kind: "audio" | "video"; source: MediaSource }[] = [];
+      for (const other of roomPeers(channelId)) {
+        if (other === peer) continue;
+        for (const t of other.published.values()) if (!t.blocked) producers.push({ producerId: t.trackName, userId: other.userId, kind: t.kind, source: t.source });
+      }
+      return {
+        canSpeak: has(perms, Permission.SPEAK),
+        canStream: has(perms, Permission.STREAM) && budget.level() === "ok",
+        producers,
+      };
     }
 
     case "publish": {

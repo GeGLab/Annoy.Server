@@ -124,6 +124,11 @@ function roomOf(peer: Peer): Room {
 }
 
 /** Releases every media resource of the connection's voice session. */
+/** Media runs through this process, so a dropped socket ends the session right away. */
+export function detachVoice(conn: Connection): void {
+  leaveVoice(conn);
+}
+
 export function leaveVoice(conn: Connection): void {
   const peer = peersByConn.get(conn.id);
   if (!peer) return;
