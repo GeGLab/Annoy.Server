@@ -69,7 +69,7 @@ await app.listen({ host: config.host, port: config.port });
 // Voice media goes straight to the announced address; a container or loopback address reaches nobody.
 if (config.voice.backend === "builtin" && config.voice.announcedAddresses.length === 0 && voiceAddresses().every((a) => /^(127\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a))) {
   app.log.warn(
-    `Voz anunciada em ${voiceAddresses().join(", ")}, um endereço interno (Docker ou loopback): outras máquinas não vão conseguir falar. Defina DISTOPIC_ANNOUNCED_IP com o IP público e o da LAN.`,
+    `Voz anunciada em ${voiceAddresses().join(", ")}, um endereço interno (Docker ou loopback): outras máquinas não vão conseguir falar. Defina ANNOY_ANNOUNCED_IP com o IP público e o da LAN.`,
   );
 }
 app.log.info(

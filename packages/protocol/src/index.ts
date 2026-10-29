@@ -1,4 +1,4 @@
-// Shared wire contract between the Distopic server and client.
+// Shared wire contract between the Annoy server and client.
 // The server is the authority; the client uses the same permission
 // computation only to decide which controls to show.
 
@@ -387,6 +387,18 @@ export interface AdminOverview {
   serverCount: number;
   messageCount: number;
   uploadsBytes: number;
+  /** Estimated Cloudflare SFU egress this month; null with the built-in backend. */
+  voiceUsage: VoiceUsage | null;
+}
+
+export interface VoiceUsage {
+  /** UTC month, "YYYY-MM". */
+  month: string;
+  bytes: number;
+  /** 0 = no budget. */
+  limitBytes: number;
+  /** "video_off": cameras and screens are paused; "off": voice is paused too. */
+  level: "ok" | "video_off" | "off";
 }
 
 // ---------------------------------------------------------------------------

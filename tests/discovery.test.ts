@@ -9,6 +9,7 @@ import { WebSocket } from "ws";
 import { once } from "node:events";
 const root = resolve(tmpdir()),
   directory = await mkdtemp(join(root, "distopic-discovery-"));
+process.env.ANNOY_DATA_DIR = directory;
 process.env.DISTOPIC_DATA_DIR = directory;
 const { db, run } = await import("../src/db.ts"),
   { createSession } = await import("../src/auth.ts"),

@@ -1,4 +1,4 @@
-# Distopic server: one process for REST, gateway and voice (SFU).
+# Annoy server: one process for REST, gateway and voice (SFU).
 FROM node:24-bookworm-slim
 
 # Fallback toolchain in case mediasoup has no prebuilt worker for this platform.
@@ -13,9 +13,9 @@ RUN npm ci --omit=dev
 
 COPY src src
 
-ENV DISTOPIC_DATA_DIR=/data \
-    DISTOPIC_PORT=8787 \
-    DISTOPIC_VOICE_PORT=40000
+ENV ANNOY_DATA_DIR=/data \
+    ANNOY_PORT=8787 \
+    ANNOY_VOICE_PORT=40000
 VOLUME /data
 EXPOSE 8787/tcp 40000/udp 40000/tcp
 

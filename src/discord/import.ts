@@ -21,7 +21,7 @@ import { getServer } from "../repo.ts";
 import { discardBlobs, writeBlob } from "../uploads.ts";
 import { avatarUrlOf, DiscordError, DiscordRest, isDiscordCdn, snowflakeTime, type DChannel, type DGuild, type DMessage, type DUser } from "./rest.ts";
 
-// Discord -> Distopic mapping ------------------------------------------------
+// Discord -> Annoy mapping ------------------------------------------------
 
 const TEXT_TYPES = new Set([0, 5]); // text, announcement
 const VOICE_TYPES = new Set([2, 13]); // voice, stage
@@ -241,7 +241,7 @@ async function runImport(r: Running, req: ImportRequest): Promise<void> {
   }
 }
 
-/** Discord channel id -> Distopic channel id, per job, for the message phase. */
+/** Discord channel id -> Annoy channel id, per job, for the message phase. */
 const channelMap = new Map<string, Map<string, string>>();
 
 function importStructure(r: Running, req: ImportRequest, guild: DGuild, channels: DChannel[]): string {
@@ -305,7 +305,7 @@ function importStructure(r: Running, req: ImportRequest, guild: DGuild, channels
       );
       if (!req.overwrites) continue;
       for (const ow of c.permission_overwrites ?? []) {
-        // Discord members are not Distopic accounts, so member overwrites have no target.
+        // Discord members are not Annoy accounts, so member overwrites have no target.
         if (ow.type === 1) {
           skippedMemberOverwrites++;
           continue;

@@ -1,6 +1,6 @@
 <div align="center">
 
-# Distopic Server
+# Annoy Server
 
 **Self-hosted voice and text chat. Host it like TeamSpeak, use it like Discord.**
 
@@ -11,20 +11,20 @@
 
 **English** · [Português (Brasil)](README.pt-BR.md)
 
-[Features](#features) · [Quick start](#quick-start) · [Configuration](#configuration) · [Discord integration](#discord-integration) · [API](#architecture) · [Client](https://github.com/GustavoHSCruz/distopic-client)
+[Features](#features) · [Quick start](#quick-start) · [Configuration](#configuration) · [Discord integration](#discord-integration) · [API](#architecture) · [Client](https://github.com/GeGLab/annoy-client)
 
-<img src="docs/screenshots/chat-and-voice.png" alt="Distopic: text channels, voice channel with connected members, member list with roles" width="860">
+<img src="docs/screenshots/chat-and-voice.png" alt="Annoy: text channels, voice channel with connected members, member list with roles" width="860">
 
 <sub>Screenshots show the English labels planned for localization; the current client UI is in Portuguese (pt-BR).</sub>
 
 </div>
 
-## Why Distopic?
+## Why Annoy?
 
-Your community's chat should run on hardware you control. Distopic is a single
+Your community's chat should run on hardware you control. Annoy is a single
 process you start on a home server, VPS or Raspberry-class machine. It has no
 cloud account, telemetry or external database. You point the
-[desktop client](https://github.com/GustavoHSCruz/distopic-client) at its
+[desktop client](https://github.com/GeGLab/annoy-client) at its
 address and get the features people expect from Discord: servers, channels,
 roles, voice, DMs and friends.
 
@@ -47,26 +47,27 @@ community gradually instead of all at once.
 ## Quick start
 
 > **Only the host runs this.** One person sets up the server, once. Everyone
-> else just installs the [client](https://github.com/GustavoHSCruz/distopic-client)
+> else just installs the [client](https://github.com/GeGLab/annoy-client)
 > and joins with the server address and an invite code, like a TeamSpeak server.
 
 ### Docker (recommended)
 
 ```bash
-git clone https://github.com/GustavoHSCruz/distopic-server.git
-cd distopic-server
-DISTOPIC_ANNOUNCED_IP=203.0.113.10 docker compose up -d
+git clone https://github.com/GeGLab/annoy-server.git
+cd annoy-server
+cp .env.example .env   # set ANNOY_ANNOUNCED_IP to your public IP (and LAN IP)
+docker compose up -d
 ```
 
-This pulls the published image `ghcr.io/gustavohscruz/distopic-server`. Pin a
-version with `DISTOPIC_VERSION=0.1.0`, or build from source with
+This pulls the published image `ghcr.io/geglab/annoy-server`. Pin a
+version with `ANNOY_VERSION=0.3.1`, or build from source with
 `docker compose up -d --build`. Without Compose:
 
 ```bash
-docker run -d --name distopic --restart unless-stopped \
+docker run -d --name annoy --restart unless-stopped \
   -p 8787:8787 -p 40000:40000/udp -p 40000:40000/tcp \
-  -e DISTOPIC_ANNOUNCED_IP=203.0.113.10 -v distopic-data:/data \
-  ghcr.io/gustavohscruz/distopic-server:latest
+  -e ANNOY_ANNOUNCED_IP=203.0.113.10 -v annoy-data:/data \
+  ghcr.io/geglab/annoy-server:latest
 ```
 
 Replace `203.0.113.10` with the address clients use to reach the machine: your
@@ -76,6 +77,16 @@ LAN IP for home use, or the public IP on the internet. Open these ports:
 | --- | --- | --- |
 | `8787` | TCP | REST API and WebSocket gateway |
 | `40000` | **UDP and TCP** | Voice media |
+
+**Upgrading from Distopic (0.2):** the project is now Annoy. Settings were
+renamed from `DISTOPIC_*` to `ANNOY_*`; the old names keep working. Data stays
+in the same volume. Point the remote at the new repository and remove the old
+container:
+
+```bash
+git remote set-url origin https://github.com/GeGLab/annoy-server.git
+git pull && docker compose pull && docker compose up -d --remove-orphans
+```
 
 ### From source
 
@@ -87,8 +98,8 @@ npm run dev      # watch mode
 npm start        # production
 ```
 
-Then open the [Distopic client](https://github.com/GustavoHSCruz/distopic-client),
-choose **Conectar a um servidor Distopic** (Connect to a Distopic server), type the address (port `8787` is the
+Then open the [Annoy client](https://github.com/GeGLab/annoy-client),
+choose **Conectar a um servidor Annoy** (Connect to an Annoy server), type the address (port `8787` is the
 default) and create an account. The first person creates a server and shares
 an invite.
 
@@ -98,32 +109,32 @@ All settings are environment variables. See [`.env.example`](.env.example).
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DISTOPIC_NAME` | `Distopic` | Instance name shown in the client |
-| `DISTOPIC_HOST` | `0.0.0.0` | Bind address |
-| `DISTOPIC_PORT` | `8787` | API and gateway port |
-| `DISTOPIC_VOICE_PORT` | `40000` | Voice media port (UDP and TCP) |
-| `DISTOPIC_ANNOUNCED_IP` | default-route IP | Voice addresses for clients, comma-separated: **public IP first, LAN IP second** (each gets its own port: 40000, 40001…). Required in Docker |
-| `DISTOPIC_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
-| `DISTOPIC_CF_SFU_APP_ID` / `_TOKEN` | (empty) | Cloudflare Realtime SFU app credentials, used with `DISTOPIC_VOICE_BACKEND=cloudflare` |
-| `DISTOPIC_REGISTRATION` | `invite` | Initial sign-up mode: `open`, `invite` or `closed`. The admin can change it in the app |
-| `DISTOPIC_ADMIN` | (empty) | Username that is always an instance admin. Otherwise the first account is |
-| `DISTOPIC_MAX_SERVERS_PER_USER` | unlimited | Initial limit of servers per account (admin-editable) |
-| `DISTOPIC_MAX_UPLOAD_MB` | `25` | Initial maximum size per attachment (admin-editable) |
-| `DISTOPIC_DISCORD_CLIENT_ID` | (empty) | Enables "Sign in with Discord" (with the secret) |
-| `DISTOPIC_DISCORD_CLIENT_SECRET` | (empty) | Discord OAuth2 client secret |
-| `DISTOPIC_PUBLIC_URL` | request origin | Public origin for OAuth redirects behind a proxy |
+| `ANNOY_NAME` | `Annoy` | Instance name shown in the client |
+| `ANNOY_HOST` | `0.0.0.0` | Bind address |
+| `ANNOY_PORT` | `8787` | API and gateway port |
+| `ANNOY_VOICE_PORT` | `40000` | Voice media port (UDP and TCP) |
+| `ANNOY_ANNOUNCED_IP` | default-route IP | Voice addresses for clients, comma-separated: **public IP first, LAN IP second** (each gets its own port: 40000, 40001…). Required in Docker |
+| `ANNOY_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
+| `ANNOY_CF_SFU_APP_ID` / `_TOKEN` | (empty) | Cloudflare Realtime SFU app credentials, used with `ANNOY_VOICE_BACKEND=cloudflare` |
+| `ANNOY_REGISTRATION` | `invite` | Initial sign-up mode: `open`, `invite` or `closed`. The admin can change it in the app |
+| `ANNOY_ADMIN` | (empty) | Username that is always an instance admin. Otherwise the first account is |
+| `ANNOY_MAX_SERVERS_PER_USER` | unlimited | Initial limit of servers per account (admin-editable) |
+| `ANNOY_MAX_UPLOAD_MB` | `25` | Initial maximum size per attachment (admin-editable) |
+| `ANNOY_DISCORD_CLIENT_ID` | (empty) | Enables "Sign in with Discord" (with the secret) |
+| `ANNOY_DISCORD_CLIENT_SECRET` | (empty) | Discord OAuth2 client secret |
+| `ANNOY_PUBLIC_URL` | request origin | Public origin for OAuth redirects behind a proxy |
 
 The API speaks plain HTTP. For internet exposure, put a TLS reverse proxy (Caddy,
 nginx, Cloudflare Tunnel) in front of port `8787` and connect with
 `https://your.domain`. Voice media is already encrypted (DTLS-SRTP).
 
-**Backups:** copy `DISTOPIC_DATA_DIR`. It holds `distopic.db` (SQLite, WAL mode) and
+**Backups:** copy `ANNOY_DATA_DIR`. It holds `distopic.db` (SQLite, WAL mode) and
 `uploads/`.
 
 ## Instance administration
 
 Whoever hosts the instance administers it: the account named in
-`DISTOPIC_ADMIN`, or else the first account created. In the client, open
+`ANNOY_ADMIN`, or else the first account created. In the client, open
 **Settings → your account → Administrar instância** to:
 
 - choose how new accounts are created: **open**, **invite only** (default) or **closed**
@@ -144,7 +155,7 @@ public brings legal duties (in Brazil, the LGPD).
 Text and the API work through any HTTP proxy or tunnel, but voice and video
 use WebRTC, which needs a reachable UDP/TCP port. Pick one:
 
-- **Public IP, or a LAN only:** set `DISTOPIC_ANNOUNCED_IP=<public>,<lan>` and
+- **Public IP, or a LAN only:** set `ANNOY_ANNOUNCED_IP=<public>,<lan>` and
   forward port `40000` (UDP and TCP) to the host. Friends outside use the
   public address, people at home use the LAN one.
 - **CGNAT or no port forwarding (e.g. behind a Cloudflare Tunnel):** use
@@ -152,18 +163,24 @@ use WebRTC, which needs a reachable UDP/TCP port. Pick one:
   **Realtime → SFU**, then set:
 
   ```bash
-  DISTOPIC_VOICE_BACKEND=cloudflare
-  DISTOPIC_CF_SFU_APP_ID=<app id>
-  DISTOPIC_CF_SFU_APP_TOKEN=<app token>
+  ANNOY_VOICE_BACKEND=cloudflare
+  ANNOY_CF_SFU_APP_ID=<app id>
+  ANNOY_CF_SFU_APP_TOKEN=<app token>
   ```
 
   Media then flows between each client and Cloudflare. This server still
   decides who may speak, stream and receive each track; the token never leaves
   it. Check Cloudflare's pricing page for the current free allowance.
 
+  Cloudflare has no spending cap, so the server keeps its own monthly budget
+  (`ANNOY_CF_SFU_MONTHLY_GB`, default `1000`; `0` turns it off). It
+  estimates egress from the tracks each client receives, at their full
+  bitrate. At 80% it pauses cameras and screen shares, at 95% it pauses voice
+  until the next month. The instance admin panel shows the month's usage.
+
 ## Discord integration
 
-Distopic never uses your personal Discord session. Both features below use
+Annoy never uses your personal Discord session. Both features below use
 Discord's **official, documented APIs**, so they don't put accounts at risk.
 
 ### Importing a Discord server
@@ -194,7 +211,7 @@ not imported. The bot token is used only during the import and is never stored.
 1. Use the same Developer Portal application. Under **OAuth2 → Redirects**, add
    `https://your.domain/api/auth/discord/callback`, matching the address clients
    connect to.
-2. Set `DISTOPIC_DISCORD_CLIENT_ID` and `DISTOPIC_DISCORD_CLIENT_SECRET`.
+2. Set `ANNOY_DISCORD_CLIENT_ID` and `ANNOY_DISCORD_CLIENT_SECRET`.
 
 Users get a **Sign in with Discord** button. Existing accounts can link Discord
 in Settings, which also refreshes their name and avatar later. If someone's
@@ -243,4 +260,4 @@ tests when you touch `voice.ts`.
 
 [MIT](LICENSE) © Gustavo Cruz
 
-Distopic is not affiliated with or endorsed by Discord Inc. or TeamSpeak Systems GmbH.
+Annoy is not affiliated with or endorsed by Discord Inc. or TeamSpeak Systems GmbH.

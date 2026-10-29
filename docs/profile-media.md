@@ -2,8 +2,8 @@
 
 Install the updated dependencies with `npm ci` and restart the server using
 the existing deployment procedure. No schema migration is required: profile
-photos use the existing `users.avatar_url` column. Keep `DISTOPIC_DATA_DIR/avatars` on
-persistent storage alongside the database/uploads. Set `DISTOPIC_PUBLIC_URL` to the
+photos use the existing `users.avatar_url` column. Keep `ANNOY_DATA_DIR/avatars` on
+persistent storage alongside the database/uploads. Set `ANNOY_PUBLIC_URL` to the
 externally reachable instance origin when running behind a reverse proxy.
 
 ## Profile API

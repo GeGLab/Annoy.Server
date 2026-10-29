@@ -10,6 +10,7 @@ import sharp from "sharp";
 
 const tempRoot = resolve(tmpdir());
 const directory = await mkdtemp(join(tempRoot, "distopic-profile-test-"));
+process.env.ANNOY_DATA_DIR = directory;
 process.env.DISTOPIC_DATA_DIR = directory;
 const { authRoutes } = await import("../src/routes/auth.ts");
 const { channelRoutes } = await import("../src/routes/channels.ts");
