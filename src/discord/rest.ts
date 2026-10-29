@@ -2,7 +2,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
 const API = "https://discord.com/api/v10";
-const USER_AGENT = "DiscordBot (https://github.com/GeGLab/annoy-server, 0.3.1)";
+const USER_AGENT = "DiscordBot (https://github.com/GeGLab/annoy-server, 0.4.0)";
 const MAX_RETRIES = 6;
 
 export interface DUser {
