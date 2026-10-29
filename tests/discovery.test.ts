@@ -64,6 +64,8 @@ run("INSERT INTO attachments(id,message_id,filename,size,content_type) VALUES('f
 const auth = (user: string) => ({ authorization: `Bearer ${tokens[user]}` });
 after(async () => {
   await app.close();
+  // Gateway sockets emit "close" after app.close resolves; their handlers still read the database.
+  await new Promise((resolve) => setTimeout(resolve, 100));
   db.close();
   if (dirname(directory) !== root || !basename(directory).startsWith("distopic-discovery-")) throw new Error("Unsafe temp path");
   await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
