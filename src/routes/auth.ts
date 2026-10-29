@@ -26,6 +26,7 @@ const registerBody = z.object({
   username,
   password: z.string().min(LIMITS.passwordMin).max(256),
   displayName: displayName.optional(),
+    bio: z.string().max(1000).optional(),
   inviteCode: z.string().trim().max(64).optional(),
 });
 const deleteMe = z.object({
@@ -36,8 +37,9 @@ const deleteMe = z.object({
 });
 const loginBody = z.object({ username: z.string(), password: z.string() });
 const patchMe = z
-  .object({ displayName: displayName.optional(), avatarUrl: z.null().optional() })
-  .refine((body) => body.displayName !== undefined || body.avatarUrl === null, "Nenhuma alteração informada");
+  .object({ displayName: displayName.optional(),
+    bio: z.string().max(1000).optional(), avatarUrl: z.null().optional() })
+  .refine((body) => body.displayName !== undefined || body.bio !== undefined || body.avatarUrl === null, "Nenhuma alteração informada");
 
 export function authRoutes(app: FastifyInstance): void {
   app.get("/info", async (): Promise<InstanceInfo> => {
@@ -98,6 +100,7 @@ export function authRoutes(app: FastifyInstance): void {
     const previous = tx(() => {
       const old = getUser(userId)!;
       if (body.displayName !== undefined) run("UPDATE users SET display_name = ? WHERE id = ?", body.displayName, userId);
+      if (body.bio !== undefined) run("UPDATE users SET bio = ? WHERE id = ?", body.bio, userId);
       if (body.avatarUrl === null) run("UPDATE users SET avatar_url = NULL WHERE id = ?", userId);
       return old.avatarUrl;
     });

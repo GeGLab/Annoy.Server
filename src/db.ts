@@ -144,6 +144,9 @@ if (!userColumns.includes("imported_from")) {
   db.exec("ALTER TABLE users ADD COLUMN imported_from TEXT");
 }
 if (!userColumns.includes("discord_id")) db.exec("ALTER TABLE users ADD COLUMN discord_id TEXT");
+if (!userColumns.includes("bio")) db.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
+const relationshipColumns = (db.prepare("PRAGMA table_info(relationships)").all() as { name: string }[]).map((c) => c.name);
+if (!relationshipColumns.includes("nickname")) db.exec("ALTER TABLE relationships ADD COLUMN nickname TEXT NOT NULL DEFAULT ''");
 if (!userColumns.includes("avatar_url")) db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_imported_from ON users(imported_from) WHERE imported_from IS NOT NULL");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_discord_id ON users(discord_id) WHERE discord_id IS NOT NULL");
