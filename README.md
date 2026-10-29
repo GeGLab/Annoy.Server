@@ -240,7 +240,8 @@ copy and syncs it with `npm run sync:protocol`.
 
 - [ ] English UI and localization in the client
 - [ ] Global push-to-talk hotkey in the client
-- [ ] Custom avatars and server icons
+- [x] Custom profile avatars ([API and deployment](docs/profile-media.md))
+- [ ] Custom server icons
 - [ ] API rate limiting
 - [ ] Packaged client builds (AppImage, Windows, macOS)
 

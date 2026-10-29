@@ -175,6 +175,15 @@ if (!db.prepare("SELECT 1 FROM instance_settings WHERE key = 'migration.stream_p
 }
 
 type Row = Record<string, SQLInputValue>;
+// External-content FTS keeps storage compact; triggers cover edits, imports and deletion.
+const hasSearch = !!db.prepare("SELECT 1 FROM sqlite_master WHERE name='messages_search'").get();
+db.exec(`
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_search USING fts5(content, content='messages', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
+CREATE TRIGGER IF NOT EXISTS messages_search_insert AFTER INSERT ON messages BEGIN INSERT INTO messages_search(rowid,content) VALUES(new.rowid,new.content); END;
+CREATE TRIGGER IF NOT EXISTS messages_search_delete AFTER DELETE ON messages BEGIN INSERT INTO messages_search(messages_search,rowid,content) VALUES('delete',old.rowid,old.content); END;
+CREATE TRIGGER IF NOT EXISTS messages_search_update AFTER UPDATE OF content ON messages BEGIN INSERT INTO messages_search(messages_search,rowid,content) VALUES('delete',old.rowid,old.content); INSERT INTO messages_search(rowid,content) VALUES(new.rowid,new.content); END;
+`);
+if (!hasSearch) db.exec("INSERT INTO messages_search(messages_search) VALUES('rebuild')");
 
 export function one<T = Row>(sql: string, ...params: SQLInputValue[]): T | undefined {
   return db.prepare(sql).get(...params) as T | undefined;

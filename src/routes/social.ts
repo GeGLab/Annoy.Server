@@ -8,6 +8,7 @@ import { sendToUser } from "../events.ts";
 import { newId } from "../ids.ts";
 import { findDm, getDmChannel, getRelationships, getUser, getUserByName, relationshipStatus } from "../repo.ts";
 import { parse, type Params } from "../validate.ts";
+import { refreshFriendActivities } from "../activity.ts";
 
 const requestBody = z.object({ username: z.string().trim().min(1) });
 const dmBody = z.object({ userId: z.string().min(1) });
@@ -30,7 +31,8 @@ function setFriends(a: string, b: string): void {
 function canMessage(a: string, b: string): boolean {
   return (
     relationshipStatus(a, b) === "friend" ||
-    one("SELECT 1 AS x FROM members m1 JOIN members m2 ON m2.server_id = m1.server_id WHERE m1.user_id = ? AND m2.user_id = ?", a, b) !== undefined
+    one("SELECT 1 AS x FROM members m1 JOIN members m2 ON m2.server_id = m1.server_id WHERE m1.user_id = ? AND m2.user_id = ?", a, b) !==
+      undefined
   );
 }
 
@@ -43,7 +45,12 @@ export function socialRoutes(app: FastifyInstance): void {
     const other = getUserByName(body.username);
     if (!other) throw notFound("Usuário");
     if (other.id === userId) throw badRequest("Você não pode adicionar a si mesmo");
-    if (one("SELECT 1 AS x FROM users WHERE id = ? AND (imported_from IS NOT NULL OR username LIKE 'deleted.%' OR banned_at IS NOT NULL)", other.id)) {
+    if (
+      one(
+        "SELECT 1 AS x FROM users WHERE id = ? AND (imported_from IS NOT NULL OR username LIKE 'deleted.%' OR banned_at IS NOT NULL)",
+        other.id,
+      )
+    ) {
       throw badRequest("Este perfil não pode receber pedidos de amizade");
     }
     const mine = relationshipStatus(userId, other.id);
@@ -56,6 +63,7 @@ export function socialRoutes(app: FastifyInstance): void {
       });
     notifyRelationship(userId, other.id);
     notifyRelationship(other.id, userId);
+    refreshFriendActivities(userId, other.id);
     return {};
   });
 
@@ -66,15 +74,23 @@ export function socialRoutes(app: FastifyInstance): void {
     setFriends(userId, otherId);
     notifyRelationship(userId, otherId);
     notifyRelationship(otherId, userId);
+    refreshFriendActivities(userId, otherId);
     return {};
   });
 
   app.delete<Params<"userId">>("/relationships/:userId", async (req) => {
     const userId = requireUser(req);
     const otherId = req.params.userId;
-    run("DELETE FROM relationships WHERE (user_id = ? AND other_id = ?) OR (user_id = ? AND other_id = ?)", userId, otherId, otherId, userId);
+    run(
+      "DELETE FROM relationships WHERE (user_id = ? AND other_id = ?) OR (user_id = ? AND other_id = ?)",
+      userId,
+      otherId,
+      otherId,
+      userId,
+    );
     notifyRelationship(userId, otherId);
     notifyRelationship(otherId, userId);
+    refreshFriendActivities(userId, otherId);
     return {};
   });
 

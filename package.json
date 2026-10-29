@@ -9,6 +9,8 @@
     "packages/*"
   ],
   "scripts": {
+    "test:profile": "node --import tsx --test tests/profile-media.test.ts",
+    "test:discovery": "node --import tsx --test tests/discovery.test.ts",
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p . && tsc -p packages/protocol"
@@ -23,6 +25,7 @@
     "@fastify/websocket": "^11.3.4",
     "fastify": "^5.12.7",
     "mediasoup": "^3.32.0",
+    "sharp": "^0.35.5",
     "tsx": "^4.23.15",
     "zod": "^4.6.7"
   },

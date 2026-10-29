@@ -14,6 +14,7 @@ import { discordAuthRoutes } from "./routes/discord-auth.ts";
 import { importRoutes } from "./routes/import.ts";
 import { serverRoutes } from "./routes/servers.ts";
 import { socialRoutes } from "./routes/social.ts";
+import { searchRoutes } from "./routes/search.ts";
 import { startVoice, voiceAddresses } from "./voice-backend.ts";
 
 const app = Fastify({
@@ -49,6 +50,7 @@ await app.register(
     serverRoutes(api);
     channelRoutes(api);
     socialRoutes(api);
+    searchRoutes(api);
     importRoutes(api);
     await api.register(adminRoutes);
   },
