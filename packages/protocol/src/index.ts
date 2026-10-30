@@ -124,7 +124,16 @@ export interface ServerSummary {
   ownerId: string;
 }
 
-export type ChannelType = "category" | "text" | "voice" | "dm";
+export type ChannelType = "category" | "text" | "voice" | "dm" | "files" | "code" | "theater" | "song";
+
+/** Channel types people join with voice (theater rooms also stream and watch together). */
+export const VOICE_CHANNEL_TYPES: readonly ChannelType[] = ["voice", "theater"];
+export const isVoiceChannel = (type: ChannelType) => VOICE_CHANNEL_TYPES.includes(type);
+/** Channel types with a message history (a files channel is one where every message carries files). */
+export const MESSAGE_CHANNEL_TYPES: readonly ChannelType[] = ["text", "dm", "files", "theater", "song"];
+export const hasMessages = (type: ChannelType) => MESSAGE_CHANNEL_TYPES.includes(type);
+/** Temporary voice rooms vanish this long after creation if nobody ever joins. */
+export const TEMP_ROOM_IDLE_MS = 10 * 60 * 1000;
 
 export interface Overwrite {
   targetId: string;
@@ -142,6 +151,8 @@ export interface Channel {
   parentId: string | null;
   position: number;
   overwrites: Overwrite[];
+  /** Temporary voice room: deleted when everyone leaves, or after 10 minutes if nobody joins. */
+  temporary?: boolean;
 }
 
 export interface DmChannel {
@@ -526,7 +537,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
@@ -553,7 +564,97 @@ export type GatewayEvent =
   | { t: "RELATIONSHIP_UPDATE"; d: Relationship }
   | { t: "RELATIONSHIP_REMOVE"; d: { userId: string } }
   | { t: "INVALID_SESSION"; d: { reason: string } }
-  | { t: "IMPORT_PROGRESS"; d: ImportJob };
+  | { t: "IMPORT_PROGRESS"; d: ImportJob }
+  | { t: "PLAYBACK_UPDATE"; d: PlaybackState }
+  /** A code channel's files (`paths`) or Git state changed. */
+  | { t: "CODE_UPDATE"; d: { channelId: string; repo: CodeRepo; paths: string[]; by: string | null } };
+
+// ---------------------------------------------------------------------------
+// Theater and song rooms: one shared, synced playback per channel
+// ---------------------------------------------------------------------------
+
+/** "file" is an upload to this server, "direct" a media URL, "youtube" and "site" play in an embedded page. */
+export type PlaybackKind = "file" | "direct" | "youtube" | "site";
+
+export interface PlaybackItem {
+  id: string;
+  url: string;
+  title: string;
+  kind: PlaybackKind;
+  addedBy: string;
+  addedAt: string;
+}
+
+export interface PlaybackState {
+  channelId: string;
+  queue: PlaybackItem[];
+  currentId: string | null;
+  paused: boolean;
+  /** Seconds into the current item at `updatedAt`; while playing, add the time elapsed since. */
+  position: number;
+  /** Server clock (ms since epoch) when `position` was taken. */
+  updatedAt: number;
+  /** Server clock when this state was sent, to correct for the viewer's clock offset. */
+  serverTime: number;
+  /** Advance to the next item when the current one ends. */
+  autoplay: boolean;
+}
+
+export type PlaybackAction =
+  | { op: "add"; url: string; title?: string; uploadId?: string }
+  | { op: "remove"; itemId: string }
+  | { op: "play"; itemId?: string }
+  | { op: "pause"; position: number }
+  | { op: "seek"; position: number }
+  | { op: "next" }
+  | { op: "ended"; itemId: string }
+  | { op: "move"; itemId: string; index: number }
+  | { op: "autoplay"; value: boolean };
+
+/** Where the current item should be right now, in seconds. */
+export function playbackPosition(state: PlaybackState, clockOffsetMs = 0): number {
+  if (state.paused || !state.currentId) return state.position;
+  return state.position + Math.max(0, Date.now() + clockOffsetMs - state.updatedAt) / 1000;
+}
+
+// ---------------------------------------------------------------------------
+// Code channels: a server-side working copy of an external Git repository
+// ---------------------------------------------------------------------------
+
+export interface CodeRepo {
+  channelId: string;
+  /** Remote URL (https only, never a host on this server's network); null until someone links one. */
+  url: string | null;
+  status: "empty" | "cloning" | "ready" | "error";
+  error: string | null;
+  branch: string | null;
+  head: string | null;
+}
+
+export interface CodeEntry {
+  path: string;
+  type: "file" | "dir";
+  size: number;
+}
+
+export interface CodeFile {
+  path: string;
+  content: string;
+  /** Hash of `content`; send it back when saving so concurrent edits are detected. */
+  hash: string;
+  binary: boolean;
+}
+
+export interface CodeStatus {
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  /** Two-letter `git status --porcelain` codes, e.g. " M", "??", "A ". */
+  files: { path: string; code: string }[];
+  branches: string[];
+  log: { hash: string; subject: string; author: string; date: string }[];
+}
 
 export type GatewayEventType = GatewayEvent["t"];
 export type GatewayEventOf<T extends GatewayEventType> = Extract<GatewayEvent, { t: T }>;

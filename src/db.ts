@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS member_roles (
 CREATE TABLE IF NOT EXISTS channels (
   id         TEXT PRIMARY KEY,
   server_id  TEXT REFERENCES servers(id) ON DELETE CASCADE,
-  type       TEXT NOT NULL CHECK (type IN ('category', 'text', 'voice', 'dm')),
+  type       TEXT NOT NULL,
   name       TEXT NOT NULL,
   topic      TEXT NOT NULL DEFAULT '',
   parent_id  TEXT REFERENCES channels(id) ON DELETE SET NULL,
@@ -184,6 +184,51 @@ CREATE TABLE IF NOT EXISTS signup_invites (
   created_at TEXT NOT NULL
 );
 `);
+
+// v0.7 added channel types (files, code, theater, song) and temporary rooms. The type
+// CHECK of older databases is dropped by rebuilding the table, as SQLite cannot alter it.
+const channelsSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'channels'").get() as { sql: string }).sql;
+if (channelsSql.includes("CHECK (type IN")) {
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec(`CREATE TABLE channels_v7 (
+      id         TEXT PRIMARY KEY,
+      server_id  TEXT REFERENCES servers(id) ON DELETE CASCADE,
+      type       TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      topic      TEXT NOT NULL DEFAULT '',
+      parent_id  TEXT REFERENCES channels(id) ON DELETE SET NULL,
+      position   INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )`);
+    db.exec("INSERT INTO channels_v7 (id, server_id, type, name, topic, parent_id, position, created_at) SELECT id, server_id, type, name, topic, parent_id, position, created_at FROM channels");
+    db.exec("DROP TABLE channels");
+    db.exec("ALTER TABLE channels_v7 RENAME TO channels");
+    db.exec("CREATE INDEX IF NOT EXISTS channels_by_server ON channels(server_id)");
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+const channelColumns = (db.prepare("PRAGMA table_info(channels)").all() as { name: string }[]).map((c) => c.name);
+// Set while a temporary room has never had anyone in it; cleared on the first join.
+if (!channelColumns.includes("temporary")) db.exec("ALTER TABLE channels ADD COLUMN temporary INTEGER NOT NULL DEFAULT 0");
+if (!channelColumns.includes("created_by")) db.exec("ALTER TABLE channels ADD COLUMN created_by TEXT");
+if (!channelColumns.includes("temp_used")) db.exec("ALTER TABLE channels ADD COLUMN temp_used INTEGER NOT NULL DEFAULT 0");
+db.exec(`CREATE TABLE IF NOT EXISTS playback (
+  channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+  state      TEXT NOT NULL
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS code_repos (
+  channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  linked_by  TEXT,
+  linked_at  TEXT NOT NULL
+)`);
 
 // v0.2 added the STREAM permission; existing @everyone roles that could speak may also stream.
 if (!db.prepare("SELECT 1 FROM instance_settings WHERE key = 'migration.stream_permission'").get()) {

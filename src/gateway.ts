@@ -102,7 +102,7 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         relationships: getRelationships(userId),
         presences,
         activities: activitiesFor(userId),
-        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: true, serverOwnership: true, developmentActivity: true, directCalls: true, socialProfiles: true, presenceStatus: true, manualPresence: true },
+        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: true, serverOwnership: true, developmentActivity: true, directCalls: true, socialProfiles: true, presenceStatus: true, manualPresence: true, channelTypes: true, codeChannels: true },
       },
     });
     if (cameOnline || previousPresence !== presenceOf(userId)) {

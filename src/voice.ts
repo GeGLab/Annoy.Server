@@ -1,10 +1,10 @@
-import { has, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
+import { has, isVoiceChannel, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
 import * as mediasoup from "mediasoup";
 import type { types as ms } from "mediasoup";
 import { config, detectRouteAddress } from "./config.ts";
 import { sourceFor } from "./media-source.ts";
 import { badRequest, forbidden, notFound } from "./errors.ts";
-import { onServerChanged, sendToServer, type Connection } from "./events.ts";
+import { onServerChanged, sendToServer, voiceChanged, type Connection } from "./events.ts";
 import { channelPermissions } from "./perms.ts";
 import { getChannel } from "./repo.ts";
 
@@ -75,6 +75,7 @@ export function voiceStatesFor(serverId: string): VoiceState[] {
 
 function publishState(userId: string, serverId: string): void {
   sendToServer(serverId, { t: "VOICE_STATE_UPDATE", d: { userId, serverId, state: states.get(userId) ?? null } });
+  voiceChanged(serverId);
 }
 
 async function getRoom(channelId: string): Promise<Room> {
@@ -233,7 +234,7 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       const channelId = str(data, "channelId");
       const channel = getChannel(channelId);
       const perms = channel ? channelPermissions(channel, userId) : 0;
-      if (!channel || channel.type !== "voice" || !channel.serverId || !has(perms, Permission.VIEW_CHANNEL)) {
+      if (!channel || !isVoiceChannel(channel.type) || !channel.serverId || !has(perms, Permission.VIEW_CHANNEL)) {
         throw notFound("Canal de voz");
       }
       if (!has(perms, Permission.CONNECT)) throw forbidden("Sem permissão para conectar");

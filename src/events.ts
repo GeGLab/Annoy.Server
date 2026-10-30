@@ -88,6 +88,18 @@ export function onServerChanged(hook: ServerHook): void {
   refreshHooks.push(hook);
 }
 
+type VoiceHook = (serverId: string) => void;
+const voiceHooks: VoiceHook[] = [];
+
+/** Runs after anyone joins, leaves or moves between voice channels of a server. */
+export function onVoiceChanged(hook: VoiceHook): void {
+  voiceHooks.push(hook);
+}
+
+export function voiceChanged(serverId: string): void {
+  for (const hook of voiceHooks) hook(serverId);
+}
+
 /** Single entry point for "structure, roles or membership changed". */
 export function serverChanged(serverId: string): void {
   sendToServer(serverId, { t: "SERVER_REFRESH", d: { serverId } });

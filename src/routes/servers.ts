@@ -6,6 +6,7 @@ import {
   Permission,
   type Ban,
   type Invite,
+  type ChannelType,
   type ServerState,
 } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
@@ -34,7 +35,7 @@ const patchServer = z.object({ name });
 const transferOwnership = z.object({ userId: z.string().min(1).max(128) }).strict();
 const createChannel = z.object({
   name,
-  type: z.enum(["category", "text", "voice"]),
+  type: z.enum(["category", "text", "voice", "files", "code", "theater", "song"]),
   parentId: z.string().nullable().optional(),
   topic: z.string().max(LIMITS.topicMax).optional(),
 });
@@ -95,19 +96,23 @@ export function serverState(serverId: string, userId: string): ServerState {
   };
 }
 
-function insertChannel(serverId: string, type: "category" | "text" | "voice", channelName: string, parentId: string | null, topic = ""): string {
+const SLUG_TYPES = new Set<ChannelType>(["text", "files", "code"]);
+
+export function insertChannel(serverId: string, type: ChannelType, channelName: string, parentId: string | null, topic = "", createdBy: string | null = null, temporary = false): string {
   const id = newId();
   const pos = one<{ p: number | null }>("SELECT MAX(position) AS p FROM channels WHERE server_id = ?", serverId)?.p ?? -1;
   run(
-    "INSERT INTO channels (id, server_id, type, name, topic, parent_id, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO channels (id, server_id, type, name, topic, parent_id, position, created_at, created_by, temporary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     id,
     serverId,
     type,
-    type === "text" ? slug(channelName) : channelName.trim(),
+    SLUG_TYPES.has(type) ? slug(channelName) : channelName.trim(),
     topic,
     parentId,
     pos + 1,
     now(),
+    createdBy,
+    temporary ? 1 : 0,
   );
   return id;
 }
@@ -201,7 +206,7 @@ export function serverRoutes(app: FastifyInstance): void {
     if (parentId && !one("SELECT 1 AS x FROM channels WHERE id = ? AND server_id = ? AND type = 'category'", parentId, serverId)) {
       throw badRequest("Categoria inválida");
     }
-    const id = insertChannel(serverId, body.type, body.name, parentId, body.topic ?? "");
+    const id = insertChannel(serverId, body.type, body.name, parentId, body.topic ?? "", userId);
     serverChanged(serverId);
     return getChannels(serverId).find((c) => c.id === id);
   });

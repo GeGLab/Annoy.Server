@@ -18,6 +18,9 @@ import { importRoutes } from "./routes/import.ts";
 import { serverRoutes } from "./routes/servers.ts";
 import { socialRoutes } from "./routes/social.ts";
 import { searchRoutes } from "./routes/search.ts";
+import { codeRoutes } from "./code.ts";
+import { playbackRoutes } from "./playback.ts";
+import { startTempRooms, tempRoomRoutes } from "./rooms.ts";
 import { startVoice, voiceAddresses } from "./voice-backend.ts";
 
 const app = Fastify({
@@ -47,6 +50,7 @@ syncConfiguredAdmin();
 startGlobal((msg) => app.log.info(msg));
 await startVoice();
 registerGateway(app);
+startTempRooms();
 await app.register(
   async (api) => {
     authRoutes(api);
@@ -58,6 +62,9 @@ await app.register(
     callRoutes(api);
     searchRoutes(api);
     importRoutes(api);
+    playbackRoutes(api);
+    codeRoutes(api);
+    tempRoomRoutes(api);
     await api.register(adminRoutes);
   },
   { prefix: "/api" },

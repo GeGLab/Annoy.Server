@@ -7,11 +7,11 @@
 // sends the client's offer; subscribing asks Cloudflare for an offer that the
 // client answers through `renegotiate`.
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
-import { has, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
+import { has, isVoiceChannel, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
 import { config } from "./config.ts";
 import { sourceFor } from "./media-source.ts";
 import { badRequest, forbidden, HttpError, notFound } from "./errors.ts";
-import { onServerChanged, sendToServer, type Connection } from "./events.ts";
+import { onServerChanged, sendToServer, voiceChanged, type Connection } from "./events.ts";
 import { channelPermissions } from "./perms.ts";
 import { getChannel } from "./repo.ts";
 import * as budget from "./sfu-budget.ts";
@@ -124,6 +124,7 @@ export function voiceStatesFor(serverId: string): VoiceState[] {
 
 function publishState(userId: string, serverId: string): void {
   sendToServer(serverId, { t: "VOICE_STATE_UPDATE", d: { userId, serverId, state: states.get(userId) ?? null } });
+  voiceChanged(serverId);
 }
 
 function refreshMediaFlags(peer: Peer): void {
@@ -317,7 +318,7 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       const channelId = str(data, "channelId");
       const channel = getChannel(channelId);
       const perms = channel ? channelPermissions(channel, userId) : 0;
-      if (!channel || channel.type !== "voice" || !channel.serverId || !has(perms, Permission.VIEW_CHANNEL)) throw notFound("Canal de voz");
+      if (!channel || !isVoiceChannel(channel.type) || !channel.serverId || !has(perms, Permission.VIEW_CHANNEL)) throw notFound("Canal de voz");
       if (!has(perms, Permission.CONNECT)) throw forbidden("Sem permissão para conectar");
       if (budget.level() === "off") throw forbidden(VOICE_PAUSED);
       leaveVoice(conn);
@@ -355,7 +356,7 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       if (!validResumeToken(userId, sessionId, data.resumeToken)) throw forbidden("Sessão de voz inválida");
       const channel = getChannel(channelId);
       const perms = channel ? channelPermissions(channel, userId) : 0;
-      if (!channel || channel.type !== "voice" || !channel.serverId || !has(perms, Permission.VIEW_CHANNEL)) throw notFound("Canal de voz");
+      if (!channel || !isVoiceChannel(channel.type) || !channel.serverId || !has(perms, Permission.VIEW_CHANNEL)) throw notFound("Canal de voz");
       if (!has(perms, Permission.CONNECT)) throw forbidden("Sem permissão para conectar");
       if (budget.level() === "off") throw forbidden(VOICE_PAUSED);
       // Same server process: the session is still here, just re-attach it to the new socket.

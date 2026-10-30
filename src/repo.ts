@@ -39,6 +39,7 @@ interface ChannelRow {
   topic: string;
   parent_id: string | null;
   position: number;
+  temporary?: number;
 }
 interface OverwriteRow {
   channel_id: string;
@@ -208,6 +209,7 @@ const toChannel = (r: ChannelRow, overwrites: Overwrite[]): Channel => ({
   parentId: r.parent_id,
   position: r.position,
   overwrites,
+  ...(r.temporary ? { temporary: true } : {}),
 });
 
 export function getChannel(id: string): Channel | undefined {

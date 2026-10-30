@@ -1,9 +1,9 @@
 # Annoy server: one process for REST, gateway and voice (SFU).
 FROM node:24-bookworm-slim
 
-# Fallback toolchain in case mediasoup has no prebuilt worker for this platform.
+# Fallback toolchain in case mediasoup has no prebuilt worker for this platform; git for code channels.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 python3-pip make g++ ca-certificates \
+  && apt-get install -y --no-install-recommends python3 python3-pip make g++ ca-certificates git \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
