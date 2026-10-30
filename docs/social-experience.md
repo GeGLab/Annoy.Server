@@ -20,6 +20,16 @@ they cannot render.
   online while any connected session is active. The client defaults to ten
   minutes of system mouse/keyboard inactivity, configurable or disabled.
 
+`manualPresence` advertises manual Online, Idle, DND and Invisible support. An
+optional `presence` in identify applies the saved choice before READY. The
+`presence` operation accepts optional `status`; omitting it only updates that
+connection's automatic idle flag. Manual idle/DND/invisible override automatic
+idle until changed. Changes echo to the user's own sessions as well as their
+audience. DND maps to online for clients without the `manualPresence` feature.
+Invisible users retain authenticated access but publish offline presence and
+empty activity to friends, including READY snapshots; becoming visible restores
+the current cached activity. The server forgets manual state on last disconnect.
+
 ## Private calls
 
 `POST /api/calls` accepts `{ "userId": "...", "video": true, "deviceId": "..." }`.
