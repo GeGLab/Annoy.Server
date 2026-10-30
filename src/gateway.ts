@@ -96,7 +96,7 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         relationships: getRelationships(userId),
         presences,
         activities: activitiesFor(userId),
-        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: true, developmentActivity: true, directCalls: true, socialProfiles: true, presenceStatus: true },
+        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: true, serverOwnership: true, developmentActivity: true, directCalls: true, socialProfiles: true, presenceStatus: true },
       },
     });
     if (cameOnline || previousPresence !== presenceOf(userId)) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: presenceOf(userId) } });

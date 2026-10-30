@@ -209,7 +209,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete<Params<"id">>("/admin/servers/:id", async (req) => {
     if (!getServer(req.params.id)) throw notFound("Servidor");
-    await deleteServer(req.params.id);
+    await deleteServer(req.params.id, requireUser(req));
     return {};
   });
 }
