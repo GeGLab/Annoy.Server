@@ -124,6 +124,12 @@ export interface ServerSummary {
   ownerId: string;
 }
 
+export interface ServerSummaryPage {
+  servers: ServerSummary[];
+  nextCursor: string | null;
+  total: number;
+}
+
 export type ChannelType = "category" | "text" | "voice" | "dm" | "files" | "code" | "theater" | "song";
 
 /** Channel types people join with voice (theater rooms also stream and watch together). */
@@ -184,6 +190,17 @@ export interface Attachment {
   size: number;
   contentType: string;
   url: string;
+}
+
+export interface ChannelFile {
+  attachment: Attachment;
+  message: Message;
+}
+
+export interface ChannelFilePage {
+  files: ChannelFile[];
+  nextOffset: number | null;
+  total: number;
 }
 
 export interface Message {
@@ -248,9 +265,17 @@ export interface ServerState {
   channels: Channel[];
   roles: Role[];
   members: Member[];
+  membersNextCursor?: string | null;
+  membersTotal?: number;
   voiceStates: VoiceState[];
   /** Server-level permissions of the requesting member. */
   permissions: number;
+}
+
+export interface MemberPage {
+  members: Member[];
+  nextCursor: string | null;
+  total: number;
 }
 
 // ---------------------------------------------------------------------------
