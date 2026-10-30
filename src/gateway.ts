@@ -1,4 +1,4 @@
-import { clearCalls, handleCall } from "./calls.ts";
+import { clearCalls, handleCall, handOffCalls } from "./calls.ts";
 import { Permission, type ClientOp } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { userIdForToken } from "./auth.ts";
@@ -15,8 +15,22 @@ const HEARTBEAT_TIMEOUT_MS = 90_000;
 const IDENTIFY_TIMEOUT_MS = 10_000;
 const MAX_FRAME_BYTES = 64 * 1024;
 
+const live = new Set<Connection>();
+let restarting = false;
+
+/**
+ * Restarting or updating: tell every client so it reconnects at once (to the
+ * new process, during an update), and leave voice sessions and private calls
+ * alone so they keep flowing and resume there. Runs as @fastify/websocket's
+ * preClose, whose default would close the sockets without a code first.
+ */
+export function closeForRestart(): void {
+  restarting = true;
+  handOffCalls();
+  for (const conn of live) conn.socket.close(4010, "server restarting");
+}
+
 export function registerGateway(app: FastifyInstance): void {
-  const live = new Set<Connection>();
 
   const sweep = setInterval(() => {
     expireActivities();
@@ -24,14 +38,6 @@ export function registerGateway(app: FastifyInstance): void {
     for (const conn of live) if (conn.lastHeartbeat < cutoff) conn.socket.close(4009, "heartbeat timeout");
   }, 30_000);
   app.addHook("onClose", async () => clearInterval(sweep));
-
-  // Restarting: tell every client so it retries at once, and leave voice sessions
-  // alone so calls on Cloudflare keep flowing and resume on the new process.
-  let restarting = false;
-  app.addHook("preClose", async () => {
-    restarting = true;
-    for (const conn of live) conn.socket.close(4010, "server restarting");
-  });
 
   app.get("/gateway", { websocket: true }, (socket) => {
     const conn = new Connection(socket);
@@ -62,7 +68,7 @@ export function registerGateway(app: FastifyInstance): void {
       const previousPresence = userId ? presenceOf(userId) : "offline";
       unregister(conn);
       clearActivity(conn);
-      if (userId) clearCalls(userId, conn.id);
+      if (userId && !restarting) clearCalls(userId, conn.id);
       if (userId) {
         removeConnection(userId, conn.id);
         if (previousPresence !== presenceOf(userId)) {

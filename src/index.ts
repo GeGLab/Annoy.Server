@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import { config } from "./config.ts";
 import { db } from "./db.ts";
 import { HttpError } from "./errors.ts";
-import { registerGateway } from "./gateway.ts";
+import { closeForRestart, registerGateway } from "./gateway.ts";
 import { syncConfiguredAdmin } from "./instance.ts";
 import { startGlobal } from "./global.ts";
 import { adminRoutes } from "./routes/admin.ts";
@@ -36,7 +36,14 @@ const app = Fastify({
 await app.register(cors, { origin: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] });
 // Per-upload size comes from the instance settings (see routes/channels.ts); this is only the ceiling.
 await app.register(multipart, { limits: { fileSize: config.uploadCeilingBytes, files: 10, fields: 10 } });
-await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
+await app.register(websocket, {
+  options: { maxPayload: 64 * 1024 },
+  preClose(done) {
+    closeForRestart();
+    this.websocketServer.close();
+    done();
+  },
+});
 
 app.setErrorHandler((err, _req, reply) => {
   if (err instanceof HttpError) return reply.status(err.status).send({ error: err.code, message: err.message });

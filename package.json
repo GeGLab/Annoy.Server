@@ -1,6 +1,6 @@
 {
   "name": "annoy-server",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "description": "Self-hosted voice and text chat server: TeamSpeak-style hosting with Discord-style features",
   "license": "MIT",

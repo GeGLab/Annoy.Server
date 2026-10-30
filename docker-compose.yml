@@ -1,24 +1,56 @@
+# Updates without downtime: "proxy" owns port 8787 and forwards to whichever of
+# "annoy" and "annoy-b" is active. The updater starts the new version in the
+# other one, switches the proxy once it answers and stops the old one; clients
+# reconnect within a second and calls keep going.
+x-annoy: &annoy
+  # Published for every release; `docker compose up --build` builds from source instead.
+  image: ghcr.io/geglab/annoy-server:${ANNOY_VERSION:-latest}
+  build: .
+  restart: unless-stopped
+  # Every setting comes from .env (see .env.example). Inside a container the
+  # server can't see the host's address, so voice needs ANNOY_ANNOUNCED_IP there.
+  env_file:
+    - path: .env
+      required: false
+
 services:
-  annoy:
-    # Published for every release; `docker compose up --build` builds from source instead.
-    image: ghcr.io/geglab/annoy-server:${ANNOY_VERSION:-latest}
-    build: .
-    restart: unless-stopped
+  proxy:
+    <<: *annoy
+    command: ["node_modules/.bin/tsx", "src/proxy.ts"]
     ports:
       - "8787:8787/tcp"
-      # One voice port per announced address (public first, then LAN): 40000, 40001, ...
-      - "40000-40001:40000-40001/udp"
-      - "40000-40001:40000-40001/tcp"
-    # Every setting comes from .env (see .env.example). Inside a container the
-    # server can't see the host's address, so voice needs ANNOY_ANNOUNCED_IP there.
-    env_file:
-      - path: .env
-        required: false
-    # Shared with the updater, so the admin can update from the app.
     environment:
       ANNOY_CONTROL_DIR: /control
     volumes:
+      - annoy-control:/control:ro
+
+  annoy:
+    <<: *annoy
+    ports:
+      # One voice port per announced address (public first, then LAN): 40000, 40001, ...
+      - "40000-40001:40000-40001/udp"
+      - "40000-40001:40000-40001/tcp"
+    environment:
+      ANNOY_CONTROL_DIR: /control
+      ANNOY_PORT: "8787"
+    volumes:
       # Named before the rename to Annoy; keeps existing data.
+      - distopic-data:/data
+      - annoy-control:/control
+
+  # The second slot, started only by the updater during an update. Its voice
+  # ports differ so both can run for those few seconds.
+  annoy-b:
+    <<: *annoy
+    profiles: [standby]
+    ports:
+      - "40002-40003:40002-40003/udp"
+      - "40002-40003:40002-40003/tcp"
+    environment:
+      ANNOY_CONTROL_DIR: /control
+      ANNOY_PORT: "8787"
+      ANNOY_VOICE_PORT: "40002"
+    volumes:
       - distopic-data:/data
       - annoy-control:/control
 
@@ -34,8 +66,8 @@ services:
       ANNOY_VERSION: ${ANNOY_VERSION:-latest}
       COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
     volumes:
-      # The Docker socket lets it recreate the server container; the project
-      # folder gives it this compose file and .env.
+      # The Docker socket lets it start and stop the server containers; the
+      # project folder gives it this compose file and .env.
       - /var/run/docker.sock:/var/run/docker.sock
       - ./:/project:ro
       - annoy-control:/control

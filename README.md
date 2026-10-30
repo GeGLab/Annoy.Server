@@ -60,7 +60,7 @@ docker compose up -d
 ```
 
 This pulls the published image `ghcr.io/geglab/annoy-server`. Pin a
-version with `ANNOY_VERSION=0.7.1`, or build from source with
+version with `ANNOY_VERSION=0.7.2`, or build from source with
 `docker compose up -d --build`. Without Compose:
 
 ```bash
@@ -72,14 +72,20 @@ docker run -d --name annoy --restart unless-stopped \
 
 **Updates:** the instance admin updates the server from the app, under
 Administrar instância → Atualizações, and turns automatic updates on or off
-there. A small `updater` container next to the server does the work: it pulls
-the newest image of `ANNOY_VERSION` (`latest` follows every release, `0.7`
-only takes 0.7.x fixes) and restarts the server; calls come back on their own.
-With automatic updates on, it checks every 6 hours
-(`ANNOY_UPDATE_INTERVAL_HOURS`). `ANNOY_AUTO_UPDATE=on` turns them on until
-the admin chooses in the app. The updater needs the Docker socket to recreate
-the server container. Setups from before 0.7.1 get it with
-`git pull && docker compose up -d`.
+there. Updates don't disconnect anyone: a small `proxy` owns port 8787, the
+`updater` starts the new version next to the running one (`annoy` and
+`annoy-b` take turns), points the proxy at it once it answers, and only then
+stops the old one. Clients reconnect within milliseconds; Cloudflare voice and
+private calls keep flowing. With the built-in voice backend the call rejoins
+on the other slot's ports, so open `40000-40003` (UDP and TCP).
+
+The updater follows the newest image of `ANNOY_VERSION` (`latest` takes every
+release, `0.7` only 0.7.x fixes). With automatic updates on, it checks every 6
+hours (`ANNOY_UPDATE_INTERVAL_HOURS`); `ANNOY_AUTO_UPDATE=on` turns them on
+until the admin chooses in the app. It needs the Docker socket to start and
+stop the server containers. Update through the app rather than
+`docker compose pull` by hand, which restarts the server. Setups from before
+0.7.2 switch over once with `git pull && docker compose up -d --remove-orphans`.
 
 Replace `203.0.113.10` with the address clients use to reach the machine: your
 LAN IP for home use, or the public IP on the internet. Open these ports:
@@ -87,7 +93,7 @@ LAN IP for home use, or the public IP on the internet. Open these ports:
 | Port | Protocol | Purpose |
 | --- | --- | --- |
 | `8787` | TCP | REST API and WebSocket gateway |
-| `40000` | **UDP and TCP** | Voice media |
+| `40000-40003` | **UDP and TCP** | Voice media (two slots, for updates without downtime) |
 
 **Upgrading from Distopic (0.2):** the project is now Annoy. Settings were
 renamed from `DISTOPIC_*` to `ANNOY_*`; the old names keep working. Data stays

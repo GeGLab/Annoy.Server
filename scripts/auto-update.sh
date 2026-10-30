@@ -4,6 +4,10 @@
 # /control, shared with the server: "auto" (on/off) and "request" (update
 # now). It answers with /control/status.json. Pinning ANNOY_VERSION=0.7 keeps
 # updates within 0.7.x.
+#
+# Updates never stop the server first: the new version starts in the idle
+# slot (annoy or annoy-b), /control/active points the proxy at it once it
+# answers, and only then the old slot stops.
 set -u
 
 hours="${ANNOY_UPDATE_INTERVAL_HOURS:-6}"
@@ -22,7 +26,35 @@ mkdir -p "$control"
 # Act on the same Compose project that started this container, so the server
 # keeps its volume, network and container name.
 project="$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$(hostname)")" || exit 1
-compose() { docker compose --project-name "$project" --project-directory /project "$@"; }
+compose() { docker compose --project-name "$project" --project-directory /project --profile standby "$@"; }
+
+active() {
+  slot="$(cat "$control/active" 2>/dev/null)"
+  case "$slot" in annoy-b) echo annoy-b ;; *) echo annoy ;; esac
+}
+idle() { [ "$(active)" = annoy ] && echo annoy-b || echo annoy; }
+running() { [ -n "$(compose ps --status running --quiet "$1" 2>/dev/null)" ]; }
+
+# Image the slot runs vs. the newest pulled one for ANNOY_VERSION.
+current_image() {
+  id="$(compose ps --quiet "$1" 2>/dev/null)"
+  [ -n "$id" ] && docker inspect --format '{{.Image}}' "$id"
+}
+pulled_image() { docker image inspect --format '{{.Id}}' "ghcr.io/geglab/annoy-server:${ANNOY_VERSION:-latest}" 2>/dev/null; }
+
+healthy() {
+  i=0
+  while [ "$i" -lt 90 ]; do
+    wget -q -T 2 -O /dev/null "http://$1:8787/api/info" && return 0
+    i=$((i + 1))
+    sleep 1
+  done
+  return 1
+}
+
+# Only one slot serves; a leftover one (e.g. after `docker compose up -d` by
+# hand) would answer nobody but still run background work.
+if running "$(active)" && running "$(idle)"; then compose stop "$(idle)"; fi
 
 auto() {
   value="$(cat "$control/auto" 2>/dev/null)"
@@ -39,16 +71,35 @@ write_status() {
     mv "$control/status.json.tmp" "$control/status.json"
 }
 
+fail() {
+  echo "update failed: $1" >&2
+  last_error="\"$1 Veja: docker compose logs updater\""
+}
+
 update() {
   updating=true
   write_status
   echo "$(date -u '+%F %T') checking for a new server image"
-  if compose pull --quiet annoy && compose up --detach --no-deps --no-build annoy; then
-    docker image prune --force --filter "label=org.opencontainers.image.source=https://github.com/GeGLab/annoy-server" >/dev/null
+  old="$(active)"
+  new="$(idle)"
+  if ! compose pull --quiet annoy; then
+    fail "Não deu para baixar a nova versão."
+  elif [ "$(current_image "$old")" = "$(pulled_image)" ] && running "$old"; then
     last_error=null
+  elif ! compose up --detach --no-deps --no-build --force-recreate "$new"; then
+    fail "Não deu para iniciar a nova versão."
+  elif ! healthy "$new"; then
+    compose stop "$new"
+    fail "A nova versão não respondeu; o servidor continua na anterior."
   else
-    echo "update failed; retrying next cycle" >&2
-    last_error='"Não deu para baixar ou reiniciar a nova versão. Veja: docker compose logs updater"'
+    echo "$new" > "$control/active.tmp" && mv "$control/active.tmp" "$control/active"
+    # The proxy rereads the file every half second; then the old process
+    # tells its clients to reconnect, and they land on the new one.
+    sleep 2
+    compose stop "$old"
+    docker image prune --force --filter "label=org.opencontainers.image.source=https://github.com/GeGLab/annoy-server" >/dev/null
+    echo "$(date -u '+%F %T') now serving from $new"
+    last_error=null
   fi
   last_check="\"$(date -u '+%FT%TZ')\""
   updating=false
