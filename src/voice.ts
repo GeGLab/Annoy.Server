@@ -69,6 +69,11 @@ export async function startVoice(): Promise<void> {
   onServerChanged(revalidateServer);
 }
 
+export async function stopVoice(): Promise<void> {
+  for (const peer of [...peersByConn.values()]) kick(peer, "O servidor foi desconectado.");
+  worker?.close();
+}
+
 export function voiceStatesFor(serverId: string): VoiceState[] {
   return [...states.values()].filter((s) => s.serverId === serverId);
 }

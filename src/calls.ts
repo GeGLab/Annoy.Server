@@ -2,7 +2,6 @@ import type { DirectCall, ClientOp } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "./auth.ts";
-import { one, run } from "./db.ts";
 import { badRequest, forbidden } from "./errors.ts";
 import { sendToUser, connectionsOf, type Connection } from "./events.ts";
 import { areFriends } from "./activity.ts";
@@ -10,25 +9,9 @@ import { newId } from "./ids.ts";
 import { parse } from "./validate.ts";
 
 const calls = new Map<string, { call: DirectCall; timer?: ReturnType<typeof setTimeout>; callerConnectionId: number; calleeConnectionId?: number }>();
-// Call media goes peer to peer; only signaling needs the server. On a restart or
-// an update the old process hands answered calls to the next one through the
-// database, so they keep going. Connection ids are per process: adopted calls
-// match devices by id instead (-1 never matches a connection).
-const HANDOFF_KEY = "handoff.calls";
-const HANDOFF_MAX_AGE_MS = 120_000;
-export function handOffCalls() {
-  const active = [...calls.values()].filter(({ call }) => call.status === "active").map(({ call }) => call);
-  if (active.length) run("INSERT INTO instance_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", HANDOFF_KEY, JSON.stringify({ at: Date.now(), calls: active }));
-  for (const { timer } of calls.values()) clearTimeout(timer);
-  calls.clear();
-}
-function adoptHandedOffCalls() {
-  const row = one<{ value: string }>("SELECT value FROM instance_settings WHERE key = ?", HANDOFF_KEY);
-  if (!row) return;
-  run("DELETE FROM instance_settings WHERE key = ?", HANDOFF_KEY);
-  const saved = JSON.parse(row.value) as { at: number; calls: DirectCall[] };
-  if (Date.now() - saved.at > HANDOFF_MAX_AGE_MS) return;
-  for (const call of saved.calls) if (!calls.has(call.id)) calls.set(call.id, { call, callerConnectionId: -1, calleeConnectionId: -1 });
+// Calls belong to this server session, including when their media uses WebRTC.
+export function endAllCalls(): void {
+  for (const id of [...calls.keys()]) finish(id, "O servidor foi desconectado.");
 }
 const lastInvite = new Map<string, number>();
 const device = z.string().min(1).max(64);
@@ -44,7 +27,6 @@ function finish(id: string, reason: string) {
   publish({ ...entry.call, status: "ended", reason });
 }
 export function clearCalls(userId: string, connectionId?: number) {
-  adoptHandedOffCalls();
   for (const [id, entry] of calls) if (entry.callerConnectionId === connectionId || entry.calleeConnectionId === connectionId || (!connectionsOf(userId).size && [entry.call.callerId, entry.call.calleeId].includes(userId))) finish(id, "A pessoa se desconectou.");
 }
 export function endCallsBetween(a: string, b: string) {
@@ -71,7 +53,6 @@ export function callRoutes(app: FastifyInstance) {
   app.addHook("onClose", async () => { lastInvite.clear(); });
 }
 export function handleCall(conn: Connection, message: Extract<ClientOp, { op: "call" }>) {
-  if (!calls.has(String(message.callId))) adoptHandedOffCalls();
   const entry = calls.get(String(message.callId));
   if (!entry || !conn.userId || ![entry.call.callerId, entry.call.calleeId].includes(conn.userId)) return;
   const call = entry.call;

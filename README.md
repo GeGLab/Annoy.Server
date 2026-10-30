@@ -72,12 +72,12 @@ docker run -d --name annoy --restart unless-stopped \
 
 **Updates:** the instance admin updates the server from the app, under
 Administrar instância → Atualizações, and turns automatic updates on or off
-there. Updates don't disconnect anyone: a small `proxy` owns port 8787, the
-`updater` starts the new version next to the running one (`annoy` and
-`annoy-b` take turns), points the proxy at it once it answers, and only then
-stops the old one. Clients reconnect within milliseconds; Cloudflare voice and
-private calls keep flowing. With the built-in voice backend the call rejoins
-on the other slot's ports, so open `40000-40003` (UDP and TCP).
+there. A small `proxy` owns port 8787. The `updater` starts the new version
+next to the running one (`annoy` and `annoy-b` take turns), points the proxy
+at it once it answers, then stops the old process. Since 0.8, disconnecting
+from the old process ends voice, video, screen shares and private calls.
+Clients reconnect for text and presence; joining voice again is an explicit
+user action. With the built-in backend, open `40000-40003` (UDP and TCP).
 
 The updater follows the newest image of `ANNOY_VERSION` (`latest` takes every
 release, `0.7` only 0.7.x fixes). With automatic updates on, it checks every 6

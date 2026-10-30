@@ -1,7 +1,7 @@
 # Updates without downtime: "proxy" owns port 8787 and forwards to whichever of
 # "annoy" and "annoy-b" is active. The updater starts the new version in the
 # other one, switches the proxy once it answers and stops the old one; clients
-# reconnect within a second and calls keep going.
+# reconnect for text and presence; media ends when the old server disconnects.
 x-annoy: &annoy
   # Published for every release; `docker compose up --build` builds from source instead.
   image: ghcr.io/geglab/annoy-server:${ANNOY_VERSION:-latest}

@@ -128,3 +128,12 @@ Veja [configuração e privacidade](docs/steam.md).
 ## Licença
 
 [MIT](LICENSE) © Gustavo Cruz.
+
+## Desconexões a partir da 0.8
+
+Voz, vídeo, tela e chamadas privadas encerram quando o cliente perde a
+instância, inclusive em atualizações. O servidor remove a sessão sem período
+de tolerância e tenta revogar as faixas no Cloudflare durante um encerramento
+normal. A API volta automaticamente; voltar à voz exige entrar no canal de
+novo. Atualize os clientes para 0.8.0 para que também parem as capturas numa
+queda abrupta. Veja [a versão 0.8.0](docs/releases/0.8.0.md).

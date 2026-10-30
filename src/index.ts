@@ -21,7 +21,7 @@ import { searchRoutes } from "./routes/search.ts";
 import { codeRoutes } from "./code.ts";
 import { playbackRoutes } from "./playback.ts";
 import { startTempRooms, tempRoomRoutes } from "./rooms.ts";
-import { startVoice, voiceAddresses } from "./voice-backend.ts";
+import { startVoice, stopVoice, voiceAddresses } from "./voice-backend.ts";
 
 const app = Fastify({
   logger: {
@@ -38,10 +38,11 @@ await app.register(cors, { origin: true, methods: ["GET", "POST", "PUT", "PATCH"
 await app.register(multipart, { limits: { fileSize: config.uploadCeilingBytes, files: 10, fields: 10 } });
 await app.register(websocket, {
   options: { maxPayload: 64 * 1024 },
-  preClose(done) {
+  async preClose(this: import("fastify").FastifyInstance) {
+    const mediaClosing = stopVoice();
     closeForRestart();
+    await mediaClosing;
     this.websocketServer.close();
-    done();
   },
 });
 
@@ -77,7 +78,10 @@ await app.register(
   { prefix: "/api" },
 );
 
+let shuttingDown = false;
 const shutdown = async () => {
+  if (shuttingDown) return;
+  shuttingDown = true;
   await app.close();
   db.close();
   process.exit(0);

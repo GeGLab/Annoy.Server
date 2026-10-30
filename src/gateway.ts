@@ -1,4 +1,4 @@
-import { clearCalls, handleCall, handOffCalls } from "./calls.ts";
+import { clearCalls, handleCall, endAllCalls } from "./calls.ts";
 import { Permission, type ClientOp } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { userIdForToken } from "./auth.ts";
@@ -9,7 +9,7 @@ import { addConnection, presenceOf, removeConnection, setConnectionIdle, setManu
 import { audienceOf, dmChannelsForUser, getRelationships, getUser, serversForUser } from "./repo.ts";
 import { getSettings, isAdmin } from "./instance.ts";
 import { activitiesFor, clearActivity, expireActivities, updateActivity, refreshActivityPresence } from "./activity.ts";
-import { detachVoice, handleVoice, setSelfState, setSpeaking, voiceBackend } from "./voice-backend.ts";
+import { leaveVoice, handleVoice, setSelfState, setSpeaking, voiceBackend } from "./voice-backend.ts";
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
 const IDENTIFY_TIMEOUT_MS = 10_000;
@@ -18,15 +18,10 @@ const MAX_FRAME_BYTES = 64 * 1024;
 const live = new Set<Connection>();
 let restarting = false;
 
-/**
- * Restarting or updating: tell every client so it reconnects at once (to the
- * new process, during an update), and leave voice sessions and private calls
- * alone so they keep flowing and resume there. Runs as @fastify/websocket's
- * preClose, whose default would close the sockets without a code first.
- */
+/** End server-owned sessions before closing gateways, including on an update. */
 export function closeForRestart(): void {
   restarting = true;
-  handOffCalls();
+  endAllCalls();
   for (const conn of live) conn.socket.close(4010, "server restarting");
 }
 
@@ -40,6 +35,7 @@ export function registerGateway(app: FastifyInstance): void {
   app.addHook("onClose", async () => clearInterval(sweep));
 
   app.get("/gateway", { websocket: true }, (socket) => {
+    if (restarting) return void socket.close(4010, "server stopping");
     const conn = new Connection(socket);
     live.add(conn);
     const identifyTimer = setTimeout(() => {
@@ -63,12 +59,12 @@ export function registerGateway(app: FastifyInstance): void {
     socket.on("close", () => {
       clearTimeout(identifyTimer);
       live.delete(conn);
-      if (!restarting) detachVoice(conn);
+      leaveVoice(conn);
       const userId = conn.userId;
       const previousPresence = userId ? presenceOf(userId) : "offline";
       unregister(conn);
       clearActivity(conn);
-      if (userId && !restarting) clearCalls(userId, conn.id);
+      if (userId) clearCalls(userId, conn.id);
       if (userId) {
         removeConnection(userId, conn.id);
         if (previousPresence !== presenceOf(userId)) {
@@ -83,6 +79,7 @@ export function registerGateway(app: FastifyInstance): void {
 }
 
 async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
+  if (restarting) return;
   if (msg.op === "identify") {
     if (conn.userId) return;
     const userId = typeof msg.token === "string" ? userIdForToken(msg.token) : null;
