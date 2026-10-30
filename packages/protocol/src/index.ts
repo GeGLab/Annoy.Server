@@ -445,6 +445,22 @@ export interface AdminOverview {
   voiceUsage: VoiceUsage | null;
 }
 
+/** Server updates, run by the "updater" Compose service next to the server. */
+export interface UpdateStatus {
+  current: string;
+  /** Newest published server release; null when GitHub can't be reached. */
+  latest: string | null;
+  /** The updater is running and answering; without it, nothing below applies. */
+  available: boolean;
+  auto: boolean;
+  /** Image tag followed (ANNOY_VERSION): "latest", or "0.7" to stay on 0.7.x. */
+  channel: string | null;
+  intervalHours: number | null;
+  lastCheck: string | null;
+  lastError: string | null;
+  updating: boolean;
+}
+
 export interface VoiceUsage {
   /** UTC month, "YYYY-MM". */
   month: string;

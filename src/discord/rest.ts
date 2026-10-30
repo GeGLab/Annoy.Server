@@ -1,8 +1,9 @@
 // Minimal client for Discord's official bot API. Only reads are needed.
 import { setTimeout as sleep } from "node:timers/promises";
+import { VERSION } from "../version.ts";
 
 const API = "https://discord.com/api/v10";
-const USER_AGENT = "DiscordBot (https://github.com/GeGLab/annoy-server, 0.5.0)";
+const USER_AGENT = `DiscordBot (https://github.com/GeGLab/annoy-server, ${VERSION})`;
 const MAX_RETRIES = 6;
 
 export interface DUser {

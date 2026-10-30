@@ -1,7 +1,7 @@
 // Instance administration: only the person hosting the instance (is_admin).
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { AdminOverview, AdminServer, AdminUser, SignupInvite } from "@distopic/protocol";
+import type { AdminOverview, AdminServer, AdminUser, SignupInvite, UpdateStatus } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { deleteAccount, disconnectEverywhere, ownedServerNames } from "../accounts.ts";
@@ -14,6 +14,7 @@ import { inviteCode } from "../ids.ts";
 import { getSettings, requireAdmin, updateSettings } from "../instance.ts";
 import { getServer, getUser, getUsers } from "../repo.ts";
 import { usage as voiceUsage } from "../sfu-budget.ts";
+import { requestUpdate, setAutoUpdate, updateStatus } from "../updates.ts";
 import { parse, type Params } from "../validate.ts";
 import { deleteServer } from "./servers.ts";
 
@@ -26,6 +27,7 @@ const inviteBody = z.object({
   maxUses: z.number().int().min(1).max(10_000).nullable().optional(),
   expiresInHours: z.number().min(0.5).max(24 * 365).nullable().optional(),
 });
+const updatesBody = z.object({ auto: z.boolean() });
 const banBody = z.object({ reason: z.string().max(512).optional() });
 const patchUser = z.object({ isAdmin: z.boolean() });
 const listQuery = z.object({ q: z.string().max(64).optional(), limit: z.coerce.number().int().min(1).max(200).default(100) });
@@ -94,6 +96,23 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   }));
 
   app.patch("/admin/settings", async (req) => updateSettings(parse(settingsBody, req.body)));
+
+  // Server updates ------------------------------------------------------------
+
+  const NO_UPDATER = "O atualizador não está rodando. No servidor, rode: git pull && docker compose up -d";
+
+  app.get("/admin/updates", async (): Promise<UpdateStatus> => updateStatus());
+
+  app.patch("/admin/updates", async (req): Promise<UpdateStatus> => {
+    const body = parse(updatesBody, req.body);
+    if (!(await setAutoUpdate(body.auto))) throw conflict(NO_UPDATER);
+    return { ...(await updateStatus()), auto: body.auto };
+  });
+
+  app.post("/admin/updates/apply", async (): Promise<UpdateStatus> => {
+    if (!(await requestUpdate())) throw conflict(NO_UPDATER);
+    return { ...(await updateStatus()), updating: true };
+  });
 
   // Sign-up invites -------------------------------------------------------------
 

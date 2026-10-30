@@ -14,23 +14,32 @@ services:
     env_file:
       - path: .env
         required: false
+    # Shared with the updater, so the admin can update from the app.
+    environment:
+      ANNOY_CONTROL_DIR: /control
     volumes:
       # Named before the rename to Annoy; keeps existing data.
       - distopic-data:/data
+      - annoy-control:/control
 
-  # Optional automatic updates: set COMPOSE_PROFILES=autoupdate in .env.
+  # Updates the server when the admin asks in the app (Administrar instância →
+  # Atualizações), and on its own when automatic updates are on there.
   updater:
     image: docker:28-cli
-    profiles: [autoupdate]
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/project/scripts/auto-update.sh"]
     environment:
       ANNOY_UPDATE_INTERVAL_HOURS: ${ANNOY_UPDATE_INTERVAL_HOURS:-6}
+      ANNOY_AUTO_UPDATE: ${ANNOY_AUTO_UPDATE:-}
+      ANNOY_VERSION: ${ANNOY_VERSION:-latest}
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
     volumes:
       # The Docker socket lets it recreate the server container; the project
       # folder gives it this compose file and .env.
       - /var/run/docker.sock:/var/run/docker.sock
       - ./:/project:ro
+      - annoy-control:/control
 
 volumes:
   distopic-data:
+  annoy-control:

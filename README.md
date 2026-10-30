@@ -60,7 +60,7 @@ docker compose up -d
 ```
 
 This pulls the published image `ghcr.io/geglab/annoy-server`. Pin a
-version with `ANNOY_VERSION=0.6.0`, or build from source with
+version with `ANNOY_VERSION=0.7.1`, or build from source with
 `docker compose up -d --build`. Without Compose:
 
 ```bash
@@ -70,11 +70,16 @@ docker run -d --name annoy --restart unless-stopped \
   ghcr.io/geglab/annoy-server:latest
 ```
 
-**Automatic updates (optional):** add `COMPOSE_PROFILES=autoupdate` to `.env`
-and run `docker compose up -d`. A small `updater` container then checks every
-6 hours (`ANNOY_UPDATE_INTERVAL_HOURS`) and restarts the server on the newest
-image of `ANNOY_VERSION`: `latest` follows every release, `0.4` only takes
-0.4.x fixes. It needs access to the Docker socket to recreate the container.
+**Updates:** the instance admin updates the server from the app, under
+Administrar instância → Atualizações, and turns automatic updates on or off
+there. A small `updater` container next to the server does the work: it pulls
+the newest image of `ANNOY_VERSION` (`latest` follows every release, `0.7`
+only takes 0.7.x fixes) and restarts the server; calls come back on their own.
+With automatic updates on, it checks every 6 hours
+(`ANNOY_UPDATE_INTERVAL_HOURS`). `ANNOY_AUTO_UPDATE=on` turns them on until
+the admin chooses in the app. The updater needs the Docker socket to recreate
+the server container. Setups from before 0.7.1 get it with
+`git pull && docker compose up -d`.
 
 Replace `203.0.113.10` with the address clients use to reach the machine: your
 LAN IP for home use, or the public IP on the internet. Open these ports:

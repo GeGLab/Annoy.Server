@@ -4,6 +4,7 @@ import { z } from "zod";
 import { bearerToken, createSession, deleteSession, hashPassword, requireUser, verifyPassword } from "../auth.ts";
 import { deleteAccount, mergeUsers, RESERVED_USERNAME } from "../accounts.ts";
 import { config } from "../config.ts";
+import { VERSION } from "../version.ts";
 import { discordLoginEnabled } from "../discord/oauth.ts";
 import { now, one, run, tx } from "../db.ts";
 import { createAvatar, discardAvatar, MAX_AVATAR_BYTES, readAvatar } from "../avatars.ts";
@@ -69,7 +70,7 @@ export function authRoutes(app: FastifyInstance): void {
     const { registration } = getSettings();
     return {
       name: config.name,
-      version: "0.6.0",
+      version: VERSION,
       protocol: PROTOCOL_VERSION,
       registrationOpen: registration !== "closed",
       registration,

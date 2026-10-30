@@ -77,6 +77,11 @@ export const config = {
     enabled: env("ANNOY_GLOBAL", "on") !== "off",
     url: env("ANNOY_GLOBAL_URL", "https://global.geg.dev.br").replace(/\/+$/, ""),
   },
+  /**
+   * Folder shared with the "updater" Compose service (/control in
+   * docker-compose.yml). Empty outside Docker: updates are then manual.
+   */
+  updateControlDir: env("ANNOY_CONTROL_DIR", ""),
   voice: {
     backend: (env("ANNOY_VOICE_BACKEND", "builtin") === "cloudflare" ? "cloudflare" : "builtin") as "builtin" | "cloudflare",
     /** Cloudflare Realtime SFU application (Dashboard → Realtime → SFU). The token never leaves the server. */
