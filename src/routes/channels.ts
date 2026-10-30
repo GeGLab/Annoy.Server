@@ -97,10 +97,11 @@ function resolveMentions(channel: Channel, content: string, perms: number): { id
 export function channelRoutes(app: FastifyInstance): void {
   app.get("/users/@me/read-states", async req => {
     const userId=requireUser(req);
-    const ids=all<{id:string}>("SELECT channel_id AS id FROM dm_recipients WHERE user_id=? UNION SELECT c.id FROM channels c JOIN members m ON m.server_id=c.server_id WHERE m.user_id=? AND c.type IN ('text','announcements')",userId,userId).map(row=>row.id);
+    const ids=all<{id:string}>("SELECT channel_id AS id FROM dm_recipients WHERE user_id=? UNION SELECT c.id FROM channels c JOIN members m ON m.server_id=c.server_id WHERE m.user_id=?",userId,userId).map(row=>row.id);
     return ids.flatMap(id=>{
       try {
         const {channel}=requireChannel(id,userId);
+        if(!hasMessages(channel.type))return [];
         return [readState(channel.id,userId)];
       } catch { return []; }
     });
@@ -222,16 +223,20 @@ export function channelRoutes(app: FastifyInstance): void {
 
   app.get<Params<"id">>("/channels/:id/pins", async (req) => {
     const { channel } = requireChannel(req.params.id, requireUser(req));
-    return all<{message_id:string;pinned_by:string;pinned_at:string}>("SELECT message_id,pinned_by,pinned_at FROM pinned_messages WHERE channel_id=? ORDER BY pinned_at DESC LIMIT 100",channel.id).flatMap(row=>{
+    const q=parse(z.object({limit:z.coerce.number().int().min(1).max(100).optional(),before:z.string().max(100).optional()}),req.query);
+    const limit=q.limit??100;
+    const rows=all<{message_id:string;pinned_by:string;pinned_at:string}>("SELECT message_id,pinned_by,pinned_at FROM pinned_messages WHERE channel_id=? AND message_id<? ORDER BY message_id DESC LIMIT ?",channel.id,q.before??"\uffff",limit+1);
+    const items=rows.slice(0,limit).flatMap(row=>{
       const message=getMessage(row.message_id), pinnedBy=getUser(row.pinned_by);
       return message && pinnedBy ? [{message,pinnedBy,pinnedAt:row.pinned_at}] : [];
     });
+    return q.limit?{items,nextCursor:rows.length>limit?rows[limit-1]!.message_id:null}:items;
   });
   app.put<Params<"id"|"messageId">>("/channels/:id/pins/:messageId", async (req) => {
     const userId=requireUser(req); const {channel,perms}=requireChannel(req.params.id,userId);
     if(channel.type!=="dm" && !has(perms,Permission.MANAGE_MESSAGES)) throw forbidden();
     const message=getMessage(req.params.messageId); if(!message || message.channelId!==channel.id) throw notFound("Mensagem");
-    if(!one("SELECT 1 FROM pinned_messages WHERE channel_id=? AND message_id=?",channel.id,message.id) && (one<{count:number}>("SELECT COUNT(*) AS count FROM pinned_messages WHERE channel_id=?",channel.id)?.count??0)>=100) throw badRequest("O canal j? tem 100 mensagens fixadas. Remova uma antes de fixar outra.");
+    if(!one("SELECT 1 FROM pinned_messages WHERE channel_id=? AND message_id=?",channel.id,message.id) && (one<{count:number}>("SELECT COUNT(*) AS count FROM pinned_messages WHERE channel_id=?",channel.id)?.count??0)>=100) throw badRequest("O canal já tem 100 mensagens fixadas. Remova uma antes de fixar outra.");
     run("INSERT OR IGNORE INTO pinned_messages(channel_id,message_id,pinned_by,pinned_at) VALUES(?,?,?,?)",channel.id,message.id,userId,now());
     const row=one<{pinned_by:string;pinned_at:string}>("SELECT pinned_by,pinned_at FROM pinned_messages WHERE channel_id=? AND message_id=?",channel.id,message.id)!;
     const pinned={message,pinnedBy:getUser(row.pinned_by)!,pinnedAt:row.pinned_at};

@@ -224,6 +224,7 @@ export interface MessageWindow {
 }
 export interface ChannelReadState { channelId: string; messageId: string | null; updatedAt: string; unread?: { count:number; mention:boolean } }
 export interface PinnedMessage { message: Message; pinnedBy: User; pinnedAt: string }
+export interface PinnedMessagePage {items:PinnedMessage[];nextCursor:string|null}
 
 export const PROFILE_FIELD_KINDS=["linkedin","instagram","facebook","twitter","github","youtube","website","email","phone"] as const;
 export type ProfileFieldKind=typeof PROFILE_FIELD_KINDS[number];
