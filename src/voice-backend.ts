@@ -11,6 +11,7 @@ export const startVoice = impl.startVoice;
 export const voiceAddresses = impl.voiceAddresses;
 export const voiceStatesFor = impl.voiceStatesFor;
 export const leaveVoice = impl.leaveVoice;
+export const detachVoice = impl.detachVoice;
 export const setSelfState = impl.setSelfState;
 export const setSpeaking = impl.setSpeaking;
 export const setServerMute = impl.setServerMute;

@@ -30,10 +30,7 @@ export const Permission = {
 
 export type PermissionName = keyof typeof Permission;
 
-export const ALL_PERMISSIONS = Object.values(Permission).reduce(
-  (a, b) => a | b,
-  0,
-);
+export const ALL_PERMISSIONS = Object.values(Permission).reduce((a, b) => a | b, 0);
 
 export const DEFAULT_EVERYONE_PERMISSIONS =
   Permission.VIEW_CHANNEL |
@@ -81,34 +78,25 @@ export function computePermissions(input: PermissionInput): number {
   if (input.userId === input.ownerId) return ALL_PERMISSIONS;
   const memberRoles = new Set([input.everyoneRoleId, ...input.memberRoleIds]);
   let perms = 0;
-  for (const role of input.roles)
-    if (memberRoles.has(role.id)) perms |= role.permissions;
+  for (const role of input.roles) if (memberRoles.has(role.id)) perms |= role.permissions;
   if (perms & Permission.ADMINISTRATOR) return ALL_PERMISSIONS;
   const overwrites = input.overwrites ?? [];
   if (overwrites.length === 0) return perms;
 
-  const everyone = overwrites.find(
-    (o) => o.targetType === "role" && o.targetId === input.everyoneRoleId,
-  );
+  const everyone = overwrites.find((o) => o.targetType === "role" && o.targetId === input.everyoneRoleId);
   if (everyone) perms = (perms & ~everyone.deny) | everyone.allow;
 
   let allow = 0;
   let deny = 0;
   for (const o of overwrites) {
-    if (
-      o.targetType === "role" &&
-      o.targetId !== input.everyoneRoleId &&
-      memberRoles.has(o.targetId)
-    ) {
+    if (o.targetType === "role" && o.targetId !== input.everyoneRoleId && memberRoles.has(o.targetId)) {
       allow |= o.allow;
       deny |= o.deny;
     }
   }
   perms = (perms & ~deny) | allow;
 
-  const member = overwrites.find(
-    (o) => o.targetType === "member" && o.targetId === input.userId,
-  );
+  const member = overwrites.find((o) => o.targetType === "member" && o.targetId === input.userId);
   if (member) perms = (perms & ~member.deny) | member.allow;
   return perms;
 }
@@ -118,13 +106,16 @@ export function computePermissions(input: PermissionInput): number {
 // ---------------------------------------------------------------------------
 
 export interface User {
+  bio?: string;
   id: string;
   username: string;
   displayName: string;
   avatarUrl: string | null;
+  /** Signs in with an Annoy Global account. Only sent for the user's own profile. */
+  global?: boolean;
 }
 
-export type Presence = "online" | "offline";
+export type Presence = "online" | "idle" | "dnd" | "offline";
 
 export interface ServerSummary {
   id: string;
@@ -133,7 +124,16 @@ export interface ServerSummary {
   ownerId: string;
 }
 
-export type ChannelType = "category" | "text" | "voice" | "dm";
+export type ChannelType = "category" | "text" | "voice" | "dm" | "files" | "code" | "theater" | "song";
+
+/** Channel types people join with voice (theater rooms also stream and watch together). */
+export const VOICE_CHANNEL_TYPES: readonly ChannelType[] = ["voice", "theater"];
+export const isVoiceChannel = (type: ChannelType) => VOICE_CHANNEL_TYPES.includes(type);
+/** Channel types with a message history (a files channel is one where every message carries files). */
+export const MESSAGE_CHANNEL_TYPES: readonly ChannelType[] = ["text", "dm", "files", "theater", "song"];
+export const hasMessages = (type: ChannelType) => MESSAGE_CHANNEL_TYPES.includes(type);
+/** Temporary voice rooms vanish this long after creation if nobody ever joins. */
+export const TEMP_ROOM_IDLE_MS = 10 * 60 * 1000;
 
 export interface Overwrite {
   targetId: string;
@@ -151,6 +151,8 @@ export interface Channel {
   parentId: string | null;
   position: number;
   overwrites: Overwrite[];
+  /** Temporary voice room: deleted when everyone leaves, or after 10 minutes if nobody joins. */
+  temporary?: boolean;
 }
 
 export interface DmChannel {
@@ -210,6 +212,8 @@ export interface Invite {
 export type RelationshipStatus = "friend" | "incoming" | "outgoing";
 
 export interface Relationship {
+  nickname?: string;
+  nicknameByOther?: string;
   user: User;
   status: RelationshipStatus;
 }
@@ -226,10 +230,12 @@ export interface VoiceState {
   video: boolean;
   /** Sharing a screen or window. */
   screen: boolean;
+  screenQuality?: { height: number; fps: number; width?: number };
 }
 
 /** What a producer carries; one camera and one screen per user at most. */
-export type MediaSource = "mic" | "camera" | "screen";
+/** "screen_audio" is the sound shared together with a screen (Windows). */
+export type MediaSource = "mic" | "camera" | "screen" | "screen_audio";
 
 export interface Ban {
   user: User;
@@ -293,9 +299,7 @@ export interface ImportStructure {
   channels: ImportChannel[];
 }
 
-export type ImportTarget =
-  | { kind: "new"; name: string }
-  | { kind: "existing"; serverId: string };
+export type ImportTarget = { kind: "new"; name: string } | { kind: "existing"; serverId: string };
 
 export interface ImportRequest {
   token: string;
@@ -312,12 +316,7 @@ export interface ImportRequest {
   overwrites: boolean;
 }
 
-export type ImportPhase =
-  | "structure"
-  | "messages"
-  | "done"
-  | "failed"
-  | "cancelled";
+export type ImportPhase = "structure" | "messages" | "done" | "failed" | "cancelled";
 
 export interface ImportJob {
   id: string;
@@ -345,6 +344,30 @@ export interface InstanceInfo {
   registration: RegistrationMode;
   /** "Entrar com Discord" (OAuth2) is configured on this instance. */
   discordLogin: boolean;
+  /**
+   * This server's Annoy Global ID when global accounts can log in here; null
+   * when the host turned Global off or it isn't reachable. Older servers omit it.
+   */
+  globalServerId?: string | null;
+}
+
+/** Proof of a global account for one server (Annoy-api-global DESIGN.md). */
+export interface GlobalProof {
+  /** This account's identity on this server: an Ed25519 public key (JWK "x"). */
+  identity: string;
+  /** From POST /auth/global/challenge. */
+  challenge: string;
+  /** Ed25519 signature over "annoy-login:<challenge>", base64url. */
+  signature: string;
+  /** Blind token from Annoy Global, bound to this server and identity. */
+  token: { kid: string; message: string; signature: string };
+}
+
+export interface GlobalLogin extends GlobalProof {
+  /** First time on this server: the username to create; ignored when the account exists. */
+  username?: string;
+  displayName?: string;
+  inviteCode?: string;
 }
 
 export interface DiscordLoginBegin {
@@ -360,6 +383,17 @@ export type DiscordLoginPoll =
   | { status: "pending" }
   /** `auth` is null when linking Discord to an account that is already signed in. */
   | { status: "done"; auth: AuthResponse | null; user: User }
+  | { status: "error"; message: string };
+
+/** Private connection information: returned only to the account owner. */
+export interface SteamConnectionStatus {
+  connection: { steamId: string; profileUrl: string } | null;
+  onlineActivityAvailable: boolean;
+}
+export interface SteamLinkBegin { url: string; handoff: string }
+export type SteamLinkPoll =
+  | { status: "pending" }
+  | { status: "done"; connection: NonNullable<SteamConnectionStatus["connection"]> }
   | { status: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -409,6 +443,22 @@ export interface AdminOverview {
   uploadsBytes: number;
   /** Estimated Cloudflare SFU egress this month; null with the built-in backend. */
   voiceUsage: VoiceUsage | null;
+}
+
+/** Server updates, run by the "updater" Compose service next to the server. */
+export interface UpdateStatus {
+  current: string;
+  /** Newest published server release; null when GitHub can't be reached. */
+  latest: string | null;
+  /** The updater is running and answering; without it, nothing below applies. */
+  available: boolean;
+  auto: boolean;
+  /** Image tag followed (ANNOY_VERSION): "latest", or "0.7" to stay on 0.7.x. */
+  channel: string | null;
+  intervalHours: number | null;
+  lastCheck: string | null;
+  lastError: string | null;
+  updating: boolean;
 }
 
 export interface VoiceUsage {
@@ -472,25 +522,26 @@ export type VoiceMethod =
   | "publish"
   | "subscribe"
   | "renegotiate"
+  /** Takes back a Cloudflare session after a reconnect or a server restart, without renegotiating media. */
+  | "resume"
   | "leave";
 
 /** Where voice media flows: the built-in mediasoup SFU, or Cloudflare's Realtime SFU (works behind CGNAT). */
 export type VoiceBackend = "builtin" | "cloudflare";
 
+export interface DirectCall { callerDeviceId?: string; calleeDeviceId?: string; id: string; callerId: string; calleeId: string; video: boolean; status: "ringing" | "active" | "ended"; reason?: string; iceServers?: { urls: string | string[]; username?: string; credential?: string }[] }
+
 export type ClientOp =
-  | { op: "identify"; token: string }
+  | { op: "identify"; features?: string[]; deviceId?: string; token: string; presence?: Presence }
   | { op: "heartbeat" }
+  | { op: "presence"; idle: boolean; status?: Presence }
+  | { op: "call"; deviceId: string; callId: string; action: "accept" | "reject" | "end" | "signal"; signal?: { description?: { type: "offer" | "answer"; sdp: string }; candidate?: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } } }
   | { op: "activity"; activities: UserActivity[] }
   | { op: "typing"; channelId: string }
-  | { op: "voice_state"; selfMute: boolean; selfDeaf: boolean }
+  | { op: "voice_state"; selfMute: boolean; selfDeaf: boolean; screenQuality?: { height: number; fps: number; width?: number } }
   /** Client-measured speaking state; only used where the SFU can't measure levels (Cloudflare). */
   | { op: "speaking"; speaking: boolean }
-  | {
-      op: "voice";
-      id: number;
-      method: VoiceMethod;
-      data: Record<string, unknown>;
-    };
+  | { op: "voice"; id: number; method: VoiceMethod; data: Record<string, unknown> };
 
 export type GatewayEvent =
   | {
@@ -502,21 +553,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: {
-          isAdmin: boolean;
-          registration: RegistrationMode;
-          voiceBackend: VoiceBackend;
-          activityArtwork?: boolean;
-          developmentActivity?: boolean;
-          directCalls?: boolean;
-          socialProfiles?: boolean;
-          groupActivity?: boolean;
-          reactions?: boolean;
-          serverIcons?: boolean;
-          gifSearch?: boolean;
-          presenceStatus?: boolean;
-          manualPresence?: boolean;
-        };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
@@ -532,39 +569,111 @@ export type GatewayEvent =
   | { t: "PRESENCE_UPDATE"; d: { userId: string; presence: Presence } }
   | { t: "ACTIVITY_UPDATE"; d: { userId: string; activities: UserActivity[] } }
   | { t: "USER_UPDATE"; d: User }
-  | {
-      t: "VOICE_STATE_UPDATE";
-      d: { userId: string; serverId: string; state: VoiceState | null };
-    }
-  | {
-      t: "VOICE_NEW_PRODUCER";
-      d: {
-        channelId: string;
-        producerId: string;
-        userId: string;
-        kind: "audio" | "video";
-        source: MediaSource;
-      };
-    }
+  | { t: "VOICE_STATE_UPDATE"; d: { userId: string; serverId: string; state: VoiceState | null } }
+  | { t: "VOICE_NEW_PRODUCER"; d: { channelId: string; producerId: string; userId: string; kind: "audio" | "video"; source: MediaSource } }
   | { t: "VOICE_PRODUCER_CLOSED"; d: { producerId: string } }
   | { t: "VOICE_KICKED"; d: { reason: string } }
-  | {
-      t: "VOICE_REPLY";
-      d:
-        | { id: number; ok: true; data: unknown }
-        | { id: number; ok: false; message: string };
-    }
+  | { t: "VOICE_REPLY"; d: { id: number; ok: true; data: unknown } | { id: number; ok: false; message: string } }
   | { t: "DM_CREATE"; d: DmChannel }
+  | { t: "CALL_UPDATE"; d: DirectCall }
+  | { t: "CALL_SIGNAL"; d: { callId: string; signal: { description?: { type: "offer" | "answer"; sdp: string }; candidate?: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } } } }
   | { t: "RELATIONSHIP_UPDATE"; d: Relationship }
   | { t: "RELATIONSHIP_REMOVE"; d: { userId: string } }
   | { t: "INVALID_SESSION"; d: { reason: string } }
-  | { t: "IMPORT_PROGRESS"; d: ImportJob };
+  | { t: "IMPORT_PROGRESS"; d: ImportJob }
+  | { t: "PLAYBACK_UPDATE"; d: PlaybackState }
+  /** A code channel's files (`paths`) or Git state changed. */
+  | { t: "CODE_UPDATE"; d: { channelId: string; repo: CodeRepo; paths: string[]; by: string | null } };
+
+// ---------------------------------------------------------------------------
+// Theater and song rooms: one shared, synced playback per channel
+// ---------------------------------------------------------------------------
+
+/** "file" is an upload to this server, "direct" a media URL, "youtube" and "site" play in an embedded page. */
+export type PlaybackKind = "file" | "direct" | "youtube" | "site";
+
+export interface PlaybackItem {
+  id: string;
+  url: string;
+  title: string;
+  kind: PlaybackKind;
+  addedBy: string;
+  addedAt: string;
+}
+
+export interface PlaybackState {
+  channelId: string;
+  queue: PlaybackItem[];
+  currentId: string | null;
+  paused: boolean;
+  /** Seconds into the current item at `updatedAt`; while playing, add the time elapsed since. */
+  position: number;
+  /** Server clock (ms since epoch) when `position` was taken. */
+  updatedAt: number;
+  /** Server clock when this state was sent, to correct for the viewer's clock offset. */
+  serverTime: number;
+  /** Advance to the next item when the current one ends. */
+  autoplay: boolean;
+}
+
+export type PlaybackAction =
+  | { op: "add"; url: string; title?: string; uploadId?: string }
+  | { op: "remove"; itemId: string }
+  | { op: "play"; itemId?: string }
+  | { op: "pause"; position: number }
+  | { op: "seek"; position: number }
+  | { op: "next" }
+  | { op: "ended"; itemId: string }
+  | { op: "move"; itemId: string; index: number }
+  | { op: "autoplay"; value: boolean };
+
+/** Where the current item should be right now, in seconds. */
+export function playbackPosition(state: PlaybackState, clockOffsetMs = 0): number {
+  if (state.paused || !state.currentId) return state.position;
+  return state.position + Math.max(0, Date.now() + clockOffsetMs - state.updatedAt) / 1000;
+}
+
+// ---------------------------------------------------------------------------
+// Code channels: a server-side working copy of an external Git repository
+// ---------------------------------------------------------------------------
+
+export interface CodeRepo {
+  channelId: string;
+  /** Remote URL (https only, never a host on this server's network); null until someone links one. */
+  url: string | null;
+  status: "empty" | "cloning" | "ready" | "error";
+  error: string | null;
+  branch: string | null;
+  head: string | null;
+}
+
+export interface CodeEntry {
+  path: string;
+  type: "file" | "dir";
+  size: number;
+}
+
+export interface CodeFile {
+  path: string;
+  content: string;
+  /** Hash of `content`; send it back when saving so concurrent edits are detected. */
+  hash: string;
+  binary: boolean;
+}
+
+export interface CodeStatus {
+  branch: string | null;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  /** Two-letter `git status --porcelain` codes, e.g. " M", "??", "A ". */
+  files: { path: string; code: string }[];
+  branches: string[];
+  log: { hash: string; subject: string; author: string; date: string }[];
+}
 
 export type GatewayEventType = GatewayEvent["t"];
-export type GatewayEventOf<T extends GatewayEventType> = Extract<
-  GatewayEvent,
-  { t: T }
->;
+export type GatewayEventOf<T extends GatewayEventType> = Extract<GatewayEvent, { t: T }>;
 
 // ---------------------------------------------------------------------------
 // Mentions
@@ -572,16 +681,10 @@ export type GatewayEventOf<T extends GatewayEventType> = Extract<
 
 const USER_MENTION = /<@([0-9a-z]+)>/g;
 
-export function parseMentions(content: string): {
-  userIds: string[];
-  everyone: boolean;
-} {
+export function parseMentions(content: string): { userIds: string[]; everyone: boolean } {
   const ids = new Set<string>();
   for (const m of content.matchAll(USER_MENTION)) if (m[1]) ids.add(m[1]);
-  return {
-    userIds: [...ids],
-    everyone: /(^|\s)@(everyone|here)\b/.test(content),
-  };
+  return { userIds: [...ids], everyone: /(^|\s)@(everyone|here)\b/.test(content) };
 }
 
 export const LIMITS = {

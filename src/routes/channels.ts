@@ -1,4 +1,4 @@
-import { ALL_PERMISSIONS, has, LIMITS, parseMentions, Permission, type Channel, type Message } from "@distopic/protocol";
+import { ALL_PERMISSIONS, has, hasMessages, LIMITS, parseMentions, Permission, type Channel, type Message } from "@distopic/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../auth.ts";
@@ -11,6 +11,8 @@ import { requireChannel, requireServer } from "../perms.ts";
 import { dmRecipientIds, getChannel, getMessage, getMessages, isMember } from "../repo.ts";
 import { discardBlobs, readBlob, writeBlob } from "../uploads.ts";
 import { byteRange } from "../ranges.ts";
+import { uploadsRemoved } from "../playback.ts";
+import { removeChannel } from "../rooms.ts";
 import { parse, type Params } from "../validate.ts";
 
 const INLINE_TYPES = /^(image\/(png|jpeg|gif|webp)|audio\/|video\/)/;
@@ -110,10 +112,7 @@ export function channelRoutes(app: FastifyInstance): void {
     const { channel } = requireChannel(req.params.id, userId);
     if (!channel.serverId) throw badRequest("DMs não podem ser excluídas");
     requireServer(channel.serverId, userId, Permission.MANAGE_CHANNELS);
-    const blobs = all<{ id: string }>("SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.channel_id = ?", channel.id);
-    run("DELETE FROM channels WHERE id = ?", channel.id);
-    await discard(blobs);
-    serverChanged(channel.serverId);
+    await removeChannel(channel);
     return {};
   });
 
@@ -149,7 +148,7 @@ export function channelRoutes(app: FastifyInstance): void {
 
   app.get<Params<"id">>("/channels/:id/messages", async (req): Promise<Message[]> => {
     const { channel } = requireChannel(req.params.id, requireUser(req));
-    if (channel.type === "category" || channel.type === "voice") return [];
+    if (!hasMessages(channel.type)) return [];
     const q = parse(listQuery, req.query);
     if (q.around) {
       const target=getMessage(q.around); if (!target || target.channelId!==channel.id) throw notFound("Mensagem");
@@ -163,7 +162,7 @@ export function channelRoutes(app: FastifyInstance): void {
   app.post<Params<"id">>("/channels/:id/messages", async (req) => {
     const userId = requireUser(req);
     const { channel, perms } = requireChannel(req.params.id, userId, Permission.SEND_MESSAGES);
-    if (channel.type !== "text" && channel.type !== "dm") throw badRequest("Este canal não aceita mensagens");
+    if (!hasMessages(channel.type)) throw badRequest("Este canal não aceita mensagens");
 
     const { fields, files } = req.isMultipart() ? await readMultipart(req) : { fields: req.body as Record<string, unknown>, files: [] };
     try {
@@ -171,6 +170,7 @@ export function channelRoutes(app: FastifyInstance): void {
       const body = parse(messageBody, { content: fields.content ?? "", replyToId: fields.replyToId || null });
       const content = body.content.trim();
       if (!content && files.length === 0) throw badRequest("Mensagem vazia");
+      if (channel.type === "files" && files.length === 0) throw badRequest("Envie ao menos um arquivo neste canal");
       const replyToId = body.replyToId && one("SELECT 1 AS x FROM messages WHERE id = ? AND channel_id = ?", body.replyToId, channel.id) ? body.replyToId : null;
       const mentions = resolveMentions(channel, content, perms);
       const id = newId();
@@ -229,6 +229,7 @@ export function channelRoutes(app: FastifyInstance): void {
     if (message.author.id !== userId && !moderator) throw forbidden();
     run("DELETE FROM messages WHERE id = ?", message.id);
     await discard(message.attachments);
+    uploadsRemoved(channel, message.attachments.map((a) => a.id));
     sendToChannel(channel, { t: "MESSAGE_DELETE", d: { channelId: channel.id, messageId: message.id } });
     return {};
   });

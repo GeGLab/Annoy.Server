@@ -9,6 +9,7 @@ import {
   Permission,
   type Ban,
   type Invite,
+  type ChannelType,
   type ServerState,
 } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
@@ -34,9 +35,10 @@ const permissions = z.number().int().min(0).max(ALL_PERMISSIONS);
 
 const createServer = z.object({ name });
 const patchServer = z.object({ name: name.optional(), iconUrl: z.null().optional() }).refine((body) => body.name !== undefined || body.iconUrl === null, "Nenhuma alteração informada");
+const transferOwnership = z.object({ userId: z.string().min(1).max(128) }).strict();
 const createChannel = z.object({
   name,
-  type: z.enum(["category", "text", "voice"]),
+  type: z.enum(["category", "text", "voice", "files", "code", "theater", "song"]),
   parentId: z.string().nullable().optional(),
   topic: z.string().max(LIMITS.topicMax).optional(),
 });
@@ -65,15 +67,21 @@ const slug = (s: string) =>
     .slice(0, LIMITS.nameMax) || "canal";
 
 /** Removes a server with its channels, messages and attachment files. */
-export async function deleteServer(serverId: string): Promise<void> {
-  const members = all<{ user_id: string }>("SELECT user_id FROM members WHERE server_id = ?", serverId);
-  const blobs = all<{ id: string }>(
-    "SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id JOIN channels c ON c.id = m.channel_id WHERE c.server_id = ?",
-    serverId,
-  ).map((r) => r.id);
+export async function deleteServer(serverId: string, actorId: string): Promise<void> {
+  const { members, blobs, icon } = tx(() => {
+    const server = getServer(serverId);
+    if (!server) throw notFound("Servidor");
+    const members = all<{ user_id: string }>("SELECT user_id FROM members WHERE server_id = ?", serverId);
+    if (server.ownerId === actorId && members.some((m) => m.user_id !== actorId))
+      throw forbidden("Transfira a propriedade antes de excluir um servidor com outros membros.");
+    const blobs = all<{ id: string }>(
+      "SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id JOIN channels c ON c.id = m.channel_id WHERE c.server_id = ?",
+      serverId,
+    ).map((r) => r.id);
+    run("DELETE FROM servers WHERE id = ?", serverId);
+    return { members, blobs, icon: server.iconUrl };
+  });
   for (const m of members) disconnectUser(serverId, m.user_id);
-  const icon = getServer(serverId)?.iconUrl;
-  run("DELETE FROM servers WHERE id = ?", serverId);
   refreshActivityAccess();
   await discardAvatar(icon);
   await discardBlobs(blobs);
@@ -93,19 +101,23 @@ export function serverState(serverId: string, userId: string): ServerState {
   };
 }
 
-function insertChannel(serverId: string, type: "category" | "text" | "voice", channelName: string, parentId: string | null, topic = ""): string {
+const SLUG_TYPES = new Set<ChannelType>(["text", "files", "code"]);
+
+export function insertChannel(serverId: string, type: ChannelType, channelName: string, parentId: string | null, topic = "", createdBy: string | null = null, temporary = false): string {
   const id = newId();
   const pos = one<{ p: number | null }>("SELECT MAX(position) AS p FROM channels WHERE server_id = ?", serverId)?.p ?? -1;
   run(
-    "INSERT INTO channels (id, server_id, type, name, topic, parent_id, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO channels (id, server_id, type, name, topic, parent_id, position, created_at, created_by, temporary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     id,
     serverId,
     type,
-    type === "text" ? slug(channelName) : channelName.trim(),
+    SLUG_TYPES.has(type) ? slug(channelName) : channelName.trim(),
     topic,
     parentId,
     pos + 1,
     now(),
+    createdBy,
+    temporary ? 1 : 0,
   );
   return id;
 }
@@ -183,8 +195,28 @@ export function serverRoutes(app: FastifyInstance): void {
     const userId = requireUser(req);
     const { server } = requireServer(req.params.id, userId);
     if (server.ownerId !== userId) throw forbidden("Apenas o dono pode excluir o servidor");
-    await deleteServer(server.id);
+    await deleteServer(server.id, userId);
     return {};
+  });
+
+  app.post<Params<"id">>("/servers/:id/ownership", async (req) => {
+    const actor = requireUser(req);
+    const { userId: target } = parse(transferOwnership, req.body);
+    const serverId = req.params.id;
+    tx(() => {
+      const { server } = requireServer(serverId, actor);
+      if (server.ownerId !== actor) throw forbidden("Apenas o dono pode transferir a propriedade.");
+      if (target === actor) throw badRequest("Escolha outro membro para receber a propriedade.");
+      if (!isMember(serverId, target)) throw badRequest("O novo dono precisa ser membro deste servidor.");
+      const user = one<{ username: string; banned_at: string | null; imported_from: string | null }>(
+        "SELECT username, banned_at, imported_from FROM users WHERE id = ?", target,
+      );
+      if (!user || user.banned_at || user.imported_from || user.username.startsWith("deleted."))
+        throw badRequest("Escolha um membro com uma conta ativa.");
+      run("UPDATE servers SET owner_id = ? WHERE id = ?", target, serverId);
+    });
+    serverChanged(serverId);
+    return getServer(serverId);
   });
 
   // Channels ---------------------------------------------------------------
@@ -199,7 +231,7 @@ export function serverRoutes(app: FastifyInstance): void {
     if (parentId && !one("SELECT 1 AS x FROM channels WHERE id = ? AND server_id = ? AND type = 'category'", parentId, serverId)) {
       throw badRequest("Categoria inválida");
     }
-    const id = insertChannel(serverId, body.type, body.name, parentId, body.topic ?? "");
+    const id = insertChannel(serverId, body.type, body.name, parentId, body.topic ?? "", userId);
     serverChanged(serverId);
     return getChannels(serverId).find((c) => c.id === id);
   });
@@ -323,7 +355,7 @@ export function serverRoutes(app: FastifyInstance): void {
     const { id: serverId } = req.params;
     const { server } = requireServer(serverId, actor);
     if (req.params.userId === "@me" || req.params.userId === actor) {
-      if (server.ownerId === actor) throw badRequest("O dono não pode sair; exclua o servidor");
+      if (server.ownerId === actor) throw badRequest("Transfira a propriedade para sair. Se estiver sozinho, você pode excluir o servidor.");
       removeMember(serverId, actor);
       return {};
     }

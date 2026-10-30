@@ -60,7 +60,7 @@ docker compose up -d
 ```
 
 This pulls the published image `ghcr.io/geglab/annoy-server`. Pin a
-version with `ANNOY_VERSION=0.4.0`, or build from source with
+version with `ANNOY_VERSION=0.7.2`, or build from source with
 `docker compose up -d --build`. Without Compose:
 
 ```bash
@@ -70,11 +70,22 @@ docker run -d --name annoy --restart unless-stopped \
   ghcr.io/geglab/annoy-server:latest
 ```
 
-**Automatic updates (optional):** add `COMPOSE_PROFILES=autoupdate` to `.env`
-and run `docker compose up -d`. A small `updater` container then checks every
-6 hours (`ANNOY_UPDATE_INTERVAL_HOURS`) and restarts the server on the newest
-image of `ANNOY_VERSION`: `latest` follows every release, `0.4` only takes
-0.4.x fixes. It needs access to the Docker socket to recreate the container.
+**Updates:** the instance admin updates the server from the app, under
+Administrar instância → Atualizações, and turns automatic updates on or off
+there. Updates don't disconnect anyone: a small `proxy` owns port 8787, the
+`updater` starts the new version next to the running one (`annoy` and
+`annoy-b` take turns), points the proxy at it once it answers, and only then
+stops the old one. Clients reconnect within milliseconds; Cloudflare voice and
+private calls keep flowing. With the built-in voice backend the call rejoins
+on the other slot's ports, so open `40000-40003` (UDP and TCP).
+
+The updater follows the newest image of `ANNOY_VERSION` (`latest` takes every
+release, `0.7` only 0.7.x fixes). With automatic updates on, it checks every 6
+hours (`ANNOY_UPDATE_INTERVAL_HOURS`); `ANNOY_AUTO_UPDATE=on` turns them on
+until the admin chooses in the app. It needs the Docker socket to start and
+stop the server containers. Update through the app rather than
+`docker compose pull` by hand, which restarts the server. Setups from before
+0.7.2 switch over once with `git pull && docker compose up -d --remove-orphans`.
 
 Replace `203.0.113.10` with the address clients use to reach the machine: your
 LAN IP for home use, or the public IP on the internet. Open these ports:
@@ -82,7 +93,7 @@ LAN IP for home use, or the public IP on the internet. Open these ports:
 | Port | Protocol | Purpose |
 | --- | --- | --- |
 | `8787` | TCP | REST API and WebSocket gateway |
-| `40000` | **UDP and TCP** | Voice media |
+| `40000-40003` | **UDP and TCP** | Voice media (two slots, for updates without downtime) |
 
 **Upgrading from Distopic (0.2):** the project is now Annoy. Settings were
 renamed from `DISTOPIC_*` to `ANNOY_*`; the old names keep working. Data stays
@@ -119,6 +130,8 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_HOST` | `0.0.0.0` | Bind address |
 | `ANNOY_PORT` | `8787` | API and gateway port |
 | `ANNOY_VOICE_PORT` | `40000` | Voice media port (UDP and TCP) |
+| `ANNOY_GLOBAL` | `on` | `off` stops talking to Annoy Global (needs a restart): no global accounts or Global-backed features here |
+| `ANNOY_GLOBAL_URL` | `https://global.geg.dev.br` | Annoy Global API |
 | `ANNOY_ANNOUNCED_IP` | default-route IP | Voice addresses for clients, comma-separated: **public IP first, LAN IP second** (each gets its own port: 40000, 40001…). Required in Docker |
 | `ANNOY_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
 | `ANNOY_CF_SFU_APP_ID` / `_TOKEN` | (empty) | Cloudflare Realtime SFU app credentials, used with `ANNOY_VOICE_BACKEND=cloudflare` |
@@ -129,6 +142,7 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_DISCORD_CLIENT_ID` | (empty) | Enables "Sign in with Discord" (with the secret) |
 | `ANNOY_DISCORD_CLIENT_SECRET` | (empty) | Discord OAuth2 client secret |
 | `ANNOY_PUBLIC_URL` | request origin | Public origin for OAuth redirects behind a proxy |
+| `ANNOY_STEAM_API_KEY` | (empty) | Optional online Steam game lookup; OpenID linking and local detection work without it ([setup](docs/steam.md)) |
 
 The API speaks plain HTTP. For internet exposure, put a TLS reverse proxy (Caddy,
 nginx, Cloudflare Tunnel) in front of port `8787` and connect with

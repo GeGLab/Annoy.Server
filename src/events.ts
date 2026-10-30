@@ -8,6 +8,8 @@ export class Connection {
   private static seq = 0;
   readonly id = ++Connection.seq;
   userId: string | null = null;
+  deviceId: string | null = null;
+  features = new Set<string>();
   lastHeartbeat = Date.now();
   activityWindowAt = 0;
   activityCount = 0;
@@ -15,6 +17,18 @@ export class Connection {
   constructor(readonly socket: WebSocket) {}
 
   send(event: GatewayEvent): void {
+    if (!this.features.has("manualPresence")) {
+      if (event.t === "PRESENCE_UPDATE" && event.d.presence === "dnd") event = { ...event, d: { ...event.d, presence: "online" } };
+      else if (event.t === "READY") event = { ...event, d: { ...event.d, presences: Object.fromEntries(Object.entries(event.d.presences).map(([id, presence]) => [id, presence === "dnd" ? "online" : presence])) } };
+    }
+    if (!this.features.has("developmentActivity")) {
+      if (event.t === "ACTIVITY_UPDATE") event = { ...event, d: { ...event.d, activities: event.d.activities.filter((activity) => activity.kind !== "development") } };
+      else if (event.t === "READY") event = { ...event, d: { ...event.d, activities: Object.fromEntries(Object.entries(event.d.activities ?? {}).map(([id, activities]) => [id, activities.filter((activity) => activity.kind !== "development")])) } };
+    }
+    if (!this.features.has("idlePresence")) {
+      if (event.t === "PRESENCE_UPDATE" && event.d.presence === "idle") event = { ...event, d: { ...event.d, presence: "online" } };
+      else if (event.t === "READY") event = { ...event, d: { ...event.d, presences: Object.fromEntries(Object.entries(event.d.presences).map(([id, presence]) => [id, presence === "idle" ? "online" : presence])) } };
+    }
     if (this.socket.readyState === this.socket.OPEN) this.socket.send(JSON.stringify(event));
   }
 }
@@ -72,6 +86,18 @@ const refreshHooks: ServerHook[] = [];
 /** Lets owners of derived state (voice) re-check access after permission changes. */
 export function onServerChanged(hook: ServerHook): void {
   refreshHooks.push(hook);
+}
+
+type VoiceHook = (serverId: string) => void;
+const voiceHooks: VoiceHook[] = [];
+
+/** Runs after anyone joins, leaves or moves between voice channels of a server. */
+export function onVoiceChanged(hook: VoiceHook): void {
+  voiceHooks.push(hook);
+}
+
+export function voiceChanged(serverId: string): void {
+  for (const hook of voiceHooks) hook(serverId);
 }
 
 /** Single entry point for "structure, roles or membership changed". */

@@ -119,6 +119,12 @@ threads, emojis e figurinhas não são importados, e o token nunca é salvo.
 `https://seu.dominio/api/auth/discord/callback` e defina as variáveis
 `ANNOY_DISCORD_CLIENT_ID` e `ANNOY_DISCORD_CLIENT_SECRET`.
 
+**Steam:** o cliente detecta jogos localmente no Windows e Linux, incluindo Proton.
+Em **Configurações → Atividade**, também é possível vincular uma conta pelo login
+oficial da Steam. A vinculação não exige chave; para consultar o jogo online
+quando não houver jogo local, configure `ANNOY_STEAM_API_KEY` no servidor.
+Veja [configuração e privacidade](docs/steam.md).
+
 ## Licença
 
 [MIT](LICENSE) © Gustavo Cruz.

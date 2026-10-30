@@ -9,6 +9,7 @@ import { newId } from "../ids.ts";
 import { findDm, getDmChannel, getRelationships, getUser, getUserByName, relationshipStatus } from "../repo.ts";
 import { parse, type Params } from "../validate.ts";
 import { refreshFriendActivities } from "../activity.ts";
+import { endCallsBetween } from "../calls.ts";
 
 const requestBody = z.object({ username: z.string().trim().min(1) });
 const dmBody = z.object({ userId: z.string().min(1) });
@@ -16,7 +17,7 @@ const dmBody = z.object({ userId: z.string().min(1) });
 function notifyRelationship(userId: string, otherId: string): void {
   const status = relationshipStatus(userId, otherId);
   const other = getUser(otherId);
-  if (status && other) sendToUser(userId, { t: "RELATIONSHIP_UPDATE", d: { user: other, status } });
+  if (status && other) sendToUser(userId, { t: "RELATIONSHIP_UPDATE", d: getRelationships(userId).find((r) => r.user.id === otherId)! });
   else sendToUser(userId, { t: "RELATIONSHIP_REMOVE", d: { userId: otherId } });
 }
 
@@ -37,6 +38,15 @@ function canMessage(a: string, b: string): boolean {
 }
 
 export function socialRoutes(app: FastifyInstance): void {
+  app.patch<Params<"userId">>("/relationships/:userId/nickname", async (req) => {
+    const userId = requireUser(req), otherId = req.params.userId;
+    if (relationshipStatus(userId, otherId) !== "friend" || relationshipStatus(otherId, userId) !== "friend") throw forbidden("Apenas amigos podem receber apelidos");
+    const { nickname } = parse(z.object({ nickname: z.string().trim().max(64) }), req.body);
+    run("UPDATE relationships SET nickname=? WHERE user_id=? AND other_id=?", nickname, userId, otherId);
+    notifyRelationship(userId, otherId);
+    notifyRelationship(otherId, userId);
+    return getRelationships(userId).find((r) => r.user.id === otherId)!;
+  });
   app.get("/relationships", async (req): Promise<Relationship[]> => getRelationships(requireUser(req)));
 
   app.post("/relationships", async (req) => {
@@ -81,6 +91,7 @@ export function socialRoutes(app: FastifyInstance): void {
   app.delete<Params<"userId">>("/relationships/:userId", async (req) => {
     const userId = requireUser(req);
     const otherId = req.params.userId;
+    endCallsBetween(userId, otherId);
     run(
       "DELETE FROM relationships WHERE (user_id = ? AND other_id = ?) OR (user_id = ? AND other_id = ?)",
       userId,

@@ -61,11 +61,27 @@ export const config = {
   uploadCeilingBytes: 500 * 1024 * 1024,
   /** Public origin clients and browsers use to reach this server (OAuth redirects). */
   publicUrl: env("ANNOY_PUBLIC_URL", "").replace(/\/+$/, ""),
+  /** Optional: OpenID linking works without a key; online game lookup needs one. */
+  steamApiKey: env("ANNOY_STEAM_API_KEY", ""),
   /** "Entrar com Discord" is offered only when both are set. */
   discord: {
     clientId: env("ANNOY_DISCORD_CLIENT_ID", ""),
     clientSecret: env("ANNOY_DISCORD_CLIENT_SECRET", ""),
   },
+  /**
+   * Annoy Global (accounts across servers, integrations). On by default; the
+   * host can turn it off (ANNOY_GLOBAL=off) and restart. Off, global accounts
+   * can't log in here and features that need Global are unavailable.
+   */
+  global: {
+    enabled: env("ANNOY_GLOBAL", "on") !== "off",
+    url: env("ANNOY_GLOBAL_URL", "https://global.geg.dev.br").replace(/\/+$/, ""),
+  },
+  /**
+   * Folder shared with the "updater" Compose service (/control in
+   * docker-compose.yml). Empty outside Docker: updates are then manual.
+   */
+  updateControlDir: env("ANNOY_CONTROL_DIR", ""),
   voice: {
     backend: (env("ANNOY_VOICE_BACKEND", "builtin") === "cloudflare" ? "cloudflare" : "builtin") as "builtin" | "cloudflare",
     /** Cloudflare Realtime SFU application (Dashboard → Realtime → SFU). The token never leaves the server. */

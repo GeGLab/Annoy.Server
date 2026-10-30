@@ -3,25 +3,44 @@ import { z } from "zod";
 import { all, one } from "./db.ts";
 import { sendToUser, onServerChanged, type Connection } from "./events.ts";
 import { relationshipStatus } from "./repo.ts";
+import { presenceOf } from "./presence.ts";
 
-const entry = z.object({
-  kind: z.enum(["game", "music", "development"]),
-  provider: z.enum(["steam", "spotify", "apple-music", "vscode", "intellij", "dbeaver", "ssms", "visual-studio"]),
-  name: z.string().trim().min(1).max(160), artist: z.string().max(160).optional(), album: z.string().max(160).optional(),
-  appId: z.string().regex(/^\d{1,10}$/).optional(), startedAt: z.number().int().min(0).optional(),
-  artwork: z.string().max(24000).optional(), file: z.string().max(160).optional(), project: z.string().max(160).optional(), language: z.string().max(32).optional(),
-}).strict();
-const payload = z.array(entry).max(3).refine((items) =>
-  new Set(items.map((item) => item.kind)).size === items.length &&
-  items.every((item) => item.kind === "game" ? item.provider === "steam" && !!item.appId : item.kind === "music" ? ["spotify", "apple-music"].includes(item.provider) : ["vscode", "intellij", "dbeaver", "ssms", "visual-studio"].includes(item.provider)) &&
-  items.every((item) => !item.artwork || (item.kind === "music" ? /^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+={0,2}$/.test(item.artwork) : /^https:\/\/[a-z0-9.-]+\.steamstatic\.com\/(?:store_item_assets\/)?steam\/apps\/\d+\/[a-zA-Z0-9_/.?=&%-]+$/.test(item.artwork)))
-);
+const entry = z
+  .object({
+    kind: z.enum(["game", "music", "development"]),
+    provider: z.enum(["steam", "spotify", "apple-music", "vscode", "intellij", "dbeaver", "ssms", "visual-studio"]),
+    name: z.string().trim().min(1).max(160),
+    artist: z.string().max(160).optional(),
+    album: z.string().max(160).optional(),
+    appId: z
+      .string()
+      .regex(/^\d{1,10}$/)
+      .optional(),
+    startedAt: z.number().int().min(0).optional(),
+    artwork: z.string().max(24_000).optional(),
+    file: z.string().max(160).optional(),
+    project: z.string().max(160).optional(),
+    language: z.string().max(32).optional(),
+  })
+  .strict();
+const payload = z
+  .array(entry)
+  .max(3)
+  .refine(
+    (items) =>
+      new Set(items.map((i) => i.kind)).size === items.length &&
+      items.every((i) => i.kind === "game" ? i.provider === "steam" && !!i.appId : i.kind === "music" ? ["spotify", "apple-music"].includes(i.provider) : ["vscode", "intellij", "dbeaver", "ssms", "visual-studio"].includes(i.provider)) &&
+      items.every((i) => !i.artwork || (i.kind === "music"
+        ? /^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+={0,2}$/.test(i.artwork)
+        : /^https:\/\/[a-z0-9.-]+\.steamstatic\.com\/(?:store_item_assets\/)?steam\/apps\/\d+\/[a-zA-Z0-9_/.?=&%-]+$/.test(i.artwork))),
+  );
 const live = new Map<number, { userId: string; at: number; activities: UserActivity[] }>();
 const TTL = 75_000;
 export function areFriends(a: string, b: string) {
   return relationshipStatus(a, b) === "friend" && relationshipStatus(b, a) === "friend";
 }
 export function activityOf(userId: string): UserActivity[] {
+  if (presenceOf(userId) === "offline") return [];
   return [...live.values()].filter((v) => v.userId === userId && Date.now() - v.at < TTL).sort((a, b) => b.at - a.at)[0]?.activities ?? [];
 }
 function friendIds(userId: string) {
@@ -45,6 +64,9 @@ function broadcast(userId: string) {
   if (activities.length) viewers.set(userId, audience);
   else viewers.delete(userId);
 }
+export const refreshActivityPresence = (userId: string) => {
+  if ([...live.values()].some((entry) => entry.userId === userId)) broadcast(userId);
+};
 export function activitiesFor(userId: string) {
   return Object.fromEntries([...new Set([userId, ...friendIds(userId), ...groupIds(userId)])].map((id) => [id, activityOf(id)]));
 }

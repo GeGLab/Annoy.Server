@@ -55,6 +55,16 @@ immediately. Friendship removal clears both viewers; acceptance sends relationsh
 events before activity so clients can authorize rendering. Account deletion or
 suspension clears activity before removing relationships/sessions.
 
+## Artwork and compatibility
+
+The gateway advertises `READY.d.instance.activityArtwork: true`. Activities may
+carry an optional `artwork` string (at most 24,000 characters): music accepts
+bounded JPEG data URIs and games accept official Steam CDN artwork URLs. The
+thumbnail remains in the ephemeral activity payload and reaches only the same
+authorized friends. Older clients can omit the field; newer clients omit it
+when an older gateway does not advertise support. Deploy this server update
+alongside the client to share album artwork.
+
 ## Tests
 
 `npm run test:discovery` covers authenticated search, hidden channels, filters,

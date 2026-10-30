@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS member_roles (
 CREATE TABLE IF NOT EXISTS channels (
   id         TEXT PRIMARY KEY,
   server_id  TEXT REFERENCES servers(id) ON DELETE CASCADE,
-  type       TEXT NOT NULL CHECK (type IN ('category', 'text', 'voice', 'dm')),
+  type       TEXT NOT NULL,
   name       TEXT NOT NULL,
   topic      TEXT NOT NULL DEFAULT '',
   parent_id  TEXT REFERENCES channels(id) ON DELETE SET NULL,
@@ -138,18 +138,35 @@ CREATE TABLE IF NOT EXISTS relationships (
 `);
 
 // Additive migrations for databases created by earlier versions.
+db.exec(`CREATE TABLE IF NOT EXISTS steam_connections (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  steam_id TEXT NOT NULL UNIQUE,
+  connected_at TEXT NOT NULL
+)`);
 const userColumns = (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name);
 if (!userColumns.includes("imported_from")) {
   // "discord:<snowflake>" for authors recreated by the importer; they cannot log in.
   db.exec("ALTER TABLE users ADD COLUMN imported_from TEXT");
 }
 if (!userColumns.includes("discord_id")) db.exec("ALTER TABLE users ADD COLUMN discord_id TEXT");
+if (!userColumns.includes("bio")) db.exec("ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
+const relationshipColumns = (db.prepare("PRAGMA table_info(relationships)").all() as { name: string }[]).map((c) => c.name);
+if (!relationshipColumns.includes("nickname")) db.exec("ALTER TABLE relationships ADD COLUMN nickname TEXT NOT NULL DEFAULT ''");
 if (!userColumns.includes("avatar_url")) db.exec("ALTER TABLE users ADD COLUMN avatar_url TEXT");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_imported_from ON users(imported_from) WHERE imported_from IS NOT NULL");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_discord_id ON users(discord_id) WHERE discord_id IS NOT NULL");
 if (!userColumns.includes("is_admin")) db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
 if (!userColumns.includes("banned_at")) db.exec("ALTER TABLE users ADD COLUMN banned_at TEXT");
 if (!userColumns.includes("ban_reason")) db.exec("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''");
+// Annoy Global (item 1.8): this server's identity for a global account, an Ed25519
+// public key unique to this server. Not the account's global ID, which no server sees.
+if (!userColumns.includes("global_id")) db.exec("ALTER TABLE users ADD COLUMN global_id TEXT");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_global_id ON users(global_id) WHERE global_id IS NOT NULL");
+db.exec(`CREATE TABLE IF NOT EXISTS global_spent_tokens (
+  hash     TEXT PRIMARY KEY,
+  kid      TEXT NOT NULL,
+  spent_at TEXT NOT NULL
+)`);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS instance_settings (
@@ -167,6 +184,51 @@ CREATE TABLE IF NOT EXISTS signup_invites (
   created_at TEXT NOT NULL
 );
 `);
+
+// v0.7 added channel types (files, code, theater, song) and temporary rooms. The type
+// CHECK of older databases is dropped by rebuilding the table, as SQLite cannot alter it.
+const channelsSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'channels'").get() as { sql: string }).sql;
+if (channelsSql.includes("CHECK (type IN")) {
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.exec(`CREATE TABLE channels_v7 (
+      id         TEXT PRIMARY KEY,
+      server_id  TEXT REFERENCES servers(id) ON DELETE CASCADE,
+      type       TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      topic      TEXT NOT NULL DEFAULT '',
+      parent_id  TEXT REFERENCES channels(id) ON DELETE SET NULL,
+      position   INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    )`);
+    db.exec("INSERT INTO channels_v7 (id, server_id, type, name, topic, parent_id, position, created_at) SELECT id, server_id, type, name, topic, parent_id, position, created_at FROM channels");
+    db.exec("DROP TABLE channels");
+    db.exec("ALTER TABLE channels_v7 RENAME TO channels");
+    db.exec("CREATE INDEX IF NOT EXISTS channels_by_server ON channels(server_id)");
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+const channelColumns = (db.prepare("PRAGMA table_info(channels)").all() as { name: string }[]).map((c) => c.name);
+// Set while a temporary room has never had anyone in it; cleared on the first join.
+if (!channelColumns.includes("temporary")) db.exec("ALTER TABLE channels ADD COLUMN temporary INTEGER NOT NULL DEFAULT 0");
+if (!channelColumns.includes("created_by")) db.exec("ALTER TABLE channels ADD COLUMN created_by TEXT");
+if (!channelColumns.includes("temp_used")) db.exec("ALTER TABLE channels ADD COLUMN temp_used INTEGER NOT NULL DEFAULT 0");
+db.exec(`CREATE TABLE IF NOT EXISTS playback (
+  channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+  state      TEXT NOT NULL
+)`);
+db.exec(`CREATE TABLE IF NOT EXISTS code_repos (
+  channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  linked_by  TEXT,
+  linked_at  TEXT NOT NULL
+)`);
 
 // v0.2 added the STREAM permission; existing @everyone roles that could speak may also stream.
 if (!db.prepare("SELECT 1 FROM instance_settings WHERE key = 'migration.stream_permission'").get()) {
