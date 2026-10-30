@@ -4,11 +4,12 @@ import { all, one } from "./db.ts";
 import { sendToUser, onServerChanged, type Connection } from "./events.ts";
 import { relationshipStatus } from "./repo.ts";
 import { presenceOf } from "./presence.ts";
+import {observeActivityHistory} from "./activity-history.ts";
 
 const entry = z
   .object({
-    kind: z.enum(["game", "music", "development"]),
-    provider: z.enum(["steam", "spotify", "apple-music", "vscode", "intellij", "dbeaver", "ssms", "visual-studio"]),
+    kind: z.enum(["game", "music", "development", "video", "generic"]),
+    provider: z.enum(["steam", "spotify", "apple-music", "vscode", "intellij", "dbeaver", "ssms", "visual-studio", "annoy-screen", "system-media"]),
     name: z.string().trim().min(1).max(160),
     artist: z.string().max(160).optional(),
     album: z.string().max(160).optional(),
@@ -25,11 +26,11 @@ const entry = z
   .strict();
 const payload = z
   .array(entry)
-  .max(3)
+  .max(5)
   .refine(
     (items) =>
       new Set(items.map((i) => i.kind)).size === items.length &&
-      items.every((i) => i.kind === "game" ? i.provider === "steam" && !!i.appId : i.kind === "music" ? ["spotify", "apple-music"].includes(i.provider) : ["vscode", "intellij", "dbeaver", "ssms", "visual-studio"].includes(i.provider)) &&
+      items.every((i) => i.kind === "game" ? i.provider === "steam" && !!i.appId : i.kind === "music" ? ["spotify", "apple-music"].includes(i.provider) : i.kind === "video" ? i.provider === "annoy-screen" || i.provider === "system-media" : i.kind === "generic" ? i.provider === "system-media" : ["vscode", "intellij", "dbeaver", "ssms", "visual-studio"].includes(i.provider)) &&
       items.every((i) => !i.artwork || (i.kind === "music"
         ? /^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+={0,2}$/.test(i.artwork)
         : /^https:\/\/[a-z0-9.-]+\.steamstatic\.com\/(?:store_item_assets\/)?steam\/apps\/\d+\/[a-zA-Z0-9_/.?=&%-]+$/.test(i.artwork))),
@@ -79,28 +80,32 @@ export function updateActivity(conn: Connection, raw: unknown): boolean {
   if (++conn.activityCount > 10) return false;
   const parsed = payload.safeParse(raw);
   if (!parsed.success) return false;
+  if(!conn.features.has("extendedActivity") && parsed.data.some(activity=>activity.kind==="video"||activity.kind==="generic"))return false;
   const at = Date.now();
   const previous = activityOf(conn.userId);
   const activities = parsed.data.map((item) => ({
     ...item,
     startedAt: item.startedAt === undefined ? undefined : Math.min(at, Math.max(at - 7 * 86400_000, item.startedAt)),
   }));
+  observeActivityHistory(conn.id,conn.userId,conn.deviceId,presenceOf(conn.userId)==="offline"?[]:activities);
   if (activities.length) live.set(conn.id, { userId: conn.userId, at, activities });
   else live.delete(conn.id);
   if (JSON.stringify(previous) !== JSON.stringify(activityOf(conn.userId))) broadcast(conn.userId);
   return true;
 }
 export function clearActivity(conn: Connection) {
+  if(conn.userId)observeActivityHistory(conn.id,conn.userId,conn.deviceId,[],false);
   if (live.delete(conn.id) && conn.userId) broadcast(conn.userId);
 }
 export function clearUserActivity(userId: string) {
-  for (const [id, value] of live) if (value.userId === userId) live.delete(id);
+  for (const [id, value] of live) if (value.userId === userId) {observeActivityHistory(id,userId,null,[],false);live.delete(id);}
   broadcast(userId);
 }
 export function expireActivities() {
   const changed = new Set<string>();
   for (const [id, v] of live)
     if (Date.now() - v.at >= TTL) {
+      observeActivityHistory(id,v.userId,null,[],false);
       live.delete(id);
       changed.add(v.userId);
     }

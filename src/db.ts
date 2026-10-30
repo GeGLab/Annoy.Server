@@ -299,3 +299,31 @@ CREATE TABLE IF NOT EXISTS pinned_messages (
   pinned_at TEXT NOT NULL,
   PRIMARY KEY(channel_id, message_id)
 );`);
+db.exec(`CREATE TABLE IF NOT EXISTS profile_fields (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  audience TEXT NOT NULL DEFAULT 'self' CHECK(audience IN ('self','friends','community')),
+  PRIMARY KEY(user_id,kind)
+);
+CREATE TABLE IF NOT EXISTS profile_privacy (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  history_enabled INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS activity_history (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  connection_key TEXT NOT NULL,
+  device_id TEXT,
+  activity_key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  name TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  ended_at TEXT,
+  completed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS activity_history_by_user ON activity_history(user_id,completed,last_seen_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS activity_history_active ON activity_history(user_id,connection_key,activity_key) WHERE completed=0;
+`);

@@ -108,7 +108,7 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         relationships: getRelationships(userId),
         presences,
         activities: activitiesFor(userId),
-        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: true, serverOwnership: true, developmentActivity: true, directCalls: true, socialProfiles: true, groupActivity: true, reactions: true, serverIcons: true, gifSearch: !!process.env.GIPHY_CLIENT_API_KEY, presenceStatus: true, manualPresence: true, channelTypes: true, codeChannels: true, historyWindow: true, messagePins: true },
+        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: true, serverOwnership: true, developmentActivity: true, directCalls: true, socialProfiles: true, groupActivity: true, reactions: true, serverIcons: true, gifSearch: !!process.env.GIPHY_CLIENT_API_KEY, presenceStatus: true, manualPresence: true, channelTypes: true, codeChannels: true, historyWindow: true, messagePins: true, profileDetails: true, extendedActivity: true },
       },
     });
     if (cameOnline || previousPresence !== presenceOf(userId)) {

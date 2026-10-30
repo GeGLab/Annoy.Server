@@ -44,6 +44,10 @@ export async function deleteAccount(userId: string, options: { deleteMessages: b
   tx(() => {
     if (options.deleteMessages) run("DELETE FROM messages WHERE author_id = ?", userId);
     run("DELETE FROM steam_connections WHERE user_id = ?", userId);
+    run("DELETE FROM profile_fields WHERE user_id=?",userId);
+    run("DELETE FROM profile_privacy WHERE user_id=?",userId);
+    run("DELETE FROM activity_history WHERE user_id=?",userId);
+    run("DELETE FROM channel_read_states WHERE user_id=?",userId);
     run("DELETE FROM members WHERE user_id = ?", userId);
     run("DELETE FROM relationships WHERE user_id = ? OR other_id = ?", userId, userId);
     run(
