@@ -4,12 +4,14 @@ import type {
   ChannelType,
   DmChannel,
   Member,
+  MemberPage,
   Message,
   Overwrite,
   Relationship,
   RelationshipStatus,
   Role,
   ServerSummary,
+  ServerSummaryPage,
   User,
 } from "@distopic/protocol";
 import { all, one } from "./db.ts";
@@ -118,6 +120,35 @@ export function serversForUser(userId: string): ServerSummary[] {
   ).map(toServer);
 }
 
+export function serverSummariesPage(userId: string, limit: number, after: string | null, query = ""): ServerSummaryPage {
+  let cursor: [string, string] | null = null;
+  if (after) {
+    try {
+      const parsed: unknown = JSON.parse(Buffer.from(after, "base64url").toString("utf8"));
+      if (Array.isArray(parsed) && typeof parsed[0] === "string" && typeof parsed[1] === "string") cursor = [parsed[0], parsed[1]];
+    } catch { /* Invalid cursor starts at the first page. */ }
+  }
+  const term = query.trim();
+  const pattern = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+  const filter = term ? "AND s.name LIKE ? ESCAPE '\\' COLLATE NOCASE" : "";
+  const params: (string | number)[] = [userId];
+  if (term) params.push(pattern);
+  const total = one<{ total: number }>(`SELECT COUNT(*) AS total FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ${filter}`, ...params)?.total ?? 0;
+  const afterClause = cursor ? "AND (m.joined_at>? OR (m.joined_at=? AND s.id>?))" : "";
+  const rows = all<ServerRow & { joined_at: string }>(
+    `SELECT s.id, s.name, s.owner_id, s.icon_url, m.joined_at FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ${filter} ${afterClause} ORDER BY m.joined_at, s.id LIMIT ?`,
+    ...params, ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []), limit + 1,
+  );
+  const hasMore = rows.length > limit;
+  if (hasMore) rows.pop();
+  const last = rows.at(-1);
+  return {
+    servers: rows.map(toServer),
+    nextCursor: hasMore && last ? Buffer.from(JSON.stringify([last.joined_at, last.id])).toString("base64url") : null,
+    total,
+  };
+}
+
 export function isMember(serverId: string, userId: string): boolean {
   return one("SELECT 1 AS x FROM members WHERE server_id = ? AND user_id = ?", serverId, userId) !== undefined;
 }
@@ -154,6 +185,61 @@ export function getMembers(serverId: string): Member[] {
     joinedAt: r.joined_at,
     presence: presenceOf(r.id),
   }));
+}
+
+/** Bounded, stable member query for large communities. Cursor follows the same visible-name order. */
+export function getMembersPage(serverId: string, limit: number, after: string | null, query = ""): MemberPage {
+  let key: [string, string] | null = null;
+  if (after) {
+    try {
+      const parsed: unknown = JSON.parse(Buffer.from(after, "base64url").toString("utf8"));
+      if (Array.isArray(parsed) && typeof parsed[0] === "string" && typeof parsed[1] === "string") key = [parsed[0], parsed[1]];
+    } catch { /* An invalid cursor starts at the first page. */ }
+  }
+  const pattern = `%${query.trim().replace(/[\\%_]/g, "\\$&")}%`;
+  const filter = query.trim() ? `AND (u.username LIKE ? ESCAPE '\\' COLLATE NOCASE OR u.display_name LIKE ? ESCAPE '\\' COLLATE NOCASE OR COALESCE(m.nick, '') LIKE ? ESCAPE '\\' COLLATE NOCASE)` : "";
+  const params: (string | number)[] = [serverId];
+  if (query.trim()) params.push(pattern, pattern, pattern);
+  const total = one<{ total: number }>(
+    `SELECT COUNT(*) AS total FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? ${filter}`,
+    ...params,
+  )?.total ?? 0;
+  const visible = "COALESCE(m.nick, u.display_name)";
+  const cursor = key ? `AND (LOWER(${visible}) > LOWER(?) OR (LOWER(${visible}) = LOWER(?) AND u.id > ?))` : "";
+  const rows = all<UserRow & { nick: string | null; joined_at: string }>(
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, m.nick, m.joined_at
+       FROM members m JOIN users u ON u.id=m.user_id
+      WHERE m.server_id=? ${filter} ${cursor}
+      ORDER BY ${visible} COLLATE NOCASE, u.id LIMIT ?`,
+    ...params,
+    ...(key ? [key[0], key[0], key[1]] : []),
+    limit + 1,
+  );
+  const hasMore = rows.length > limit;
+  if (hasMore) rows.pop();
+  const roleMap = new Map<string, string[]>();
+  const ids = rows.map((row) => row.id);
+  for (const role of ids.length ? all<{ user_id: string; role_id: string }>(`SELECT user_id, role_id FROM member_roles WHERE server_id=? AND user_id IN (${placeholders(ids.length)})`, serverId, ...ids) : []) {
+    const list = roleMap.get(role.user_id) ?? [];
+    list.push(role.role_id);
+    roleMap.set(role.user_id, list);
+  }
+  const members = rows.map((row) => ({ user: toUser(row), nick: row.nick, roleIds: roleMap.get(row.id) ?? [], joinedAt: row.joined_at, presence: presenceOf(row.id) }));
+  const last = rows.at(-1);
+  const nextCursor = hasMore && rows.length > 0
+    ? Buffer.from(JSON.stringify([last!.nick ?? last!.display_name, last!.id])).toString("base64url")
+    : null;
+  return { members, nextCursor, total };
+}
+
+export function getMember(serverId: string, userId: string): Member | undefined {
+  const row = one<UserRow & { nick: string | null; joined_at: string }>(
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, m.nick, m.joined_at
+       FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? AND m.user_id=?`, serverId, userId,
+  );
+  if (!row) return undefined;
+  const roleIds = all<{ role_id: string }>("SELECT role_id FROM member_roles WHERE server_id=? AND user_id=?", serverId, userId).map((item) => item.role_id);
+  return { user: toUser(row), nick: row.nick, roleIds, joinedAt: row.joined_at, presence: presenceOf(userId) };
 }
 
 /** Users who share at least one server or a relationship with `userId`. */

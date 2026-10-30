@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS members (
   PRIMARY KEY (server_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS members_by_user ON members(user_id);
+CREATE INDEX IF NOT EXISTS members_by_user_joined_server ON members(user_id, joined_at, server_id);
 
 CREATE TABLE IF NOT EXISTS roles (
   id          TEXT PRIMARY KEY,
@@ -99,6 +100,7 @@ CREATE TABLE IF NOT EXISTS messages (
   mentions_everyone INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS messages_by_channel ON messages(channel_id, id);
+CREATE INDEX IF NOT EXISTS messages_by_channel_created ON messages(channel_id, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS attachments (
   id           TEXT PRIMARY KEY,
@@ -108,6 +110,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   content_type TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS attachments_by_message ON attachments(message_id);
+CREATE INDEX IF NOT EXISTS attachments_by_filename ON attachments(filename COLLATE NOCASE, message_id, id);
+CREATE INDEX IF NOT EXISTS attachments_by_size ON attachments(size DESC, message_id, id);
 
 CREATE TABLE IF NOT EXISTS invites (
   code       TEXT PRIMARY KEY,

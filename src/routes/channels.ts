@@ -1,4 +1,4 @@
-import { ALL_PERMISSIONS, has, hasMessages, LIMITS, parseMentions, Permission, type Channel, type Message } from "@distopic/protocol";
+import { ALL_PERMISSIONS, has, hasMessages, LIMITS, parseMentions, Permission, type Channel, type ChannelFilePage, type Message } from "@distopic/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../auth.ts";
@@ -37,6 +37,12 @@ const listQuery = z.object({
   around: z.string().max(100).optional(),
   before: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+const fileListQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).max(100_000_000).default(0),
+  q: z.string().trim().max(100).default(""),
+  sort: z.enum(["recent", "name", "size"]).default("recent"),
 });
 
 interface StagedFile {
@@ -145,6 +151,30 @@ export function channelRoutes(app: FastifyInstance): void {
   });
 
   // Messages ---------------------------------------------------------------
+
+  app.get<Params<"id">>("/channels/:id/files", async (req): Promise<ChannelFilePage> => {
+    const { channel } = requireChannel(req.params.id, requireUser(req));
+    if (channel.type !== "files") throw badRequest("Este canal não é de arquivos");
+    const query = parse(fileListQuery, req.query);
+    const search = "%" + query.q.replace(/[\\%_]/g, "\\$&") + "%";
+    const where = "a.message_id=m.id AND m.channel_id=? AND (?='' OR a.filename LIKE ? ESCAPE '\\' COLLATE NOCASE OR m.content LIKE ? ESCAPE '\\' COLLATE NOCASE OR u.username LIKE ? ESCAPE '\\' COLLATE NOCASE OR u.display_name LIKE ? ESCAPE '\\' COLLATE NOCASE)";
+    const params = [channel.id, query.q, search, search, search, search];
+    const total = one<{ total: number }>("SELECT COUNT(*) AS total FROM attachments a JOIN messages m ON m.id=a.message_id JOIN users u ON u.id=m.author_id WHERE " + where, ...params)?.total ?? 0;
+    const order = query.sort === "name" ? "a.filename COLLATE NOCASE ASC, a.id ASC"
+      : query.sort === "size" ? "a.size DESC, a.id ASC"
+      : "m.created_at DESC, m.id DESC, a.id DESC";
+    const rows = all<{ message_id: string; attachment_id: string }>(
+      "SELECT m.id AS message_id, a.id AS attachment_id FROM attachments a JOIN messages m ON m.id=a.message_id JOIN users u ON u.id=m.author_id WHERE " + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
+      ...params, query.limit + 1, query.offset,
+    );
+    const hasMore = rows.length > query.limit;
+    const page = rows.slice(0, query.limit).flatMap((row) => {
+      const message = getMessage(row.message_id);
+      const attachment = message?.attachments.find((item) => item.id === row.attachment_id);
+      return message && attachment ? [{ message, attachment }] : [];
+    });
+    return { files: page, nextOffset: hasMore ? query.offset + query.limit : null, total };
+  });
 
   app.get<Params<"id">>("/channels/:id/messages", async (req): Promise<Message[]> => {
     const { channel } = requireChannel(req.params.id, requireUser(req));

@@ -19,6 +19,8 @@ const { db, run } = await import("../src/db.ts"),
   { authRoutes } = await import("../src/routes/auth.ts"),
   { callRoutes } = await import("../src/calls.ts"),
   { registerGateway } = await import("../src/gateway.ts"),
+  { serverRoutes } = await import("../src/routes/servers.ts"),
+  { channelRoutes } = await import("../src/routes/channels.ts"),
   { HttpError } = await import("../src/errors.ts"),
   { Permission } = await import("@distopic/protocol");
 const app = Fastify();
@@ -29,6 +31,8 @@ socialRoutes(app);
 authRoutes(app);
 callRoutes(app);
 registerGateway(app);
+serverRoutes(app);
+channelRoutes(app);
 const users = ["alice", "bob", "stranger", "outsider"],
   tokens: Record<string, string> = {};
 for (const id of users) {
@@ -66,7 +70,61 @@ for (const [id, channel, author, content] of [
     "2026-10-28T15:00:00.000Z",
   );
 run("INSERT INTO attachments(id,message_id,filename,size,content_type) VALUES('file','003','video.webm',10,'video/webm')");
+run("INSERT INTO servers(id,name,owner_id,created_at) VALUES('server-second','Second Test','alice','2026-01-02')");
+run("INSERT INTO members(server_id,user_id,joined_at) VALUES('server-second','alice','2026-01-02')");
+run("INSERT INTO roles(id,server_id,name,permissions,position) VALUES('server-second','server-second','everyone',?,0)", Permission.VIEW_CHANNEL | Permission.SEND_MESSAGES);
+run("INSERT INTO channels(id,server_id,type,name,created_at) VALUES('files','server','files','files','2026-01-01')");
+for (const [id, content, filename, size] of [["file-msg-1", "Quarterly report", "Report.PDF", 30], ["file-msg-2", "Video archive", "video.mp4", 10]] as const) {
+  run("INSERT INTO messages(id,channel_id,author_id,content,created_at) VALUES(?,?,? ,?,'2026-10-28T15:00:00.000Z')", id, "files", "alice", content);
+  run("INSERT INTO attachments(id,message_id,filename,size,content_type) VALUES(?,?,?,?,'application/octet-stream')", `attachment-${id}`, id, filename, size);
+}
 const auth = (user: string) => ({ authorization: `Bearer ${tokens[user]}` });
+
+test("server summaries and member lists are scoped, searchable and incrementally paginated", async () => {
+  assert.equal((await app.inject({ url: "/servers" })).statusCode, 401);
+  const first = await app.inject({ url: "/servers?limit=1&q=Test", headers: auth("alice") });
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.json().total, 2);
+  assert.equal(first.json().servers.length, 1);
+  assert.ok(first.json().nextCursor);
+  const second = await app.inject({ url: `/servers?limit=1&q=Test&after=${encodeURIComponent(first.json().nextCursor)}`, headers: auth("alice") });
+  assert.equal(second.json().servers.length, 1);
+  assert.notEqual(second.json().servers[0].id, first.json().servers[0].id);
+  assert.equal((await app.inject({ url: "/servers?q=Test", headers: auth("outsider") })).json().total, 0);
+
+  const members = await app.inject({ url: "/servers/server/members?limit=1", headers: auth("alice") });
+  assert.equal(members.statusCode, 200);
+  assert.equal(members.json().total, 3);
+  assert.equal(members.json().members.length, 1);
+  assert.ok(members.json().nextCursor);
+  const memberPages = [members.json()];
+  while (memberPages.at(-1)!.nextCursor) {
+    const cursor = memberPages.at(-1)!.nextCursor;
+    memberPages.push((await app.inject({ url: `/servers/server/members?limit=1&after=${encodeURIComponent(cursor)}`, headers: auth("alice") })).json());
+  }
+  assert.deepEqual(memberPages.flatMap((page) => page.members.map((member: any) => member.user.id)).sort(), ["alice", "bob", "stranger"]);
+  const bob = await app.inject({ url: "/servers/server/members?q=bob", headers: auth("alice") });
+  assert.equal(bob.json().members.length, 1);
+  assert.equal(bob.json().members[0].user.id, "bob");
+  assert.equal((await app.inject({ url: "/servers/server/members?q=outsider", headers: auth("alice") })).json().total, 0);
+  assert.equal((await app.inject({ url: "/servers/server/members", headers: auth("outsider") })).statusCode, 404);
+});
+
+test("file channel search and sorting cover the server archive and preserve permissions", async () => {
+  const request = (user: string, query: string) => app.inject({ url: `/channels/files/files?${query}`, headers: auth(user) });
+  const byName = await request("alice", "limit=1&sort=name");
+  assert.equal(byName.statusCode, 200);
+  assert.equal(byName.json().total, 2);
+  assert.equal(byName.json().files[0].attachment.filename, "Report.PDF");
+  assert.equal(byName.json().nextOffset, 1);
+  const next = await request("alice", "limit=1&sort=name&offset=1");
+  assert.equal(next.json().files[0].attachment.filename, "video.mp4");
+  assert.equal(next.json().nextOffset, null);
+  assert.equal((await request("alice", "q=quarterly")).json().files[0].attachment.filename, "Report.PDF");
+  assert.equal((await request("alice", "q=video")).json().total, 1);
+  assert.equal((await app.inject({ url: "/channels/files/files", headers: auth("outsider") })).statusCode, 404);
+  assert.equal((await app.inject({ url: "/channels/public/files", headers: auth("alice") })).statusCode, 400);
+});
 after(async () => {
   await app.close();
   // Gateway sockets emit "close" after app.close resolves; their handlers still read the database.
