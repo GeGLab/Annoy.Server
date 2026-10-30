@@ -1,3 +1,6 @@
+import websocket from "@fastify/websocket";
+import { WebSocket } from "ws";
+import { once } from "node:events";
 import {test, after} from "node:test";
 import assert from "node:assert/strict";
 import {mkdtemp,rm} from "node:fs/promises";
@@ -9,9 +12,10 @@ import sharp from "sharp";
 const root=resolve(tmpdir()), directory=await mkdtemp(join(root,"annoy-social-test-"));
 process.env.ANNOY_DATA_DIR=directory;
 const {db,run,one}=await import("../src/db.ts"), {authRoutes}=await import("../src/routes/auth.ts"), {channelRoutes}=await import("../src/routes/channels.ts"), {serverRoutes}=await import("../src/routes/servers.ts"), {createSession}=await import("../src/auth.ts"), {HttpError}=await import("../src/errors.ts"), {Permission}=await import("@distopic/protocol");
-const app=Fastify(); await app.register(multipart);
+const app=Fastify(); await app.register(multipart); await app.register(websocket);
 app.setErrorHandler((error,_request,reply)=>reply.status(error instanceof HttpError?error.status:500).send({message:(error as Error).message}));
 authRoutes(app); channelRoutes(app); serverRoutes(app);
+const { registerGateway } = await import("../src/gateway.ts"); registerGateway(app);
 const tokens:Record<string,string>={};
 for(const id of ["owner","member","outside"]){run("INSERT INTO users(id,username,display_name,password_hash,created_at) VALUES(?,?,?,'!','2026-01-01')",id,id,id);tokens[id]=createSession(id);}
 run("INSERT INTO servers(id,name,owner_id,created_at) VALUES('server','Comunidade','owner','2026-01-01')");
@@ -69,4 +73,43 @@ test("GIF provider configuration requires authentication and is not cached",asyn
  assert.equal((await app.inject({url:"/media/config"})).statusCode,401);
  process.env.GIPHY_CLIENT_API_KEY="synthetic-public-client-key";
  try{const response=await app.inject({url:"/media/config",headers:auth("owner")});assert.equal(response.statusCode,200);assert.equal(response.json().giphyApiKey,"synthetic-public-client-key");assert.equal(response.headers["cache-control"],"no-store");}finally{delete process.env.GIPHY_CLIENT_API_KEY;}
+});
+
+
+test("participants receive one shared reaction counter and retain it after disconnecting", async (t) => {
+  const origin = await app.listen({ host: "127.0.0.1", port: 0 });
+  const sockets: WebSocket[] = [], events: Record<string, any[]> = {};
+  t.after(async () => {
+    await Promise.all(sockets.map(async (socket) => { if (socket.readyState === WebSocket.CLOSED) return; const closed = once(socket, "close"); socket.terminate(); await closed; }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  const waitFor = async (check: () => boolean) => {
+    const deadline = Date.now() + 2500;
+    while (!check()) { if (Date.now() > deadline) throw new Error("Timed out waiting for the reaction broadcast"); await new Promise((resolve) => setTimeout(resolve, 10)); }
+  };
+  for (const id of ["owner", "member", "outside"]) {
+    events[id] = [];
+    const socket = new WebSocket(origin.replace("http:", "ws:") + "/gateway"); sockets.push(socket);
+    socket.on("message", (raw) => events[id]!.push(JSON.parse(raw.toString())));
+    await once(socket, "open");
+    socket.send(JSON.stringify({ op: "identify", token: tokens[id], deviceId: id, features: ["developmentActivity", "idlePresence", "manualPresence"] }));
+    await waitFor(() => events[id]!.some((event) => event.t === "READY"));
+  }
+  const path = `/channels/general/messages/message/reactions/${encodeURIComponent("😂")}`;
+  const reaction = (id: string) => events[id]!.filter((event) => event.t === "MESSAGE_UPDATE").at(-1)?.d.reactions.find((item: any) => item.emoji === "😂");
+  assert.equal((await app.inject({ method: "PUT", url: path, headers: auth("owner") })).statusCode, 200);
+  await waitFor(() => reaction("member")?.userIds.length === 1);
+  assert.equal((await app.inject({ method: "PUT", url: path, headers: auth("member") })).statusCode, 200);
+  await waitFor(() => reaction("owner")?.userIds.length === 2 && reaction("member")?.userIds.length === 2);
+  assert.deepEqual(reaction("owner").userIds, ["member", "owner"]);
+  const stored = (await app.inject({ url: "/channels/general/messages", headers: auth("member") })).json()[0];
+  assert.equal(stored.reactions.filter((item: any) => item.emoji === "😂").length, 1);
+  assert.deepEqual(stored.reactions.find((item: any) => item.emoji === "😂").userIds, ["member", "owner"]);
+  await app.inject({ method: "DELETE", url: path, headers: auth("member") });
+  await waitFor(() => reaction("owner")?.userIds.length === 1);
+  assert.deepEqual(reaction("owner").userIds, ["owner"]);
+  assert.equal(events.outside!.some((event) => event.t === "MESSAGE_UPDATE"), false);
+  const closed = once(sockets[1]!, "close"); sockets[1]!.close(); await closed;
+  const reread = (await app.inject({ url: "/channels/general/messages", headers: auth("owner") })).json()[0];
+  assert.deepEqual(reread.reactions.find((item: any) => item.emoji === "😂").userIds, ["owner"]);
 });
