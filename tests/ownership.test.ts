@@ -28,7 +28,7 @@ run("UPDATE users SET banned_at = '2026-01-01' WHERE id = 'banned'");
 run("UPDATE users SET is_admin = 1 WHERE id = 'owner'");
 const auth = (id = "owner") => ({ authorization: `Bearer ${tokens[id]}` });
 function server(id: string, members = ["owner", "member"]) {
-  run("INSERT INTO servers VALUES(?,?, 'owner', '2026-01-01')", id, id);
+  run("INSERT INTO servers(id,name,owner_id,created_at) VALUES(?,?, 'owner', '2026-01-01')", id, id);
   // Even granting administrator permissions does not grant ownership.
   run("INSERT INTO roles(id,server_id,name,permissions,position) VALUES(?,?,'everyone',?,0)", id, id, ALL_PERMISSIONS);
   for (const member of members) run("INSERT INTO members(server_id,user_id,joined_at) VALUES(?,?,'2026-01-01')", id, member);

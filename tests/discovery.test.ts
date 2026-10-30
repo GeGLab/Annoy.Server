@@ -29,14 +29,14 @@ socialRoutes(app);
 authRoutes(app);
 callRoutes(app);
 registerGateway(app);
-const users = ["alice", "bob", "stranger"],
+const users = ["alice", "bob", "stranger", "outsider"],
   tokens: Record<string, string> = {};
 for (const id of users) {
   run("INSERT INTO users(id,username,display_name,password_hash,created_at) VALUES (?,?,?,'!','2026-01-01')", id, id, id);
   tokens[id] = createSession(id);
 }
 run("INSERT INTO servers(id,name,owner_id,created_at) VALUES('server','Test','alice','2026-01-01')");
-for (const id of users) run("INSERT INTO members(server_id,user_id,joined_at) VALUES('server',?,'2026-01-01')", id);
+for (const id of users.filter((id) => id !== "outsider")) run("INSERT INTO members(server_id,user_id,joined_at) VALUES('server',?,'2026-01-01')", id);
 run(
   "INSERT INTO roles(id,server_id,name,permissions,position) VALUES('server','server','everyone',?,0)",
   Permission.VIEW_CHANNEL | Permission.SEND_MESSAGES,
@@ -96,7 +96,7 @@ test("search enforces channel membership, hidden channels, filters and index upd
   assert.equal((await search("stranger", "q=planejamento&before=2026-01-01")).json().items.length, 0);
   assert.equal((await search("bob", 'q="%20OR%20*')).statusCode, 200);
 });
-test("real gateway sends activity only to mutual friends, clears on unfriend/disconnect and restores on accept", async (t) => {
+test("real gateway shares activity with friends and server peers, revokes on last shared membership and restores on accept", async (t) => {
   const streams: Record<string, any[]> = {},
     sockets: Record<string, any> = {};
   t.after(async () => {
@@ -137,12 +137,15 @@ test("real gateway sends activity only to mutual friends, clears on unfriend/dis
   const received = streams.bob!.find((e) => e.t === "ACTIVITY_UPDATE" && e.d.activities.length === 2).d.activities;
   assert.equal(received[0].artwork, activity.artwork);
   assert.equal(received[1].artwork, music.artwork);
-  assert.equal(
-    streams.stranger!.some((e) => e.t === "ACTIVITY_UPDATE"),
-    false,
-  );
-  assert.equal(streams.stranger!.find((e) => e.t === "READY").d.activities.alice, undefined);
+  await waitFor(() => streams.stranger!.some((e) => e.t === "ACTIVITY_UPDATE" && e.d.userId === "alice" && e.d.activities.length === 2));
+  assert.equal(streams.stranger!.find((e) => e.t === "READY").d.instance.groupActivity, true);
+  assert.equal(streams.outsider!.some((e) => e.t === "ACTIVITY_UPDATE"), false);
+  assert.equal(streams.outsider!.find((e) => e.t === "READY").d.activities.alice, undefined);
   await app.inject({ method: "DELETE", url: "/relationships/alice", headers: auth("bob") });
+  await waitFor(() => streams.bob!.some((e) => e.t === "RELATIONSHIP_REMOVE"));
+  assert.equal(streams.bob!.filter((e) => e.t === "ACTIVITY_UPDATE").at(-1).d.activities.length, 2);
+  run("DELETE FROM members WHERE server_id='server' AND user_id='bob'");
+  const { refreshActivityAccess } = await import("../src/activity.ts"); refreshActivityAccess();
   await waitFor(() => streams.bob!.some((e) => e.t === "ACTIVITY_UPDATE" && e.d.userId === "alice" && e.d.activities.length === 0));
   streams.bob = [];
   sockets.alice.send(JSON.stringify({ op: "activity", activities: [{ ...activity, name: "Changed game" }] }));

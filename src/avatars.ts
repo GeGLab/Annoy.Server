@@ -12,13 +12,13 @@ export async function createAvatar(bytes: Buffer): Promise<string> {
   if (!bytes.length || bytes.length > MAX_AVATAR_BYTES) throw badRequest("Envie uma foto de até 8 MB.");
   let output: Buffer;
   try {
-    const image = sharp(bytes, { limitInputPixels: 20_000_000, animated: false });
+    const image = sharp(bytes, { limitInputPixels: 20_000_000, animated: true });
     const metadata = await image.metadata();
-    if (!metadata.format || !["jpeg", "png", "webp"].includes(metadata.format) || (metadata.pages ?? 1) > 1)
+    if (!metadata.format || !["jpeg", "png", "webp", "gif"].includes(metadata.format) || (metadata.pages ?? 1) > 200 || (metadata.width ?? 0) * (metadata.pageHeight ?? metadata.height ?? 0) * (metadata.pages ?? 1) > 20_000_000)
       throw new Error("Unsupported avatar");
-    output = await image.rotate().resize(512, 512, { fit: "cover" }).webp({ quality: 88 }).toBuffer();
+    output = await image.rotate().resize(512, 512, { fit: "cover" }).webp({ quality: 88, loop: 0 }).toBuffer();
   } catch {
-    throw badRequest("Foto inválida. Use uma imagem estática PNG, JPEG ou WebP de até 20 megapixels.");
+    throw badRequest("Foto inválida. Use PNG, JPEG, WebP ou GIF, até 200 quadros e 20 megapixels somados.");
   }
   const id = secretId();
   await mkdir(directory, { recursive: true });

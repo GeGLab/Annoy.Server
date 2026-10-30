@@ -44,7 +44,7 @@ for (const id of ["owner", "member"]) {
   run("INSERT INTO users(id,username,display_name,password_hash,created_at) VALUES(?,?,?,'!','2026-01-01')", id, id, id);
   tokens[id] = createSession(id);
 }
-run("INSERT INTO servers VALUES('s','s','owner','2026-01-01')");
+run("INSERT INTO servers(id,name,owner_id,created_at) VALUES('s','s','owner','2026-01-01')");
 run("INSERT INTO roles(id,server_id,name,permissions,position) VALUES('s','s','everyone',?,0)", DEFAULT_EVERYONE_PERMISSIONS);
 for (const member of ["owner", "member"]) run("INSERT INTO members(server_id,user_id,joined_at) VALUES('s',?,'2026-01-01')", member);
 const auth = (id = "owner") => ({ authorization: `Bearer ${tokens[id]}` });

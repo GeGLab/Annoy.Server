@@ -1,7 +1,7 @@
 import type { UserActivity } from "@distopic/protocol";
 import { z } from "zod";
-import { all } from "./db.ts";
-import { sendToUser, type Connection } from "./events.ts";
+import { all, one } from "./db.ts";
+import { sendToUser, onServerChanged, type Connection } from "./events.ts";
 import { relationshipStatus } from "./repo.ts";
 import { presenceOf } from "./presence.ts";
 
@@ -49,15 +49,26 @@ function friendIds(userId: string) {
     userId,
   ).map((r) => r.other_id);
 }
+function groupIds(userId: string) {
+  return all<{id: string}>("SELECT DISTINCT b.user_id AS id FROM members a JOIN members b ON a.server_id=b.server_id WHERE a.user_id=?", userId).map((row) => row.id);
+}
+export function canSeeActivity(viewer: string, subject: string): boolean {
+  return viewer === subject || areFriends(viewer, subject) || !!one("SELECT 1 FROM members a JOIN members b ON a.server_id=b.server_id WHERE a.user_id=? AND b.user_id=? LIMIT 1", viewer, subject);
+}
+const viewers = new Map<string, Set<string>>();
 function broadcast(userId: string) {
   const activities = activityOf(userId);
-  for (const id of [userId, ...friendIds(userId)]) sendToUser(id, { t: "ACTIVITY_UPDATE", d: { userId, activities } });
+  const audience = new Set([userId, ...friendIds(userId), ...groupIds(userId)]);
+  for (const id of viewers.get(userId) ?? []) if (!audience.has(id)) sendToUser(id, { t: "ACTIVITY_UPDATE", d: { userId, activities: [] } });
+  for (const id of audience) sendToUser(id, { t: "ACTIVITY_UPDATE", d: { userId, activities } });
+  if (activities.length) viewers.set(userId, audience);
+  else viewers.delete(userId);
 }
 export const refreshActivityPresence = (userId: string) => {
   if ([...live.values()].some((entry) => entry.userId === userId)) broadcast(userId);
 };
 export function activitiesFor(userId: string) {
-  return Object.fromEntries([userId, ...friendIds(userId)].map((id) => [id, activityOf(id)]));
+  return Object.fromEntries([...new Set([userId, ...friendIds(userId), ...groupIds(userId)])].map((id) => [id, activityOf(id)]));
 }
 export function updateActivity(conn: Connection, raw: unknown): boolean {
   if (!conn.userId) return false;
@@ -95,11 +106,15 @@ export function expireActivities() {
     }
   for (const id of changed) broadcast(id);
 }
-/** Friendship changes are immediate; no server membership or DM grants activity access. */
+export function refreshActivityAccess() {
+  for (const userId of new Set([...live.values()].map((entry) => entry.userId).concat([...viewers.keys()]))) broadcast(userId);
+}
+onServerChanged(refreshActivityAccess);
+/** Friendships and shared server memberships both grant activity access. */
 export function refreshFriendActivities(a: string, b: string) {
   for (const [viewer, subject] of [
     [a, b],
     [b, a],
   ])
-    sendToUser(viewer!, { t: "ACTIVITY_UPDATE", d: { userId: subject!, activities: areFriends(a, b) ? activityOf(subject!) : [] } });
+    sendToUser(viewer!, { t: "ACTIVITY_UPDATE", d: { userId: subject!, activities: canSeeActivity(viewer!, subject!) ? activityOf(subject!) : [] } });
 }
