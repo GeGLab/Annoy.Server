@@ -217,6 +217,14 @@ export interface Message {
   reactions?: { emoji: string; userIds: string[] }[];
 }
 
+export interface MessageWindow {
+  items: Message[];
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+}
+export interface ChannelReadState { channelId: string; messageId: string | null; updatedAt: string; unread?: { count:number; mention:boolean } }
+export interface PinnedMessage { message: Message; pinnedBy: User; pinnedAt: string }
+
 export interface Invite {
   code: string;
   server: ServerSummary;
@@ -578,7 +586,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
@@ -590,6 +598,8 @@ export type GatewayEvent =
   | { t: "MESSAGE_CREATE"; d: Message }
   | { t: "MESSAGE_UPDATE"; d: Message }
   | { t: "MESSAGE_DELETE"; d: { channelId: string; messageId: string } }
+  | { t: "CHANNEL_READ_STATE"; d: { userId: string; state: ChannelReadState } }
+  | { t: "CHANNEL_PIN_UPDATE"; d: { channelId: string; message: PinnedMessage | null; messageId: string } }
   | { t: "TYPING_START"; d: { channelId: string; userId: string } }
   | { t: "PRESENCE_UPDATE"; d: { userId: string; presence: Presence } }
   | { t: "ACTIVITY_UPDATE"; d: { userId: string; activities: UserActivity[] } }

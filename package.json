@@ -20,7 +20,8 @@
     "test:global": "node --import tsx --test tests/global.test.ts",
     "test:channels": "node --import tsx --test tests/channel-types.test.ts",
     "test:presence": "node --import tsx --test tests/activity-presence.test.ts",
-    "test:updates": "node --import tsx --test tests/updates.test.ts"
+    "test:updates": "node --import tsx --test tests/updates.test.ts",
+    "test:history": "node --import tsx --test tests/history.test.ts"
   },
   "engines": {
     "node": ">=22.13"

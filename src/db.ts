@@ -285,3 +285,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS message_reactions (
   emoji TEXT NOT NULL,
   PRIMARY KEY(message_id, user_id, emoji)
 )`);
+db.exec(`CREATE TABLE IF NOT EXISTS channel_read_states (
+  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  message_id TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(channel_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS pinned_messages (
+  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  pinned_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  pinned_at TEXT NOT NULL,
+  PRIMARY KEY(channel_id, message_id)
+);`);
