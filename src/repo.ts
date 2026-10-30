@@ -29,6 +29,7 @@ interface ServerRow {
   id: string;
   name: string;
   owner_id: string;
+  icon_url: string | null;
 }
 interface ChannelRow {
   id: string;
@@ -101,16 +102,16 @@ export function getUsers(ids: readonly string[]): Map<string, User> {
 
 // Servers ----------------------------------------------------------------------
 
-const toServer = (r: ServerRow): ServerSummary => ({ id: r.id, name: r.name, ownerId: r.owner_id, iconUrl: null });
+const toServer = (r: ServerRow): ServerSummary => ({ id: r.id, name: r.name, ownerId: r.owner_id, iconUrl: r.icon_url ?? null });
 
 export function getServer(id: string): ServerSummary | undefined {
-  const row = one<ServerRow>("SELECT id, name, owner_id FROM servers WHERE id = ?", id);
+  const row = one<ServerRow>("SELECT id, name, owner_id, icon_url FROM servers WHERE id = ?", id);
   return row && toServer(row);
 }
 
 export function serversForUser(userId: string): ServerSummary[] {
   return all<ServerRow>(
-    "SELECT s.id, s.name, s.owner_id FROM servers s JOIN members m ON m.server_id = s.id WHERE m.user_id = ? ORDER BY m.joined_at",
+    "SELECT s.id, s.name, s.owner_id, s.icon_url FROM servers s JOIN members m ON m.server_id = s.id WHERE m.user_id = ? ORDER BY m.joined_at",
     userId,
   ).map(toServer);
 }
@@ -271,8 +272,16 @@ export function hydrate(rows: MessageRow[]): Message[] {
     list.push(toAttachment(a));
     atts.set(a.message_id, list);
   }
+  const reactions = new Map<string, { emoji: string; userIds: string[] }[]>();
+  for (const reaction of all<{message_id: string; user_id: string; emoji: string}>(`SELECT * FROM message_reactions WHERE message_id IN (${placeholders(ids.length)}) ORDER BY emoji, user_id`, ...ids)) {
+    const groups = reactions.get(reaction.message_id) ?? [];
+    let group = groups.find((item) => item.emoji === reaction.emoji);
+    if (!group) { group = { emoji: reaction.emoji, userIds: [] }; groups.push(group); }
+    group.userIds.push(reaction.user_id); reactions.set(reaction.message_id, groups);
+  }
   return rows.map((r) => ({
     id: r.id,
+    reactions: reactions.get(r.id) ?? [],
     channelId: r.channel_id,
     author: users.get(r.author_id) ?? { id: r.author_id, username: "unknown", displayName: "Usuário removido", avatarUrl: null },
     content: r.content,

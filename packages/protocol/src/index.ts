@@ -30,7 +30,10 @@ export const Permission = {
 
 export type PermissionName = keyof typeof Permission;
 
-export const ALL_PERMISSIONS = Object.values(Permission).reduce((a, b) => a | b, 0);
+export const ALL_PERMISSIONS = Object.values(Permission).reduce(
+  (a, b) => a | b,
+  0,
+);
 
 export const DEFAULT_EVERYONE_PERMISSIONS =
   Permission.VIEW_CHANNEL |
@@ -78,25 +81,34 @@ export function computePermissions(input: PermissionInput): number {
   if (input.userId === input.ownerId) return ALL_PERMISSIONS;
   const memberRoles = new Set([input.everyoneRoleId, ...input.memberRoleIds]);
   let perms = 0;
-  for (const role of input.roles) if (memberRoles.has(role.id)) perms |= role.permissions;
+  for (const role of input.roles)
+    if (memberRoles.has(role.id)) perms |= role.permissions;
   if (perms & Permission.ADMINISTRATOR) return ALL_PERMISSIONS;
   const overwrites = input.overwrites ?? [];
   if (overwrites.length === 0) return perms;
 
-  const everyone = overwrites.find((o) => o.targetType === "role" && o.targetId === input.everyoneRoleId);
+  const everyone = overwrites.find(
+    (o) => o.targetType === "role" && o.targetId === input.everyoneRoleId,
+  );
   if (everyone) perms = (perms & ~everyone.deny) | everyone.allow;
 
   let allow = 0;
   let deny = 0;
   for (const o of overwrites) {
-    if (o.targetType === "role" && o.targetId !== input.everyoneRoleId && memberRoles.has(o.targetId)) {
+    if (
+      o.targetType === "role" &&
+      o.targetId !== input.everyoneRoleId &&
+      memberRoles.has(o.targetId)
+    ) {
       allow |= o.allow;
       deny |= o.deny;
     }
   }
   perms = (perms & ~deny) | allow;
 
-  const member = overwrites.find((o) => o.targetType === "member" && o.targetId === input.userId);
+  const member = overwrites.find(
+    (o) => o.targetType === "member" && o.targetId === input.userId,
+  );
   if (member) perms = (perms & ~member.deny) | member.allow;
   return perms;
 }
@@ -183,6 +195,7 @@ export interface Message {
   attachments: Attachment[];
   mentionIds: string[];
   mentionsEveryone: boolean;
+  reactions?: { emoji: string; userIds: string[] }[];
 }
 
 export interface Invite {
@@ -280,7 +293,9 @@ export interface ImportStructure {
   channels: ImportChannel[];
 }
 
-export type ImportTarget = { kind: "new"; name: string } | { kind: "existing"; serverId: string };
+export type ImportTarget =
+  | { kind: "new"; name: string }
+  | { kind: "existing"; serverId: string };
 
 export interface ImportRequest {
   token: string;
@@ -297,7 +312,12 @@ export interface ImportRequest {
   overwrites: boolean;
 }
 
-export type ImportPhase = "structure" | "messages" | "done" | "failed" | "cancelled";
+export type ImportPhase =
+  | "structure"
+  | "messages"
+  | "done"
+  | "failed"
+  | "cancelled";
 
 export interface ImportJob {
   id: string;
@@ -417,13 +437,18 @@ export interface ApiError {
 
 /** Ephemeral, opt-in desktop metadata; sent only to confirmed friends. No paths or tokens. */
 export interface UserActivity {
-  kind: "game" | "music";
-  provider: "steam" | "spotify" | "apple-music";
+  kind: "game" | "music" | "development";
+  provider: "steam" | "spotify" | "apple-music" | "vscode" | "intellij" | "dbeaver" | "ssms" | "visual-studio";
   name: string;
   artist?: string;
   album?: string;
   appId?: string;
   startedAt?: number;
+  /** Small JPEG thumbnail, or an official Steam artwork URL. Ephemeral, like activity. */
+  artwork?: string;
+  file?: string;
+  project?: string;
+  language?: string;
 }
 export interface MessageSearchPage {
   items: { message: Message; channelName: string; serverId: string | null }[];
@@ -460,7 +485,12 @@ export type ClientOp =
   | { op: "voice_state"; selfMute: boolean; selfDeaf: boolean }
   /** Client-measured speaking state; only used where the SFU can't measure levels (Cloudflare). */
   | { op: "speaking"; speaking: boolean }
-  | { op: "voice"; id: number; method: VoiceMethod; data: Record<string, unknown> };
+  | {
+      op: "voice";
+      id: number;
+      method: VoiceMethod;
+      data: Record<string, unknown>;
+    };
 
 export type GatewayEvent =
   | {
@@ -472,7 +502,21 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend };
+        instance: {
+          isAdmin: boolean;
+          registration: RegistrationMode;
+          voiceBackend: VoiceBackend;
+          activityArtwork?: boolean;
+          developmentActivity?: boolean;
+          directCalls?: boolean;
+          socialProfiles?: boolean;
+          groupActivity?: boolean;
+          reactions?: boolean;
+          serverIcons?: boolean;
+          gifSearch?: boolean;
+          presenceStatus?: boolean;
+          manualPresence?: boolean;
+        };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
@@ -488,11 +532,28 @@ export type GatewayEvent =
   | { t: "PRESENCE_UPDATE"; d: { userId: string; presence: Presence } }
   | { t: "ACTIVITY_UPDATE"; d: { userId: string; activities: UserActivity[] } }
   | { t: "USER_UPDATE"; d: User }
-  | { t: "VOICE_STATE_UPDATE"; d: { userId: string; serverId: string; state: VoiceState | null } }
-  | { t: "VOICE_NEW_PRODUCER"; d: { channelId: string; producerId: string; userId: string; kind: "audio" | "video"; source: MediaSource } }
+  | {
+      t: "VOICE_STATE_UPDATE";
+      d: { userId: string; serverId: string; state: VoiceState | null };
+    }
+  | {
+      t: "VOICE_NEW_PRODUCER";
+      d: {
+        channelId: string;
+        producerId: string;
+        userId: string;
+        kind: "audio" | "video";
+        source: MediaSource;
+      };
+    }
   | { t: "VOICE_PRODUCER_CLOSED"; d: { producerId: string } }
   | { t: "VOICE_KICKED"; d: { reason: string } }
-  | { t: "VOICE_REPLY"; d: { id: number; ok: true; data: unknown } | { id: number; ok: false; message: string } }
+  | {
+      t: "VOICE_REPLY";
+      d:
+        | { id: number; ok: true; data: unknown }
+        | { id: number; ok: false; message: string };
+    }
   | { t: "DM_CREATE"; d: DmChannel }
   | { t: "RELATIONSHIP_UPDATE"; d: Relationship }
   | { t: "RELATIONSHIP_REMOVE"; d: { userId: string } }
@@ -500,7 +561,10 @@ export type GatewayEvent =
   | { t: "IMPORT_PROGRESS"; d: ImportJob };
 
 export type GatewayEventType = GatewayEvent["t"];
-export type GatewayEventOf<T extends GatewayEventType> = Extract<GatewayEvent, { t: T }>;
+export type GatewayEventOf<T extends GatewayEventType> = Extract<
+  GatewayEvent,
+  { t: T }
+>;
 
 // ---------------------------------------------------------------------------
 // Mentions
@@ -508,10 +572,16 @@ export type GatewayEventOf<T extends GatewayEventType> = Extract<GatewayEvent, {
 
 const USER_MENTION = /<@([0-9a-z]+)>/g;
 
-export function parseMentions(content: string): { userIds: string[]; everyone: boolean } {
+export function parseMentions(content: string): {
+  userIds: string[];
+  everyone: boolean;
+} {
   const ids = new Set<string>();
   for (const m of content.matchAll(USER_MENTION)) if (m[1]) ids.add(m[1]);
-  return { userIds: [...ids], everyone: /(^|\s)@(everyone|here)\b/.test(content) };
+  return {
+    userIds: [...ids],
+    everyone: /(^|\s)@(everyone|here)\b/.test(content),
+  };
 }
 
 export const LIMITS = {

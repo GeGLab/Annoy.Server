@@ -233,6 +233,26 @@ export function channelRoutes(app: FastifyInstance): void {
     return {};
   });
 
+  // Idempotent reactions: one vote per user/emoji; channel access is always rechecked.
+  const reaction = async (req: FastifyRequest<{ Params: { id: string; messageId: string; emoji: string } }>, add: boolean) => {
+    const userId = requireUser(req);
+    const { channel } = requireChannel(req.params.id, userId, Permission.SEND_MESSAGES);
+    const message = getMessage(req.params.messageId);
+    if (!message || message.channelId !== channel.id) throw notFound("Mensagem");
+    const emoji = req.params.emoji.normalize("NFC");
+    const segments = [...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(emoji)];
+    if (emoji.length > 32 || segments.length !== 1 || !/\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3/u.test(emoji)) throw badRequest("Escolha um emoji válido");
+    if (add) {
+      if ((message.reactions?.length ?? 0) >= 20 && !message.reactions?.some((item) => item.emoji === emoji)) throw badRequest("Esta mensagem já tem 20 reações diferentes");
+      run("INSERT OR IGNORE INTO message_reactions(message_id,user_id,emoji) VALUES(?,?,?)", message.id, userId, emoji);
+    } else run("DELETE FROM message_reactions WHERE message_id=? AND user_id=? AND emoji=?", message.id, userId, emoji);
+    const updated = getMessage(message.id)!;
+    sendToChannel(channel, { t: "MESSAGE_UPDATE", d: updated });
+    return updated;
+  };
+  app.put<Params<"id" | "messageId" | "emoji">>("/channels/:id/messages/:messageId/reactions/:emoji", async (req) => reaction(req, true));
+  app.delete<Params<"id" | "messageId" | "emoji">>("/channels/:id/messages/:messageId/reactions/:emoji", async (req) => reaction(req, false));
+
   // Uploads are addressed by an unguessable id so <img> tags work without auth headers.
   app.get<Params<"id" | "name">>("/uploads/:id/:name", async (req, reply) => {
     const row = one<{ filename: string; content_type: string; size: number }>(

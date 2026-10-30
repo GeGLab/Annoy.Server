@@ -1,14 +1,37 @@
 import { Permission, type ClientOp } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
+import {
+  activitiesFor,
+  clearActivity,
+  expireActivities,
+  updateActivity,
+} from "./activity.ts";
 import { userIdForToken } from "./auth.ts";
 import { HttpError } from "./errors.ts";
-import { Connection, register, sendToAudience, sendToChannel, unregister } from "./events.ts";
+import {
+  Connection,
+  register,
+  sendToAudience,
+  sendToChannel,
+  unregister,
+} from "./events.ts";
+import { getSettings, isAdmin } from "./instance.ts";
 import { requireChannel } from "./perms.ts";
 import { addConnection, presenceOf, removeConnection } from "./presence.ts";
-import { audienceOf, dmChannelsForUser, getRelationships, getUser, serversForUser } from "./repo.ts";
-import { getSettings, isAdmin } from "./instance.ts";
-import { activitiesFor, clearActivity, expireActivities, updateActivity } from "./activity.ts";
-import { handleVoice, leaveVoice, setSelfState, setSpeaking, voiceBackend } from "./voice-backend.ts";
+import {
+  audienceOf,
+  dmChannelsForUser,
+  getRelationships,
+  getUser,
+  serversForUser,
+} from "./repo.ts";
+import {
+  handleVoice,
+  leaveVoice,
+  setSelfState,
+  setSpeaking,
+  voiceBackend,
+} from "./voice-backend.ts";
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
 const IDENTIFY_TIMEOUT_MS = 10_000;
@@ -20,7 +43,9 @@ export function registerGateway(app: FastifyInstance): void {
   const sweep = setInterval(() => {
     expireActivities();
     const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
-    for (const conn of live) if (conn.lastHeartbeat < cutoff) conn.socket.close(4009, "heartbeat timeout");
+    for (const conn of live)
+      if (conn.lastHeartbeat < cutoff)
+        conn.socket.close(4009, "heartbeat timeout");
   }, 30_000);
   app.addHook("onClose", async () => clearInterval(sweep));
 
@@ -34,7 +59,8 @@ export function registerGateway(app: FastifyInstance): void {
     socket.on("message", (raw, isBinary) => {
       if (isBinary) return void socket.close(4002, "binary frames unsupported");
       const text = raw.toString();
-      if (text.length > MAX_FRAME_BYTES) return void socket.close(4008, "frame too large");
+      if (text.length > MAX_FRAME_BYTES)
+        return void socket.close(4008, "frame too large");
       let msg: ClientOp;
       try {
         msg = JSON.parse(text) as ClientOp;
@@ -42,7 +68,9 @@ export function registerGateway(app: FastifyInstance): void {
         return void socket.close(4002, "invalid json");
       }
       conn.lastHeartbeat = Date.now();
-      void onMessage(conn, msg).catch((err: unknown) => app.log.warn({ err }, "gateway message failed"));
+      void onMessage(conn, msg).catch((err: unknown) =>
+        app.log.warn({ err }, "gateway message failed"),
+      );
     });
 
     socket.on("close", () => {
@@ -53,7 +81,10 @@ export function registerGateway(app: FastifyInstance): void {
       unregister(conn);
       clearActivity(conn);
       if (userId && removeConnection(userId)) {
-        sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: "offline" } });
+        sendToAudience(userId, {
+          t: "PRESENCE_UPDATE",
+          d: { userId, presence: "offline" },
+        });
       }
     });
   });
@@ -62,16 +93,22 @@ export function registerGateway(app: FastifyInstance): void {
 async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
   if (msg.op === "identify") {
     if (conn.userId) return;
-    const userId = typeof msg.token === "string" ? userIdForToken(msg.token) : null;
+    const userId =
+      typeof msg.token === "string" ? userIdForToken(msg.token) : null;
     const user = userId ? getUser(userId) : undefined;
     if (!userId || !user) {
-      conn.send({ t: "INVALID_SESSION", d: { reason: "Sessão inválida ou expirada" } });
+      conn.send({
+        t: "INVALID_SESSION",
+        d: { reason: "Sessão inválida ou expirada" },
+      });
       conn.socket.close(4004, "invalid session");
       return;
     }
     register(conn, userId);
     const cameOnline = addConnection(userId);
-    const presences = Object.fromEntries(audienceOf(userId).map((id) => [id, presenceOf(id)]));
+    const presences = Object.fromEntries(
+      audienceOf(userId).map((id) => [id, presenceOf(id)]),
+    );
     conn.send({
       t: "READY",
       d: {
@@ -81,10 +118,28 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         relationships: getRelationships(userId),
         presences,
         activities: activitiesFor(userId),
-        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend },
+        instance: {
+          isAdmin: isAdmin(userId),
+          registration: getSettings().registration,
+          voiceBackend,
+          activityArtwork: true,
+          developmentActivity: true,
+          directCalls: true,
+          socialProfiles: true,
+          groupActivity: true,
+          reactions: true,
+          serverIcons: true,
+          gifSearch: !!process.env.GIPHY_CLIENT_API_KEY,
+          presenceStatus: true,
+          manualPresence: true,
+        },
       },
     });
-    if (cameOnline) sendToAudience(userId, { t: "PRESENCE_UPDATE", d: { userId, presence: "online" } });
+    if (cameOnline)
+      sendToAudience(userId, {
+        t: "PRESENCE_UPDATE",
+        d: { userId, presence: "online" },
+      });
     return;
   }
 
@@ -93,14 +148,23 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
 
   switch (msg.op) {
     case "activity":
-      if (!updateActivity(conn, msg.activities)) conn.socket.close(4002, "invalid activity");
+      if (!updateActivity(conn, msg.activities))
+        conn.socket.close(4002, "invalid activity");
       return;
     case "heartbeat":
       conn.send({ t: "HEARTBEAT_ACK", d: null });
       return;
     case "typing": {
-      const { channel } = requireChannel(String(msg.channelId), userId, Permission.SEND_MESSAGES);
-      sendToChannel(channel, { t: "TYPING_START", d: { channelId: channel.id, userId } }, userId);
+      const { channel } = requireChannel(
+        String(msg.channelId),
+        userId,
+        Permission.SEND_MESSAGES,
+      );
+      sendToChannel(
+        channel,
+        { t: "TYPING_START", d: { channelId: channel.id, userId } },
+        userId,
+      );
       return;
     }
     case "voice_state":
@@ -115,8 +179,10 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         const data = await handleVoice(conn, msg.method, msg.data ?? {});
         conn.send({ t: "VOICE_REPLY", d: { id, ok: true, data } });
       } catch (err) {
-        const message = err instanceof HttpError ? err.message : "Erro interno de voz";
-        if (!(err instanceof HttpError)) console.error("voice", msg.method, err);
+        const message =
+          err instanceof HttpError ? err.message : "Erro interno de voz";
+        if (!(err instanceof HttpError))
+          console.error("voice", msg.method, err);
         conn.send({ t: "VOICE_REPLY", d: { id, ok: false, message } });
       }
       return;

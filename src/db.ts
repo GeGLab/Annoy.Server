@@ -210,3 +210,12 @@ export function tx<T>(fn: () => T): T {
 }
 
 export const now = () => new Date().toISOString();
+
+// Social media extensions, additive for existing installations.
+if (!(db.prepare("PRAGMA table_info(servers)").all() as {name: string}[]).some((column) => column.name === "icon_url")) db.exec("ALTER TABLE servers ADD COLUMN icon_url TEXT");
+db.exec(`CREATE TABLE IF NOT EXISTS message_reactions (
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji TEXT NOT NULL,
+  PRIMARY KEY(message_id, user_id, emoji)
+)`);

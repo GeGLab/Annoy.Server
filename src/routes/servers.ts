@@ -1,3 +1,6 @@
+import { createAvatar, discardAvatar, MAX_AVATAR_BYTES } from "../avatars.ts";
+import { config } from "../config.ts";
+import { refreshActivityAccess } from "../activity.ts";
 import {
   ALL_PERMISSIONS,
   DEFAULT_EVERYONE_PERMISSIONS,
@@ -30,7 +33,7 @@ const color = z
 const permissions = z.number().int().min(0).max(ALL_PERMISSIONS);
 
 const createServer = z.object({ name });
-const patchServer = z.object({ name });
+const patchServer = z.object({ name: name.optional(), iconUrl: z.null().optional() }).refine((body) => body.name !== undefined || body.iconUrl === null, "Nenhuma alteração informada");
 const createChannel = z.object({
   name,
   type: z.enum(["category", "text", "voice"]),
@@ -69,7 +72,10 @@ export async function deleteServer(serverId: string): Promise<void> {
     serverId,
   ).map((r) => r.id);
   for (const m of members) disconnectUser(serverId, m.user_id);
+  const icon = getServer(serverId)?.iconUrl;
   run("DELETE FROM servers WHERE id = ?", serverId);
+  refreshActivityAccess();
+  await discardAvatar(icon);
   await discardBlobs(blobs);
   for (const m of members) sendToUser(m.user_id, { t: "SERVER_REMOVE", d: { serverId } });
 }
@@ -148,8 +154,28 @@ export function serverRoutes(app: FastifyInstance): void {
     const userId = requireUser(req);
     requireServer(req.params.id, userId, Permission.MANAGE_SERVER);
     const body = parse(patchServer, req.body);
-    run("UPDATE servers SET name = ? WHERE id = ?", body.name, req.params.id);
+    const previous = getServer(req.params.id)?.iconUrl;
+    if (body.name !== undefined) run("UPDATE servers SET name = ? WHERE id = ?", body.name, req.params.id);
+    if (body.iconUrl === null) { run("UPDATE servers SET icon_url = NULL WHERE id = ?", req.params.id); await discardAvatar(previous); }
     serverChanged(req.params.id);
+    return getServer(req.params.id);
+  });
+
+  app.post<Params<"id">>("/servers/:id/icon", async (req) => {
+    requireServer(req.params.id, requireUser(req), Permission.MANAGE_SERVER);
+    const file = await req.file({ limits: { fileSize: MAX_AVATAR_BYTES, files: 1, fields: 0 } });
+    if (!file) throw badRequest("Selecione uma imagem");
+    const bytes = await file.toBuffer();
+    if (file.file.truncated) throw new HttpError(413, "too_large", "A imagem deve ter no máximo 8 MB");
+    const path = await createAvatar(bytes);
+    let previous: string | null = null;
+    try {
+      requireServer(req.params.id, requireUser(req), Permission.MANAGE_SERVER);
+      previous = getServer(req.params.id)?.iconUrl ?? null;
+      run("UPDATE servers SET icon_url = ? WHERE id = ?", new URL(path, config.publicUrl || `${req.protocol}://${req.host}`).toString(), req.params.id);
+    } catch (error) { await discardAvatar(path); throw error; }
+    serverChanged(req.params.id);
+    await discardAvatar(previous).catch((error) => app.log.warn(error));
     return getServer(req.params.id);
   });
 

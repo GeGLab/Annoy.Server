@@ -40,6 +40,11 @@ const patchMe = z
   .refine((body) => body.displayName !== undefined || body.avatarUrl === null, "Nenhuma alteração informada");
 
 export function authRoutes(app: FastifyInstance): void {
+  app.get("/media/config", async (req, reply) => {
+    requireUser(req);
+    reply.header("Cache-Control", "no-store");
+    return { giphyApiKey: process.env.GIPHY_CLIENT_API_KEY ?? null };
+  });
   app.get("/info", async (): Promise<InstanceInfo> => {
     const { registration } = getSettings();
     return {

@@ -1,31 +1,21 @@
 import type { UserActivity } from "@distopic/protocol";
 import { z } from "zod";
-import { all } from "./db.ts";
-import { sendToUser, type Connection } from "./events.ts";
+import { all, one } from "./db.ts";
+import { sendToUser, onServerChanged, type Connection } from "./events.ts";
 import { relationshipStatus } from "./repo.ts";
 
-const entry = z
-  .object({
-    kind: z.enum(["game", "music"]),
-    provider: z.enum(["steam", "spotify", "apple-music"]),
-    name: z.string().trim().min(1).max(160),
-    artist: z.string().max(160).optional(),
-    album: z.string().max(160).optional(),
-    appId: z
-      .string()
-      .regex(/^\d{1,10}$/)
-      .optional(),
-    startedAt: z.number().int().min(0).optional(),
-  })
-  .strict();
-const payload = z
-  .array(entry)
-  .max(2)
-  .refine(
-    (items) =>
-      new Set(items.map((i) => i.kind)).size === items.length &&
-      items.every((i) => (i.kind === "game" ? i.provider === "steam" && !!i.appId : i.provider !== "steam")),
-  );
+const entry = z.object({
+  kind: z.enum(["game", "music", "development"]),
+  provider: z.enum(["steam", "spotify", "apple-music", "vscode", "intellij", "dbeaver", "ssms", "visual-studio"]),
+  name: z.string().trim().min(1).max(160), artist: z.string().max(160).optional(), album: z.string().max(160).optional(),
+  appId: z.string().regex(/^\d{1,10}$/).optional(), startedAt: z.number().int().min(0).optional(),
+  artwork: z.string().max(24000).optional(), file: z.string().max(160).optional(), project: z.string().max(160).optional(), language: z.string().max(32).optional(),
+}).strict();
+const payload = z.array(entry).max(3).refine((items) =>
+  new Set(items.map((item) => item.kind)).size === items.length &&
+  items.every((item) => item.kind === "game" ? item.provider === "steam" && !!item.appId : item.kind === "music" ? ["spotify", "apple-music"].includes(item.provider) : ["vscode", "intellij", "dbeaver", "ssms", "visual-studio"].includes(item.provider)) &&
+  items.every((item) => !item.artwork || (item.kind === "music" ? /^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]+={0,2}$/.test(item.artwork) : /^https:\/\/[a-z0-9.-]+\.steamstatic\.com\/(?:store_item_assets\/)?steam\/apps\/\d+\/[a-zA-Z0-9_/.?=&%-]+$/.test(item.artwork)))
+);
 const live = new Map<number, { userId: string; at: number; activities: UserActivity[] }>();
 const TTL = 75_000;
 export function areFriends(a: string, b: string) {
@@ -40,12 +30,23 @@ function friendIds(userId: string) {
     userId,
   ).map((r) => r.other_id);
 }
+function groupIds(userId: string) {
+  return all<{id: string}>("SELECT DISTINCT b.user_id AS id FROM members a JOIN members b ON a.server_id=b.server_id WHERE a.user_id=?", userId).map((row) => row.id);
+}
+export function canSeeActivity(viewer: string, subject: string): boolean {
+  return viewer === subject || areFriends(viewer, subject) || !!one("SELECT 1 FROM members a JOIN members b ON a.server_id=b.server_id WHERE a.user_id=? AND b.user_id=? LIMIT 1", viewer, subject);
+}
+const viewers = new Map<string, Set<string>>();
 function broadcast(userId: string) {
   const activities = activityOf(userId);
-  for (const id of [userId, ...friendIds(userId)]) sendToUser(id, { t: "ACTIVITY_UPDATE", d: { userId, activities } });
+  const audience = new Set([userId, ...friendIds(userId), ...groupIds(userId)]);
+  for (const id of viewers.get(userId) ?? []) if (!audience.has(id)) sendToUser(id, { t: "ACTIVITY_UPDATE", d: { userId, activities: [] } });
+  for (const id of audience) sendToUser(id, { t: "ACTIVITY_UPDATE", d: { userId, activities } });
+  if (activities.length) viewers.set(userId, audience);
+  else viewers.delete(userId);
 }
 export function activitiesFor(userId: string) {
-  return Object.fromEntries([userId, ...friendIds(userId)].map((id) => [id, activityOf(id)]));
+  return Object.fromEntries([...new Set([userId, ...friendIds(userId), ...groupIds(userId)])].map((id) => [id, activityOf(id)]));
 }
 export function updateActivity(conn: Connection, raw: unknown): boolean {
   if (!conn.userId) return false;
@@ -83,11 +84,15 @@ export function expireActivities() {
     }
   for (const id of changed) broadcast(id);
 }
-/** Friendship changes are immediate; no server membership or DM grants activity access. */
+export function refreshActivityAccess() {
+  for (const userId of new Set([...live.values()].map((entry) => entry.userId).concat([...viewers.keys()]))) broadcast(userId);
+}
+onServerChanged(refreshActivityAccess);
+/** Friendships and shared server memberships both grant activity access. */
 export function refreshFriendActivities(a: string, b: string) {
   for (const [viewer, subject] of [
     [a, b],
     [b, a],
   ])
-    sendToUser(viewer!, { t: "ACTIVITY_UPDATE", d: { userId: subject!, activities: areFriends(a, b) ? activityOf(subject!) : [] } });
+    sendToUser(viewer!, { t: "ACTIVITY_UPDATE", d: { userId: subject!, activities: canSeeActivity(viewer!, subject!) ? activityOf(subject!) : [] } });
 }
