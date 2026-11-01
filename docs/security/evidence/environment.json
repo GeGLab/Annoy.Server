@@ -1,0 +1,29 @@
+{
+  "createdAt": "2026-10-31T22:43:24.840795+00:00",
+  "platform": "linux",
+  "architecture": "x64",
+  "node": "v24.22.2",
+  "cargo": "1.99.1",
+  "kernel": "7.2.11-1-cachyos",
+  "graphicalTests": {
+    "monitor": "DP-5",
+    "compositor": "Hyprland",
+    "backend": "XWayland",
+    "stealFocus": false,
+    "nativeMaximizeStepExecuted": false,
+    "windowsOnlyTestExecuted": false
+  },
+  "productionMigrationsExecuted": false,
+  "releasesPublished": false,
+  "mandatoryUpdatesEnabled": false,
+  "windowsExecuted": false,
+  "sframeTransmissionExecuted": false,
+  "dockerBuildExecuted": false,
+  "dockerLimitation": "Local daemon access denied; separate Node 24 execution does not validate the container image",
+  "windowsDeferredByUser": true,
+  "independentAuditDeferredByUser": true,
+  "mediaKeyFoundationTested": true,
+  "mediaFrameEncryptionImplemented": false,
+  "linuxPackageContentsAndFusesVerified": true,
+  "packagedGuiExecuted": false
+}

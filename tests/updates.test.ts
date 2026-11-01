@@ -7,6 +7,7 @@ import Fastify from "fastify";
 
 const directory = await mkdtemp(join(tmpdir(), "annoy-updates-"));
 const control = join(directory, "control");
+process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
 process.env.ANNOY_CONTROL_DIR = control;
 const { db, run } = await import("../src/db.ts");

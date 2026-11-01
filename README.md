@@ -5,7 +5,7 @@
 **Self-hosted voice and text chat. Host it like TeamSpeak, use it like Discord.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-7b61ff.svg)](LICENSE)
-![Node.js](https://img.shields.io/badge/node-%E2%89%A522.13-339933?logo=node.js&logoColor=white)
+![Node.js](https://img.shields.io/badge/node-%E2%89%A524.7-339933?logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-ready-2496ed?logo=docker&logoColor=white)
 
@@ -95,10 +95,9 @@ LAN IP for home use, or the public IP on the internet. Open these ports:
 | `8787` | TCP | REST API and WebSocket gateway |
 | `40000-40003` | **UDP and TCP** | Voice media (two slots, for updates without downtime) |
 
-**Upgrading from Distopic (0.2):** the project is now Annoy. Settings were
-renamed from `DISTOPIC_*` to `ANNOY_*`; the old names keep working. Data stays
-in the same volume. Point the remote at the new repository and remove the old
-container:
+**Upgrading older installations:** use `ANNOY_*` environment variables in
+`.env`. Data stays in the same volume. Point the remote at the current
+repository and remove the old container:
 
 ```bash
 git remote set-url origin https://github.com/GeGLab/annoy-server.git
@@ -107,7 +106,7 @@ git pull && docker compose pull && docker compose up -d --remove-orphans
 
 ### From source
 
-Requires Node.js 22.13 or newer.
+Requires Node.js 24.7 or newer.
 
 ```bash
 npm install
@@ -130,8 +129,9 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_HOST` | `0.0.0.0` | Bind address |
 | `ANNOY_PORT` | `8787` | API and gateway port |
 | `ANNOY_VOICE_PORT` | `40000` | Voice media port (UDP and TCP) |
-| `ANNOY_GLOBAL` | `on` | `off` stops talking to Annoy Global (needs a restart): no global accounts or Global-backed features here |
-| `ANNOY_GLOBAL_URL` | `https://global.geg.dev.br` | Annoy Global API |
+| `ANNOY_ACCOUNT_MODE` | `global` | Exclusive login policy: `global` or `local`. Restart to migrate; see [account migration](docs/account-migration.md). |
+| `ANNOY_GLOBAL` | removed | Remove this legacy flag and configure `ANNOY_ACCOUNT_MODE` explicitly. |
+| `ANNOY_GLOBAL_URL` | `https://global.geg.dev.br` | Annoy Accounts API |
 | `ANNOY_ANNOUNCED_IP` | default-route IP | Voice addresses for clients, comma-separated: **public IP first, LAN IP second** (each gets its own port: 40000, 40001…). Required in Docker |
 | `ANNOY_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
 | `ANNOY_CF_SFU_APP_ID` / `_TOKEN` | (empty) | Cloudflare Realtime SFU app credentials, used with `ANNOY_VOICE_BACKEND=cloudflare` |
@@ -144,9 +144,11 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_PUBLIC_URL` | request origin | Public origin for OAuth redirects behind a proxy |
 | `ANNOY_STEAM_API_KEY` | (empty) | Optional online Steam game lookup; OpenID linking and local detection work without it ([setup](docs/steam.md)) |
 
-The API speaks plain HTTP. For internet exposure, put a TLS reverse proxy (Caddy,
-nginx, Cloudflare Tunnel) in front of port `8787` and connect with
-`https://your.domain`. Voice media is already encrypted (DTLS-SRTP).
+The API listens on HTTP behind a TLS reverse proxy (Caddy, nginx, Cloudflare
+Tunnel). Remote connections, including LAN clients, require HTTPS/WSS; only
+loopback development permits HTTP. Configure trusted proxy addresses explicitly
+and connect to the final `https://your.domain` origin: credential requests reject
+redirects. DTLS-SRTP protects transport; legacy voice with an SFU is not E2EE.
 
 **Backups:** copy `ANNOY_DATA_DIR`. It holds `distopic.db` (SQLite, WAL mode) and
 `uploads/`.
@@ -279,3 +281,16 @@ tests when you touch `voice.ts`.
 ## License
 
 [MIT](LICENSE) © Gustavo Cruz
+
+## Security implementation status
+
+OpenMLS messaging and encrypted attachments are implemented and covered by local
+Linux tests; the integration has not been independently audited. SFrame media
+E2EE and Windows validation remain pending. New plaintext messages are blocked;
+legacy history remains separately identified. No security release has been published. See [security report](docs/security/REPORT.md),
+[threat model](docs/security/THREAT-MODEL.md),
+[cryptographic architecture](docs/security/CRYPTO-ARCHITECTURE.md),
+[validation matrix](docs/security/VALIDATION.md) and
+[independent audit instructions](docs/security/INDEPENDENT-AUDIT.md).
+Changing authentication mode requires the explicit offline procedure in
+[account migration](docs/account-migration.md); restarting never converts users.

@@ -1,3 +1,4 @@
+import "../crypto-delivery.ts";
 import type { FastifyInstance } from "fastify";
 import { has, Permission, type MessageSearchPage } from "@distopic/protocol";
 import type { SQLInputValue } from "node:sqlite";
@@ -26,7 +27,7 @@ export function searchRoutes(app: FastifyInstance) {
     if (q.channelId) requireChannel(q.channelId, userId);
     if (!q.q && !q.authorId && !q.has && !q.before && !q.after) throw badRequest("Digite uma busca ou escolha um filtro.");
     const candidates = all<{ id: string }>(
-      `SELECT c.id FROM channels c WHERE c.type IN ('text','dm') AND (EXISTS(SELECT 1 FROM members m WHERE m.server_id=c.server_id AND m.user_id=?) OR EXISTS(SELECT 1 FROM dm_recipients d WHERE d.channel_id=c.id AND d.user_id=?)) ${q.serverId ? "AND c.server_id=?" : ""} ${q.channelId ? "AND c.id=?" : ""}`,
+      `SELECT c.id FROM channels c WHERE c.type IN ('text','dm') AND NOT EXISTS(SELECT 1 FROM crypto_channels e WHERE e.channel_id=c.id) AND (EXISTS(SELECT 1 FROM members m WHERE m.server_id=c.server_id AND m.user_id=?) OR EXISTS(SELECT 1 FROM dm_recipients d WHERE d.channel_id=c.id AND d.user_id=?)) ${q.serverId ? "AND c.server_id=?" : ""} ${q.channelId ? "AND c.id=?" : ""}`,
       userId,
       userId,
       ...(q.serverId ? [q.serverId] : []),

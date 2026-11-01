@@ -6,8 +6,8 @@ import { join } from "node:path";
 import Fastify from "fastify";
 
 const directory = await mkdtemp(join(tmpdir(), "annoy-ownership-"));
+process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
-process.env.DISTOPIC_DATA_DIR = directory;
 const { db, run, one } = await import("../src/db.ts");
 const { createSession } = await import("../src/auth.ts");
 const { serverRoutes, deleteServer } = await import("../src/routes/servers.ts");

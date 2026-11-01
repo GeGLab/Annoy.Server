@@ -1,5 +1,5 @@
 // End to end with a real Annoy Global API (the sibling Annoy-api-global
-// checkout): a global account signs in here without Global learning where.
+// checkout): an Annoy account signs in here without Global learning where.
 import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -18,6 +18,8 @@ const globalData = await mkdtemp(join(tmpdir(), "annoy-global-api-"));
 process.env.ANNOY_DATA_DIR = dataDir;
 process.env.ANNOY_GLOBAL_URL = `http://127.0.0.1:${GLOBAL_PORT}`;
 process.env.ANNOY_REGISTRATION = "open";
+process.env.ANNOY_ACCOUNT_MODE = "global";
+delete process.env.ANNOY_GLOBAL;
 
 let globalApi: ChildProcess | null = null;
 const key = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64");
@@ -25,7 +27,18 @@ const key = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toStri
 const kdf = skip ? null! : await import(join(globalRepo, "src/client-kdf.ts"));
 const { authRoutes } = await import("../src/routes/auth.ts");
 const { startGlobal, globalLoginAvailable, globalServerId } = await import("../src/global.ts");
-const { db } = await import("../src/db.ts");
+const { db, run } = await import("../src/db.ts");
+// Isolated historical fixture connection, never a live HTTP option.
+db.function("annoy_legacy_source_write",()=>1);
+const { createSession, hashPassword, userIdForToken } = await import("../src/auth.ts");
+const { newId } = await import("../src/ids.ts");
+async function legacyAccount(username: string, password: string) {
+  const id = newId();
+  run("INSERT INTO users (id, username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)", id, username, username, await hashPassword(password), new Date().toISOString());
+  const token = createSession(id);
+  run("UPDATE sessions SET account_mode = 'migration' WHERE user_id = ?", id);
+  return { token, user: { id, username, global: false } };
+}
 
 const app = Fastify();
 app.setErrorHandler((e: Error & { status?: number; code?: string }, _req, reply) =>
@@ -77,14 +90,14 @@ const json = (body: unknown, token?: string): RequestInit => ({
 const local = (url: string, payload?: unknown, token?: string, method = "POST") =>
   app.inject({ method: method as "POST", url, payload: payload as object, headers: token ? { authorization: `Bearer ${token}` } : {} });
 
-/** A global account, as the app sees it after logging in: session and account keys. */
+/** A Annoy account, as the app sees it after logging in: session and account keys. */
 async function globalAccount(name: string) {
   const email = `${name}@example.com`;
   const keys = kdf.newAccountKeys();
   const { iterations } = await G("/v1/auth/prelogin", json({ email }));
   const salt = kdf.newSalt();
   const pk = await kdf.derivePasswordKeys("senha de teste longa", salt, iterations);
-  await G("/v1/auth/register", json({ email, name, salt, authKey: pk.authKey, wrappedKeys: await kdf.wrapKeys(pk.wrapKey, keys), recovery: { mode: "email", escrow: kdf.escrowKeys(keys) }, acceptTerms: "2026-10-29" }));
+  await G("/v1/auth/register", json({ email, name, salt, authKey: pk.authKey, wrappedKeys: await kdf.wrapKeys(pk.wrapKey, keys), recovery: { mode: "recoveryKey", wrapped: await kdf.wrapWithRecovery(kdf.newRecoveryKey(),keys) }, acceptTerms: "2026-10-29" }));
   const login = await G("/v1/auth/login", json({ email, authKey: pk.authKey }));
   return { keys, session: login.token as string };
 }
@@ -97,7 +110,7 @@ async function proof(account: { keys: unknown; session: string }) {
   const { keys, issueWith } = await G("/v1/tokens/keys");
   const pending = await kdf.blindToken(keys.find((k: { kid: string }) => k.kid === issueWith), kdf.tokenContext(serverId, identity.id));
   const issued = await G("/v1/tokens", json({ kid: issueWith, blinded: [pending.blinded] }, account.session));
-  return { identity: identity.id, challenge, signature: await kdf.signForServer(identity.privateKey, challenge), token: kdf.finalizeToken(pending, issued.signatures[0]) };
+  return { identity: identity.id, challenge, signature: await kdf.signForServer(identity.privateKey, challenge), token: await kdf.finalizeToken(pending, issued.signatures[0]) };
 }
 
 test("the server registers with Global once and offers global login", { skip }, async () => {
@@ -137,28 +150,33 @@ test("a token works once, only with its own identity and challenge", { skip }, a
   assert.equal((await local("/api/auth/global", { ...forged, signature: other.signature })).statusCode, 401);
 });
 
-test("a local account starts signing in with its global account (1.7)", { skip }, async () => {
-  const reg = await local("/api/auth/register", { username: "dani_local", password: "senha local longa" });
-  const token = reg.json().token;
-  assert.equal(reg.json().user.global, false);
+test("a legacy local account migrates exclusively to global without losing its ID", { skip }, async () => {
+  const reg = await legacyAccount("dani_local", "senha local longa");
+  const token = reg.token;
+  assert.equal(userIdForToken(token), null);
   const dani = await globalAccount("dani");
-  const linked = await local("/api/users/@me/global", await proof(dani), token);
+  const linked = await local("/api/auth/migrate/global", await proof(dani), token);
   assert.equal(linked.statusCode, 200, linked.body);
-  assert.equal(linked.json().global, true);
+  assert.equal(linked.json().user.global, true);
+  assert.equal(linked.json().user.id, reg.user.id);
+  assert.equal(userIdForToken(token), null);
+  assert.equal(userIdForToken(linked.json().token), reg.user.id);
+  assert.equal(db.prepare("SELECT password_hash FROM users WHERE id = ?").get(reg.user.id)?.password_hash, "!");
   const viaGlobal = await local("/api/auth/global", await proof(dani));
   assert.equal(viaGlobal.json().user.username, "dani_local");
   // Taken by another account here: refused.
-  const reg2 = await local("/api/auth/register", { username: "outro", password: "senha local longa" });
-  assert.equal((await local("/api/users/@me/global", await proof(dani), reg2.json().token)).statusCode, 409);
+  assert.equal((await local("/api/auth/login", { username: "dani_local", password: "senha local longa" })).statusCode, 403);
+  assert.equal((await local("/api/users/@me/global", await proof(dani), linked.json().token)).statusCode, 410);
+  assert.equal((await local("/api/users/@me/global", undefined, linked.json().token, "DELETE")).statusCode, 403);
 });
 
-test("1.9: a local and a global-made user of the same person merge into the local one", { skip }, async () => {
+test("1.9: legacy identities with history remain separate instead of rewriting authorship", { skip }, async () => {
   const { run, one } = await import("../src/db.ts");
-  const local_ = (await local("/api/auth/register", { username: "eva_local", password: "senha local da eva" })).json();
+  const local_ = await legacyAccount("eva_local", "senha local da eva");
   const eva = await globalAccount("eva");
   const viaGlobal = (await local("/api/auth/global", { ...(await proof(eva)), username: "eva_global" })).json();
   const keep = local_.user.id, drop = viaGlobal.user.id;
-  const friend = (await local("/api/auth/register", { username: "amigo", password: "senha do amigo 1" })).json().user.id;
+  const friend = (await legacyAccount("amigo", "senha do amigo 1")).user.id;
   const t = "2026-01-01";
   // drop owns a server and has a role there, writes in it, is in keep's server, and has a friend.
   run("INSERT INTO servers (id, name, owner_id, created_at) VALUES ('s_drop', 'Do global', ?, ?)", drop, t);
@@ -170,20 +188,18 @@ test("1.9: a local and a global-made user of the same person merge into the loca
   run("INSERT INTO messages (id, channel_id, author_id, content, created_at, mention_ids) VALUES ('m1', 'c1', ?, 'oi', ?, ?)", drop, t, JSON.stringify([drop]));
   run("INSERT INTO relationships (user_id, other_id, status) VALUES (?, ?, 'friend'), (?, ?, 'friend')", drop, friend, friend, drop);
 
-  const wrong = await local("/api/users/@me/global/merge", { ...(await proof(eva)), password: "errada" }, local_.token);
+  const wrong = await local("/api/auth/migrate/global", { ...(await proof(eva)), username: "eva_local", password: "errada" });
   assert.equal(wrong.statusCode, 401, "the local password confirms the local side");
-  const merged = await local("/api/users/@me/global/merge", { ...(await proof(eva)), password: "senha local da eva" }, local_.token);
-  assert.equal(merged.statusCode, 200, merged.body);
-  assert.equal(merged.json().removedUserId, drop);
+  const merged = await local("/api/auth/migrate/global", { ...(await proof(eva)), username: "eva_local", password: "senha local da eva" });
+  assert.equal(merged.statusCode, 409, merged.body);
+  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM users WHERE id IN (?,?)",keep,drop)!.n,2);
+  assert.equal(one<{ owner_id: string }>("SELECT owner_id FROM servers WHERE id='s_drop'")!.owner_id,drop);
+  assert.equal(one<{ author_id: string }>("SELECT author_id FROM messages WHERE id='m1'")!.author_id,drop);
+  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM member_roles WHERE user_id=? AND role_id='r1'",drop)!.n,1);
+  assert.equal((await local("/api/auth/global",await proof(eva))).json().user.id,drop);
+});
 
-  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM users WHERE id = ?", drop)!.n, 0);
-  assert.equal(one<{ owner_id: string }>("SELECT owner_id FROM servers WHERE id = 's_drop'")!.owner_id, keep);
-  assert.equal(one<{ author_id: string; mention_ids: string }>("SELECT author_id, mention_ids FROM messages WHERE id = 'm1'")!.author_id, keep);
-  assert.equal(one<{ mention_ids: string }>("SELECT mention_ids FROM messages WHERE id = 'm1'")!.mention_ids, JSON.stringify([keep]));
-  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM member_roles WHERE user_id = ? AND role_id = 'r1'", keep)!.n, 1);
-  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM members WHERE user_id = ?", keep)!.n, 2);
-  assert.equal(one<{ n: number }>("SELECT count(*) AS n FROM relationships WHERE user_id = ? AND other_id = ?", friend, keep)!.n, 1);
-  // From now on the global account signs in to the local user, and so does the password.
-  assert.equal((await local("/api/auth/global", await proof(eva))).json().user.id, keep);
-  assert.equal((await local("/api/auth/login", { username: "eva_local", password: "senha local da eva" })).json().user.id, keep);
+test("global is the exclusive default and local registrations cannot bypass it", { skip }, async () => {
+  assert.equal((await local("/api/info", undefined, undefined, "GET")).json().accountMode, "global");
+  assert.equal((await local("/api/auth/register", { username: "bypass", password: "senha local longa" })).statusCode, 403);
 });

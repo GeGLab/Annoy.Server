@@ -1,11 +1,15 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync,chmodSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { config } from "./config.ts";
 
-mkdirSync(config.dataDir, { recursive: true });
+mkdirSync(config.dataDir, { recursive: true,mode:0o700 });
 
 export const db = new DatabaseSync(join(config.dataDir, "distopic.db"));
+// Offline recovery tools use a separate explicitly controlled connection.
+// Older binaries lack this function and fail closed on plaintext writes.
+db.function("annoy_legacy_source_write",()=>0);
+if(process.platform!=="win32")chmodSync(join(config.dataDir,"distopic.db"),0o600);
 
 db.exec(`
 PRAGMA journal_mode = WAL;
@@ -158,7 +162,7 @@ db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_discord_id ON users(discord_id)
 if (!userColumns.includes("is_admin")) db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
 if (!userColumns.includes("banned_at")) db.exec("ALTER TABLE users ADD COLUMN banned_at TEXT");
 if (!userColumns.includes("ban_reason")) db.exec("ALTER TABLE users ADD COLUMN ban_reason TEXT NOT NULL DEFAULT ''");
-// Annoy Global (item 1.8): this server's identity for a global account, an Ed25519
+// Annoy Global (item 1.8): this server's identity for an Annoy account, an Ed25519
 // public key unique to this server. Not the account's global ID, which no server sees.
 if (!userColumns.includes("global_id")) db.exec("ALTER TABLE users ADD COLUMN global_id TEXT");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_global_id ON users(global_id) WHERE global_id IS NOT NULL");
@@ -281,3 +285,27 @@ db.exec(`CREATE TABLE IF NOT EXISTS message_reactions (
   emoji TEXT NOT NULL,
   PRIMARY KEY(message_id, user_id, emoji)
 )`);
+
+// Authentication methods are exclusive. Legacy sessions can prove migration
+// ownership, but cannot continue accessing ordinary API or gateway resources.
+if (!(db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[]).some((c) => c.name === "account_mode")) {
+  db.exec("ALTER TABLE sessions ADD COLUMN account_mode TEXT NOT NULL DEFAULT 'migration'");
+}
+db.exec(`CREATE TABLE IF NOT EXISTS account_recovery (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL
+)`);
+
+// Existing tokens deliberately have no expiration and must authenticate again.
+if (!(db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[]).some(c => c.name === "expires_at")) {
+  db.exec("ALTER TABLE sessions ADD COLUMN expires_at TEXT");
+}
+
+// Historical rows remain readable; all new plaintext communication is blocked.
+db.exec(`CREATE TRIGGER IF NOT EXISTS crypto_plaintext_globally_disabled_insert BEFORE INSERT ON messages
+ WHEN annoy_legacy_source_write()<>1 BEGIN SELECT RAISE(ABORT,'e2ee_required'); END;
+CREATE TRIGGER IF NOT EXISTS crypto_plaintext_globally_disabled_update BEFORE UPDATE OF content,channel_id,mention_ids,mentions_everyone ON messages
+ WHEN annoy_legacy_source_write()<>1 BEGIN SELECT RAISE(ABORT,'e2ee_required'); END;
+CREATE TRIGGER IF NOT EXISTS crypto_plaintext_reactions_disabled BEFORE INSERT ON message_reactions
+ WHEN annoy_legacy_source_write()<>1 BEGIN SELECT RAISE(ABORT,'e2ee_required'); END;`);

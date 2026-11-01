@@ -2,6 +2,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
+import {Transform} from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { config } from "./config.ts";
 
@@ -10,9 +11,10 @@ const uploadsDir = join(config.dataDir, "uploads");
 const blobPath = (id: string) => join(uploadsDir, id, "blob");
 
 /** Streams `source` into the blob for `id` and returns the stored size. */
-export async function writeBlob(id: string, source: Readable): Promise<number> {
+export async function writeBlob(id: string, source: Readable,maxBytes=Number.MAX_SAFE_INTEGER): Promise<number> {
   await mkdir(join(uploadsDir, id), { recursive: true });
-  await pipeline(source, createWriteStream(blobPath(id)));
+  let size=0;const limit=new Transform({transform(chunk,_encoding,done){size+=chunk.length;done(size>maxBytes?new Error("Upload exceeds size limit"):null,chunk);}});
+  await pipeline(source,limit, createWriteStream(blobPath(id), { flags: "wx", mode: 0o600 }));
   return (await stat(blobPath(id))).size;
 }
 

@@ -1,0 +1,1261 @@
+{
+  "createdAt": "2026-11-01T03:23:46.874376+00:00",
+  "scope": "Code, build configuration and documentation differences since private initial snapshot. Runtime data, secrets, assets and generated/security reports excluded. No source content included. Prior uncommitted changes were preserved; unchanged baseline files are not listed.",
+  "repositoryHeads": {
+    "annoy-server": "ba8022b392de4f39e882d994cf80647b42fd3da4",
+    "annoy-client": "2e1d17700cf3e2fc2c053fa3dead5965649c2767",
+    "annoy-api-global": "0cbd51678850bd075ebeeaa8ab73d2673cbd9f6a",
+    "annoy-front-global": "caa43dcc4e4d29ac3077b66487ee8cb3b49c1149"
+  },
+  "changes": [
+    {
+      "path": "annoy-api-global/.env.example",
+      "status": "modified",
+      "beforeSha256": "9e1ee941001afc6ffdb8b8087bc6bc67da7c17b61bab54a5ffaf2560ac2184ad",
+      "afterSha256": "71b2214ce9027b55be0d946c72357959fd19c427253021056ce45283b86351ab"
+    },
+    {
+      "path": "annoy-api-global/DESIGN.md",
+      "status": "modified",
+      "beforeSha256": "6eb21d302e62ee3374bbd18c40d3284d0f420b6509b28ad340d8768f5f5d747d",
+      "afterSha256": "8912d52d55965f2f284ae158a42fa691854504b03d4dd66046173be71f6c4913"
+    },
+    {
+      "path": "annoy-api-global/Dockerfile",
+      "status": "modified",
+      "beforeSha256": "2b179ad315ac02ba485a21b047dabf771c16626ca9d134ed6b07e47b7daacabf",
+      "afterSha256": "3b5c1c0fbe04a26feaec568dc277bb73ea73f1ed5c21676163b31c9be09b4187"
+    },
+    {
+      "path": "annoy-api-global/README.md",
+      "status": "modified",
+      "beforeSha256": "aa31c020b27be846f052191a845b4dd26747eee5a77f41b5b0754f855739d8f4",
+      "afterSha256": "f068dfb92dfc4ec9682e51ef47e5a86be2d8525977a1778d5336e544d670ae19"
+    },
+    {
+      "path": "annoy-api-global/deploy/deploy.sh",
+      "status": "modified",
+      "beforeSha256": "f29458e7f4ebd5c163934d0d82b083234637f204fae818cf28580603449bc698",
+      "afterSha256": "5c8cd390052ca10d6a1edf54c7dea031bd6042768e2edb64e26011921d558056"
+    },
+    {
+      "path": "annoy-api-global/package-lock.json",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "5ee5ac0b1732bf3c4dfeccdde31373da4959a1211b108d75a76c797bb4605d2a"
+    },
+    {
+      "path": "annoy-api-global/package.json",
+      "status": "modified",
+      "beforeSha256": "d87fd6b7b1c04b94ec831c8645b7e80c8a258e68b5657f4c044b44c29f3763d2",
+      "afterSha256": "a527987f61e5376610275e3dfa95262efadf4272df78405236d54a558814d919"
+    },
+    {
+      "path": "annoy-api-global/src/app.ts",
+      "status": "modified",
+      "beforeSha256": "dec4ae83aebea3e621dfad0ff1c6771fdaa2b834c40ab8d7803496fc88e54c26",
+      "afterSha256": "1a4de29602bfbbe7456abd90af4f948e0a255c3ba2474b7eb7dc6159e8ba138f"
+    },
+    {
+      "path": "annoy-api-global/src/client-kdf.ts",
+      "status": "modified",
+      "beforeSha256": "b622f5170d0400c931f32192b0217f03629517083d36d94c0d1b33303b19512f",
+      "afterSha256": "e07a01b0215a489cbb174a866ab7a7d8e5509c4e7e8cb596242511bc1d689ee9"
+    },
+    {
+      "path": "annoy-api-global/src/config.ts",
+      "status": "modified",
+      "beforeSha256": "ccde0a27f4971f92499a26800a71104545200fed539fd4636b9e6f332b8c50c2",
+      "afterSha256": "dc7413ca4818983cee35f91bc94130615d205c1413e6a83e087357347922f348"
+    },
+    {
+      "path": "annoy-api-global/src/crypto.ts",
+      "status": "modified",
+      "beforeSha256": "a18f314fa83d606fd7625b4659002b2e41e9c27f1a374028342c7c135f2bd194",
+      "afterSha256": "2dc420efe89c03021e77ec810059ca2823a5b7b6676a8762bcaf7f47b31e0779"
+    },
+    {
+      "path": "annoy-api-global/src/db.ts",
+      "status": "modified",
+      "beforeSha256": "6ef2f6eff25df49f5f2caf0a4046a8bc46a36b029b8199523aacb913b465e072",
+      "afterSha256": "0b7af342302ea4dec1d2402b47c4c375b64e85c7f5d107986fbe0a2d55e8c883"
+    },
+    {
+      "path": "annoy-api-global/src/http.ts",
+      "status": "modified",
+      "beforeSha256": "2a1a94c9ef009f2ec63b96d5179cc8189fec36672646da29b32afe989659889f",
+      "afterSha256": "0ebe126c29622511aa00e3d1e2911b9e40fe55c96ed50bdcdce4933c05c6e065"
+    },
+    {
+      "path": "annoy-api-global/src/mail.ts",
+      "status": "modified",
+      "beforeSha256": "5bee5d8b4cde020585dbe083c78fb0c2e101d41fe67838a9d7367c1827b43c9a",
+      "afterSha256": "87578b0e03fbd22a439ae1cd87b6a55a0f2ffa3f2e65a607cebfc9426b5f8759"
+    },
+    {
+      "path": "annoy-api-global/src/routes/accounts.ts",
+      "status": "modified",
+      "beforeSha256": "510ce94c5e8b363ddbc62c952c505484a0d87736e8a703eb3d6877df93fac40d",
+      "afterSha256": "beeae901c216e2cbcda92c1dd46ac9c3e8d9b2b95f4c63e61a3e4ecaa50997a6"
+    },
+    {
+      "path": "annoy-api-global/test/api.test.ts",
+      "status": "modified",
+      "beforeSha256": "c9b6a6acada9562544bf2fa1aa0ed320820fe04bff18ce9cd6e1cc492ae56737",
+      "afterSha256": "c389de571bdb82c5db763829ebb3d7ca81293406a32e0ca1eb3f55fb762ffc29"
+    },
+    {
+      "path": "annoy-client/.github/workflows/release.yml",
+      "status": "modified",
+      "beforeSha256": "feedef0f9e9131ccfe877c9b8e785b14932a0e558179c285e28356b54786e500",
+      "afterSha256": "6c3a084cbfe55329a6d8ac0bb600e1815c8f8a8fe36e1a463b68f5f0b249b4b2"
+    },
+    {
+      "path": "annoy-client/.github/workflows/security.yml",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "7567636e0b3f03534561dd8f57d6486da4d7bc597e3e7979eda8588fe9fb757b"
+    },
+    {
+      "path": "annoy-client/.gitignore",
+      "status": "modified",
+      "beforeSha256": "fc6f6b8127d8e75491fe650f3a40c58a47ae260fa0eab28ec2df2595e4b58e31",
+      "afterSha256": "b5de5fba61931a25e1a4cf969cb760b54e8cbd2b568bb5f784f26334e357a72f"
+    },
+    {
+      "path": "annoy-client/README.md",
+      "status": "modified",
+      "beforeSha256": "26b0aab5fb2042633e77db92ece0ab8f02ced205161d7dc3ad5d793201a200a4",
+      "afterSha256": "802cca89d3136b22c5a939b09c5429a6278097d00b3432bee7a6248510e83d1b"
+    },
+    {
+      "path": "annoy-client/README.pt-BR.md",
+      "status": "modified",
+      "beforeSha256": "659f12d432959213b6512ea6a04285018bb11425a4be610a837b8c3e2894c9d6",
+      "afterSha256": "1b9c02b5cd4ea8df36f9e94532db2ccc2d0af56f03e8bba92c71ad6d187e024b"
+    },
+    {
+      "path": "annoy-client/SECURITY.md",
+      "status": "modified",
+      "beforeSha256": "a6e10101581bdad9e413a66ebd01a4470dbde71b5a018130e171000939194f30",
+      "afterSha256": "2dbb16d1e533fa4c2e57bb85730d61306085198a7e292577e0ab61775646a124"
+    },
+    {
+      "path": "annoy-client/docs/development.md",
+      "status": "modified",
+      "beforeSha256": "ef3bcb8c1831588bb2bc4ad02269e222bef8d3a625f1ed5d6502a82fd84565dd",
+      "afterSha256": "88cf05805f6736b72ec25da4b7f718b25310415c6b6484c5cde3fb283d2d4be2"
+    },
+    {
+      "path": "annoy-client/docs/private-messaging-p2p.md",
+      "status": "modified",
+      "beforeSha256": "3ad5e7cdab2f97bd7167190316bb9d6fe34fdec64eef76ca6320e4014bced38c",
+      "afterSha256": "8fafcc93e99539ff91509303dfd7ceba9d1c6bee7ea6b14c34045ca8def72590"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/Cargo.lock",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "c828f2343d78eba5e1ec2381d0d93eb6077e0a7cbcb79c78bb7e69d6ea2ede23"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/Cargo.toml",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "28e2f2d24f959fbb8c1790f74266360f37be0b5af27a52253b4ed56c1071f5e4"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/examples/benchmark_group.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "1445e8d8e659b7c5648197295ace8ac7625e8a36bfe177af32d858d09432a856"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/src/lib.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "4b9e91a7854e3b12c40943615438fd68cc78f79d6d51796fb06139501ad0b2ca"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/src/main.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "c8f487c9b44881d876bc0be7a40ce52aaf50380cc729a29caf1b65b38a3d5491"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/tests/media.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "7d3b34e38971e5c060574b767957b81047930c94207991ac3f68103c80c1c927"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/tests/protocol.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "af23480d94a1f1e96f6116956711a97044879b4906f010b810204f71bdabeb2c"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/LICENSE-OpenMLS",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "43e5e3c4b5cca67f9ea912f7e1929702a848aa765d3b3e14f25d3838a5a5565d"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/README.md",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "8a58461cb4654fbd8d66e57a04842220855127b0698c8c04614bf810cbb9078f"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/annoy-adaptation.patch",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "3773c0572d0f908795ea1ad5161642b2b0a0f92195492edd2921d5b5c111e8ef"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/basic_credential/CHANGELOG.md",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "e5bffd9077d5a04b789eb4dd778a90b50782cf051fed82bb4663ff1bce8bb982"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/basic_credential/Cargo.toml",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "8093a0356755ab491900cdb99cf9868947e54c9d968528c4322614841da58f68"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/basic_credential/README.md",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "965f3a6f43290d2461caef53c7c09f29002321930a0ead55cfc7fddc6b1525df"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/basic_credential/src/lib.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "4e18abdc1ab0ab8d2eb4360c74cf61ffea68f94b584aa6a527ffc8283664ff18"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/basic_credential/tests/provider_signer.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "323fc0790708a33b118c632a19c554c264452f2c2b25448097b6450eca6d3f55"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/openmls_rust_crypto/CHANGELOG.md",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "008779f1a4ac1cd63237e9172cca8731f8021efe00743992824bbb0a198e0419"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/openmls_rust_crypto/Cargo.toml",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "8c1cfd2da713861eb4becb2f77590342eba06c7c4518e230cc47dc80214be045"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/openmls_rust_crypto/README.md",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "40c8a2082df8683a14fcb7861f1be983a85ff99d73e866a5ce2bc7319720e92b"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/openmls_rust_crypto/src/ff1.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "5aeb4851e0db8587235bb87cd84d60e2d58c626a3693391d8e09fe91b56c4969"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/openmls_rust_crypto/src/hmac.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "526b66462cfdd486dfc636b25b1a0faad3ac2e6bc44eb849d99d19a8127d9f18"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/openmls_rust_crypto/src/lib.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "d5f242de3d8f1baa177aeef097971513bdb6df959982d079a16680e14601fc62"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/openmls_rust_crypto/src/provider.rs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "ebe6d3059d84bb0850681269f01cacf72d2225942d78727fa5a762c1f5b1a6f7"
+    },
+    {
+      "path": "annoy-client/native/annoy-crypto/vendor/upstream-sha256.json",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "4c5adc112135f9f219329224059e9b747d425c5fe4baf07df1aa803201540f08"
+    },
+    {
+      "path": "annoy-client/native/annoy-sframe/Cargo.lock",
+      "status": "added",
+      "afterSha256": "785e6f8c99a95eb5794be834825e8aaeef834a5966989646c9fd032b683ed5e3"
+    },
+    {
+      "path": "annoy-client/native/annoy-sframe/Cargo.toml",
+      "status": "added",
+      "afterSha256": "fc2d10c559e9ae4ea9508dff2de1c77aec9fb7add2195f576ca16724ab1434ab"
+    },
+    {
+      "path": "annoy-client/native/annoy-sframe/src/lib.rs",
+      "status": "added",
+      "afterSha256": "290c574749e347f9bb9a13c1fa22d9f9fbf623d8676dd488cc544939e8d531e5"
+    },
+    {
+      "path": "annoy-client/native/annoy-sframe/tests/session.rs",
+      "status": "added",
+      "afterSha256": "a0fa0598d96175c39ac84517c7285be314a9c2494adaa120ca630fd1a115249f"
+    },
+    {
+      "path": "annoy-client/package-lock.json",
+      "status": "modified",
+      "beforeSha256": "a98dfc2637aa967a8741c564f6dc6bf307afa7d0a971199448df51c502318282",
+      "afterSha256": "e06b0973fc2d94499a72fee214726e6a97506b0f8495cd9257bf129831e94ca7"
+    },
+    {
+      "path": "annoy-client/package.json",
+      "status": "modified",
+      "beforeSha256": "aeafec32d349c21770c7c59dba541466213a0c85d4ff8f80e93a0a456d7cb75b",
+      "afterSha256": "ec4eb5eadd8304f17097a1073651a02e897d8b296356bc581e9f26b979589ab9"
+    },
+    {
+      "path": "annoy-client/packages/protocol/src/index.ts",
+      "status": "modified",
+      "beforeSha256": "774cf1cbf17e53819666e5f6339f3536e069c65723cd69e5a934229f0c421b0a",
+      "afterSha256": "7a4935544110a4027106d4c81ed527feff99cd778b5fbb969683120b622b2b2f"
+    },
+    {
+      "path": "annoy-client/playwright.config.ts",
+      "status": "modified",
+      "beforeSha256": "f59cc703890a0fbdeb025263db778b4e1565c5dd2eef0a1ab5faca9a3d56533e",
+      "afterSha256": "fc2d14d96e21d8539abe4e47e38cf2997ad16b2dd2cc53766dd1e491ac5c2594"
+    },
+    {
+      "path": "annoy-client/scripts/benchmark-crypto.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "eff15bed23e4e864acc5d7a5e57f76d85454b768ecfd2f026bf35a9303bff6b7"
+    },
+    {
+      "path": "annoy-client/scripts/build-crypto.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "8c458905cb3835cfadfa1289bd0fa4b5a84f01b56c5ea8434307a08e011fe95b"
+    },
+    {
+      "path": "annoy-client/scripts/sign-update.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "9623cd05ab1e30b0c01adc09225f2a24e461ba12bc66f5fb377ab21381c838ab"
+    },
+    {
+      "path": "annoy-client/scripts/tests/app-access.test.mjs",
+      "status": "modified",
+      "beforeSha256": "71755e7cdb43c26319a0f751aeb47ff1c0db526610ae454aada475170c85f1b6",
+      "afterSha256": "862a94353f00c32272b5f104461e6f66558e101712c64306a8dae26c6f518cb6"
+    },
+    {
+      "path": "annoy-client/scripts/tests/crypto-key-protector.test.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "9e5b78a056985efe2620d8915b1a46c2173d2b9e75cb4f4cbbf19d9346515f7a"
+    },
+    {
+      "path": "annoy-client/scripts/tests/crypto-vault.test.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "596684a4b5158e5a663c7936376e4ff54176ac545f66f62e11db863388ef5cf3"
+    },
+    {
+      "path": "annoy-client/scripts/tests/game-icon-activity.test.mjs",
+      "status": "modified",
+      "beforeSha256": "0baccccacc63a79cc1a260be5214e8ba461f53bda5c9eb647c9d6f6e674437e8",
+      "afterSha256": "8a72b6fadc3374e38ab5af050a354e8ee8629c5e99fd43787e84fe6f9c5385ec"
+    },
+    {
+      "path": "annoy-client/scripts/tests/mls-service.test.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "23618d216c73e69bd14479bf744eb35bbbbf710bd908ee62aeaa9a101d0250f6"
+    },
+    {
+      "path": "annoy-client/scripts/tests/security-updates.test.mjs",
+      "status": "modified",
+      "beforeSha256": "80dc29a12cc9967b2668fb98bd73cbc17900eb4af8babce762104b870dbbb259",
+      "afterSha256": "f383c52cd39812839a386a220a33102c076cdd5dcb7f69de5419c04987cc2738"
+    },
+    {
+      "path": "annoy-client/scripts/tests/transport.test.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "3a9cff4edf4951a8a696a8897a85f46ebe2957b4121f100be329940b22ef8842"
+    },
+    {
+      "path": "annoy-client/scripts/tests/update-signature.test.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "62c728981ba75ac1f1bc8fa3a1bb15fd9965267279e24c31b0edc47233de4fb2"
+    },
+    {
+      "path": "annoy-client/scripts/verify-native-package.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "747322dbbbc0af0ca2121b5ea5fc0d0559df1fe71b28bb5e1ea1d83fb7f5d4da"
+    },
+    {
+      "path": "annoy-client/security/ACCOUNT-MODE-RELEASE.md",
+      "status": "modified",
+      "beforeSha256": "4ba2aafb1091b3fb4292a333a913bbd8fa6befb7285641ecd90822ffa5f24108",
+      "afterSha256": "38cb5d4227b402ce3da2765a24b8f02eb28f3e2e71667aad2e69779b796e5d6c"
+    },
+    {
+      "path": "annoy-client/src/main/activity/index.ts",
+      "status": "modified",
+      "beforeSha256": "f5bcba9a7c84ef5dd451de6e8892a5e2761337e378b60a2427de882e2d97af31",
+      "afterSha256": "a74dc2a1e4ca789c451816b150213bbd3790e3f7e056234ba5f9e6f51c4d4c59"
+    },
+    {
+      "path": "annoy-client/src/main/app-access.ts",
+      "status": "modified",
+      "beforeSha256": "731b088ffa0a92da6d6d2f804438513f5e7fdb2f736bf0fbb01118351caeac3d",
+      "afterSha256": "4c929a52133e36b1103869f9fd9518be345375a473394a03359f89426d762072"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/backup-directory.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "930b72f1a1cfba80bf67972371b950a6ba8e07e738d54b17de45d4c29b6551c5"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/controller.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "68504f0c5c82a0001e6d080d76e89fe57c153442a09752c86f9755499b6469d7"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/dpop.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "716f79f0b54a0c2c5bec1d8a6267c5bcda77de71542acb85ce502ae2dd946da6"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/ipc.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "8969b24c05918a0e98db375ab844c0bd2a9cccb4053f0afabae34aede887e925"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/key-protector.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "61d6a940d917c8370657081dc7ac64d7ea02db4752f1258ab0cf2f46c9f44096"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/legacy-message.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "c63858f8d5c0b0bec098ff84d3651bc6bb3446f97d0eb06be8a4296d9de7178b"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/media-calls.ts",
+      "status": "added",
+      "afterSha256": "334c99cd5f586e1e210100fa1abbbd6e4328e9298a6efa2fc2dfc06451bb98a4"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/mls-service.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "9d1b68a3ca6a9e704e4a97bf7dc26759486edfd169e71a07b7855d51fda072a2"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/payload.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "03fe6cf17d6256387d82233b6de39c6a87b3863f077c924298d0080973668d22"
+    },
+    {
+      "path": "annoy-client/src/main/crypto/vault.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "d0a4c6875b71ab9796b9567a81ee27b8e1608ad0be618eb95d1e4c9cae8d435d"
+    },
+    {
+      "path": "annoy-client/src/main/index.ts",
+      "status": "modified",
+      "beforeSha256": "28d790923fd024ae7e8665b5142b1dbde1f249c3bb0b8a2117ac97f18adf9500",
+      "afterSha256": "a0a141b42f626bb411cf4fdde69b77a74d7b34b0456d7fbc9d63f581b99a47d2"
+    },
+    {
+      "path": "annoy-client/src/main/native-api-fetch.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "b31f1a73988588ab32ceb4bb3d01c6be2999c0f817ba93f8173b37f5a1dac675"
+    },
+    {
+      "path": "annoy-client/src/main/private-download.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "65757e89fa78941f4ecae4e620827912476776e9e4c4a4bca7622f2048b24736"
+    },
+    {
+      "path": "annoy-client/src/main/theater.ts",
+      "status": "modified",
+      "beforeSha256": "b85041be8ecd746fdd56f10e8131c321f1174dec65feb59346b42012c45f8e46",
+      "afterSha256": "f8996d8aae0ddfa446fd3430d6640ad83551cf7c66cc0603501f9213e535a6a2"
+    },
+    {
+      "path": "annoy-client/src/main/trusted-renderer.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "a8ff645427dbbf20f9355bda18ee6863807cd6e33ced4e7c0abd5d1303c91aeb"
+    },
+    {
+      "path": "annoy-client/src/main/update-controller.ts",
+      "status": "modified",
+      "beforeSha256": "939d88049c8e0c1ae4bfb6d951eca2f311e8c8c8cef94d5f5e8bbdffbed114bb",
+      "afterSha256": "e83c50932b11c52741b3f3cc38ec2ce2eb58d9bee6953ee3e0339dddf79fa665"
+    },
+    {
+      "path": "annoy-client/src/main/update-signature.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "32e174c14bba73e22efc08e39ac0a1c82a8003590540361be435d19d45da4fc4"
+    },
+    {
+      "path": "annoy-client/src/main/update-trust.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "2736a86e0dfc7d51f77c2be7325992a79099cdd8a81a11cf5d3ea67ca6be3c72"
+    },
+    {
+      "path": "annoy-client/src/main/updater.ts",
+      "status": "modified",
+      "beforeSha256": "6150fd96a8a339355f7f4575a0aaf978479c7768ceaf27bb6a2663b2b27a134e",
+      "afterSha256": "7f0532ca8c27ad6582f004157449564cd5917e38132625657745468f9184139b"
+    },
+    {
+      "path": "annoy-client/src/preload/index.ts",
+      "status": "modified",
+      "beforeSha256": "6e55766de00749f40c135c1129c5215cc1ed49f361f9f2563a59966acbebd264",
+      "afterSha256": "fd720f903799c8fa763cf2b7c8585f8f3f7bc808e36ccd275c71e9e93b5b3d3e"
+    },
+    {
+      "path": "annoy-client/src/renderer/index.html",
+      "status": "modified",
+      "beforeSha256": "a3896a4ca0ea4100abca0676652ad0e23bb015aa60cee3e9cffba92e369bf0cf",
+      "afterSha256": "f70a14bd0257c96b194c246d05728f8b5fab2f717352e1cc56696d9eeb500288"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/App.tsx",
+      "status": "modified",
+      "beforeSha256": "b27d0fead686d20addb23d048828a0a738c01b62ce30c2cdf80a707998df7ef9",
+      "afterSha256": "e76e53495a641a23c39a69f8ab1fdb31a98a5237addcab4ad4e9ea74f318d451"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/api.ts",
+      "status": "modified",
+      "beforeSha256": "bfd83fe2fc0d4dbcafafebd6a5432fdb80e39a3ed5ebff16a1a97a86a770689e",
+      "afterSha256": "6fb750950490c90334376588b2152629ac90d4a8d810bbab21d1463bfd69e891"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/client.ts",
+      "status": "modified",
+      "beforeSha256": "e3329000ba361361594e3b80d74ceb2ebddb36cadfda4635d92b99893254e16c",
+      "afterSha256": "cf92e23d7406bd7184c33050654f9f31bfaaa5c90e78af14701e90047a3adb3c"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/AuthGate.tsx",
+      "status": "modified",
+      "beforeSha256": "0a9389ce1cf616d22bedaad40db836ef25682ce60cd2d1967971c3e630ff5a4b",
+      "afterSha256": "816539876ae981fa2e7054a94ff4e631d70f3499a3fd6c13eb5b61f644980a3b"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/Chat.tsx",
+      "status": "modified",
+      "beforeSha256": "572fe5237093ed3ecabef055c389ac857dd255015f18447c287d9c49fff14774",
+      "afterSha256": "f181c6d3143daac7c66b7587d9d861f83df96ba135133a33bd3cbb91d5eeddc0"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/CryptoStatus.tsx",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "93858a1e0d35347a4c212c7e3e1fde99f2418a28d4e93c45360c202c384f89de"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/DirectCallPanel.tsx",
+      "status": "modified",
+      "beforeSha256": "3bfdb072c26cd5d05ac3c7a07370139b1cd556903966477cde0f481ca13c6932",
+      "afterSha256": "204b850c2ee0fb2a7d040ef9a43a3d505a54a818e4db389239414e0ce0e298e3"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/ImportModal.tsx",
+      "status": "modified",
+      "beforeSha256": "9d8b3bcd8a0f67f301cbe1cfb95bcf8bc8becab1f6f1f71d0896f34af5ada2ab",
+      "afterSha256": "44e81a731804cf7969d52ae764039666bdaf440b0e250cb5964f9e6e5ab2ecec"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/LegacyArchive.tsx",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "93da75fb9af2452d9a55737b63a8bf3d975b2ac1da2824fbfad30473af48a07b"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/LocalHistory.tsx",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "d6054904377ae5c76d6496d9f37eb4420c52d7fc382d14408022f119a15761a8"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/SecureAttachment.tsx",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "637e5223fe5c8362ba30aa4f1788dbd914afc1e32fd18d89e57ba8ec39515810"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/VoicePanel.tsx",
+      "status": "modified",
+      "beforeSha256": "0c2c61d8e6ba31aa60a17dd3b4d6af84cb8e791fdff73a3fd6c952ed6aee6bf0",
+      "afterSha256": "d89b824b36f25d7316a3a79fad9a5c6a22db9cc7168cb46df3c6902d989b6a72"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/VoiceStatusBar.tsx",
+      "status": "modified",
+      "afterSha256": "78c4e004bd5875b2e1514e0511b4c654f6328d9f9515c7e6af191ac6f5a2e697",
+      "beforeSha256": "abdc6b18927179cd489138457428b629c3891fa99a50d6aebd3d314083ca7d90"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/components/settings/UserSettingsModal.tsx",
+      "status": "modified",
+      "beforeSha256": "5c45b4017710a8d48e2e4af1418d24cec3dde7c99c78bf1868e76e283a063cf5",
+      "afterSha256": "1ea3c9059d32c1191eb44b0a50c45b3483e3f703edd3e662cf78125ccec4ce37"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/features/channels/CodeView.tsx",
+      "status": "modified",
+      "beforeSha256": "f41ca57bf07a00310eb1250c0872200e950953ffe5c6c537e6b9fcaf21efb256",
+      "afterSha256": "32165fde54d759bd797456c8d9ec3cb0d7d9cf852cf8efaeffc5f0af1229634b"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/features/channels/FilesView.tsx",
+      "status": "modified",
+      "beforeSha256": "ff348ce046457b3324e2489ccb35253fd8bb7344ba2984f6d86ae2bda178ad23",
+      "afterSha256": "b2f51979eb53652c3f470e41845c1c640d89ae52fb91860254725ceb86ce0205"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/features/direct-calls.ts",
+      "status": "modified",
+      "beforeSha256": "da38f96624f90dee229f3df0d9dee440c9ec13c90af141b8fe58854dc182e0f8",
+      "afterSha256": "cc6b3d3efae7eb6c873f21ccf3d52725b90c280bf6b8c3bf1feaca81b57c5bd9"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/features/search/SearchDialog.tsx",
+      "status": "modified",
+      "beforeSha256": "9da1fb04046bb8bc0e43bfb0ea766f9797b82ad2b908d3ef3e58a6de2f66b643",
+      "afterSha256": "40e362cbc94dd3cae9d522463a0e58fdd0994cee43f28e709c98a06adc97f818"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/gateway.ts",
+      "status": "modified",
+      "beforeSha256": "4df00cfb04aa1d240d6860c6e6aca73d2bc363b2efb60bbbc5b33c14059605d2",
+      "afterSha256": "527f682016554250344ccd26240884972648afc60f81cdc7a5070f066bdb7b32"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/global-crypto.ts",
+      "status": "modified",
+      "beforeSha256": "b622f5170d0400c931f32192b0217f03629517083d36d94c0d1b33303b19512f",
+      "afterSha256": "e07a01b0215a489cbb174a866ab7a7d8e5509c4e7e8cb596242511bc1d689ee9"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/global.ts",
+      "status": "modified",
+      "beforeSha256": "93943f175ef785d3e1502f8774b4eb5ed98987d478a290302bb59582b7a2d8bf",
+      "afterSha256": "e5aafff3868fc4f7b45a7ad8e19e13fb302d89d950e6686e10f4764dbb254688"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/media-e2ee/call-encryption.ts",
+      "status": "added",
+      "afterSha256": "3cf4c29d3c8be20c71d5f971a7be613ebdb44e461321f85cadd6b5fabd36e289"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/media-e2ee/sframe-worker.ts",
+      "status": "added",
+      "afterSha256": "8e8aee15dc6e646c26d81671f4cba6cf69f71065df8f3d02a874aa85d1469ffa"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/media.ts",
+      "status": "modified",
+      "afterSha256": "7365322e1255023446019b31479ecec35989ffd17362042d166590507b0b687f",
+      "beforeSha256": "3d68390c4ccc10a385d041d67f1ff3f435f4b83b9fd8dec8feac706bfbd6be3b"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/secure-fetch.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "2e1b492801a0f1fd99c33ace6645553cccc1ee5369dd51a73d21b2770be2d297"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/store.ts",
+      "status": "modified",
+      "beforeSha256": "f93dfcecf78acf3cf35db61f4c7bc5fdb07802fb1062b3a705e916b816e7b64c",
+      "afterSha256": "1ad98714f56359a6961784bcf00a3c473b2e4b05503e2bc03f52365f9d0a55d4"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/voice-cloudflare.ts",
+      "status": "modified",
+      "beforeSha256": "06bce6fe28a68a9e3d892890db6575a9b534c69042d6bedd0bd874c4bb560449",
+      "afterSha256": "b82f22478db6a22b75da33ff00ff7b8ee712de3c66ef63ba927024bf92d523cb"
+    },
+    {
+      "path": "annoy-client/src/renderer/src/voice.ts",
+      "status": "modified",
+      "beforeSha256": "eb515f6121c2c611a5e48fc146524063869cf716fa4b6a13f78420bc77f6ea38",
+      "afterSha256": "80a4f2ee5adc85eca7ce6fb0012fbb665c148b6fba8212b49480283c4d7d4099"
+    },
+    {
+      "path": "annoy-client/src/shared/transport.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "044f08a9d771b8c7fb506d49909f77f909fa33dd8c45ef1b0f90fe1bbc15ba6f"
+    },
+    {
+      "path": "annoy-client/tests/account-policy.spec.ts",
+      "status": "modified",
+      "beforeSha256": "3b4d34dbb879d8cebccdf5c7d4318cf18f805f201e836e6fe3c1da4a62fb4bf5",
+      "afterSha256": "d49ec7bcc210cd825f2b2b09f7b42c5a77dee6868107fc2f15586adf6eef17b3"
+    },
+    {
+      "path": "annoy-client/tests/crypto-desktop.spec.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "b77a585eb657a99e0c28af7efd3623b6614923da3d1c7ae5fc047f78b336ff2c"
+    },
+    {
+      "path": "annoy-client/tests/desktop.spec.ts",
+      "status": "modified",
+      "beforeSha256": "97092b8d627e33b9b809ae820af964320a68824eafe27468c724bcda893e1a38",
+      "afterSha256": "f6b38815170eda2dcca97bfdfdab92e7660c87e55ea44a6bfb6dc6dcc4b2ae34"
+    },
+    {
+      "path": "annoy-client/tests/disconnect.spec.ts",
+      "status": "modified",
+      "beforeSha256": "063d4e9851e39a8edede60230c3fb5c371a1ebc643dbe50bad8dce30a57f9fb8",
+      "afterSha256": "4a5181fa8cf36e36f6704791b3382b52612e172d2ef2a974f7ff02158897c738"
+    },
+    {
+      "path": "annoy-client/tests/display.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "6e6d3a10c0434c8340569ac681791f4af9f6b54e1007b1425a97cff35ed15b2c"
+    },
+    {
+      "path": "annoy-client/tests/experience.spec.ts",
+      "status": "modified",
+      "beforeSha256": "0d29ea4539093c39d1c4747672b0a73cb7a9a26a5e911d17988cd19b791c881a",
+      "afterSha256": "512d528dbdd5a8c96653e4f5ac98b64e001a2c492ee0826c7fcf18d139cf4691"
+    },
+    {
+      "path": "annoy-client/tests/fixtures/electron-launch.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "2ac31b0c369a396e99e7b86ffc4b1d807aa8be9f0e4cb5b56ae940e59aa48841"
+    },
+    {
+      "path": "annoy-client/tests/fixtures/electron.cjs",
+      "status": "modified",
+      "beforeSha256": "328eacf651e314a0ce9918fb3f4423a780f30807d3d12933d9858b28962c89cd",
+      "afterSha256": "b99ffd8ea953c87b39065086bd00f551f79d14b847a3ae12dd24fb9f131084a9"
+    },
+    {
+      "path": "annoy-client/tests/fixtures/ui-reactions.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "59f94b1460f0a67fa5a33c6052322c994bd254d27c98200782c496bf8f01a06a"
+    },
+    {
+      "path": "annoy-client/tests/legacy-archive.spec.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "cf74a17e1147b9da936f77ceb14436fb8eb195dd777c8e968818c126f54f44b5"
+    },
+    {
+      "path": "annoy-client/tests/voice-e2ee.spec.ts",
+      "status": "added",
+      "afterSha256": "ca2bfd59391ed28aedb22b6fefddf04f3d04db14569e1ede4ffe8c70e2c3915b"
+    },
+    {
+      "path": "annoy-client/tests/workspace.spec.ts",
+      "status": "modified",
+      "beforeSha256": "1cf2f1b45fcc2b39ae28d9dfc33ba88e125f1052d5350e6c298f9801a5fb4fc3",
+      "afterSha256": "9998c99d443898f277683dc5871c0f77f86ff8659bb0d85d3203a2fe82b10cbe"
+    },
+    {
+      "path": "annoy-front-global/package-lock.json",
+      "status": "modified",
+      "beforeSha256": "d25c7d85e4226a242fdc556cdbadaa9cf79390a2f46e8192ea368d9a507dac6e",
+      "afterSha256": "6599c6d01ad736eb070bb9bb5a687df7da0ba821dc5950b6032aff433dfc442e"
+    },
+    {
+      "path": "annoy-front-global/package.json",
+      "status": "modified",
+      "beforeSha256": "c2eb5b422d88c6b9b299cfea9f6b8c79896e0800ce687f6df631e96150ed72a6",
+      "afterSha256": "2a8002fbe1163bc435868f0869609396107b882d775c3cd13381d6c212b9a44a"
+    },
+    {
+      "path": "annoy-front-global/src/crypto.ts",
+      "status": "modified",
+      "beforeSha256": "b622f5170d0400c931f32192b0217f03629517083d36d94c0d1b33303b19512f",
+      "afterSha256": "e07a01b0215a489cbb174a866ab7a7d8e5509c4e7e8cb596242511bc1d689ee9"
+    },
+    {
+      "path": "annoy-front-global/src/main.ts",
+      "status": "modified",
+      "beforeSha256": "f1517ab6235320a35696037ff3eb0a7732e739e8f983dd08b2b822b94e94ca8b",
+      "afterSha256": "76b47f9d90396cd0ddf7f41804240d20abf72429424451eb21b1b147fa28ce81"
+    },
+    {
+      "path": "annoy-server/.env.example",
+      "status": "modified",
+      "beforeSha256": "63fc741684f7c2f776c28e4977cc35c132c924b9851b4d5a4e66a17df8d2d34c",
+      "afterSha256": "dc0d527a310d432a5b838f3a56299896001d96aa673c8dbc8a86daf7bfb2052c"
+    },
+    {
+      "path": "annoy-server/Dockerfile",
+      "status": "modified",
+      "beforeSha256": "289b743928156e7602045ebbfb80cbf0beb8d7bdea3021afb0ca66419a742fe2",
+      "afterSha256": "459949b2e9a176666f0d1e719c3564ae25b7ef8f0f8c168292cae34102e39e27"
+    },
+    {
+      "path": "annoy-server/README.md",
+      "status": "modified",
+      "beforeSha256": "bf3c81e5632281f442a106b65ca40abac2243cb58d7bffe8900c8d3bf53fba52",
+      "afterSha256": "e096f61ea30c099309c14f982af58b1971ef062694e92a93fbc2703c5eb28c84"
+    },
+    {
+      "path": "annoy-server/README.pt-BR.md",
+      "status": "modified",
+      "beforeSha256": "ca1be63a020ea18c1096806b6542437318e5e5319a406b7c9cdb5523587dad32",
+      "afterSha256": "13aa9212b6b49791071a075a33094518cd55f7e7c5296f0e4004472dc67161bb"
+    },
+    {
+      "path": "annoy-server/docs/account-migration.md",
+      "status": "modified",
+      "beforeSha256": "bf440e7c6b8e77979edbee03ffa79d01956dd7d913d8503ae23f74e862a1f2a3",
+      "afterSha256": "d785be14e126b3799788b8b049761d64bf09127a813bcf4c447420a32621151d"
+    },
+    {
+      "path": "annoy-server/package-lock.json",
+      "status": "modified",
+      "beforeSha256": "24e185c04565c8d3dabf745a135dc5f6c080459b11079ba5357225de17df93b6",
+      "afterSha256": "5013856c190ed23994d2601bb4554b58d758eaf1194306abbfbc7703d4c8a7e6"
+    },
+    {
+      "path": "annoy-server/package.json",
+      "status": "modified",
+      "beforeSha256": "3773a95d2f5588974009bf25002dd06517a0efdd61339b2840d88c7d62ce2fe3",
+      "afterSha256": "9d5c00f46214716baeda78d279cd6fcb78fe27e2f664d8e883785b27ed0eda63"
+    },
+    {
+      "path": "annoy-server/packages/protocol/src/index.ts",
+      "status": "modified",
+      "beforeSha256": "774cf1cbf17e53819666e5f6339f3536e069c65723cd69e5a934229f0c421b0a",
+      "afterSha256": "7a4935544110a4027106d4c81ed527feff99cd778b5fbb969683120b622b2b2f"
+    },
+    {
+      "path": "annoy-server/scripts/account-mode.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "2929c75d26378bb7c5c52215eb122d90f4d0ddda1ee4e94ce5b1a9ee47c76cd6"
+    },
+    {
+      "path": "annoy-server/scripts/legacy-content.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "65c7328033aa1842e4ac38cad86f9a129d4157092628f3fcc603aaeb16a92463"
+    },
+    {
+      "path": "annoy-server/scripts/validate-security.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "ff695fbef88980cb02bd6044d88847da861f558a1caa0387e5d380f38fd713ae"
+    },
+    {
+      "path": "annoy-server/scripts/verify-security-evidence.mjs",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "1aa99a928974e0123851a344b10da816ebb7f571ed7d10343d72f8c4da865958"
+    },
+    {
+      "path": "annoy-server/src/account-mode-migration.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "2b24cf33eec10274853c5961cdc69f60ca4de5c89d94d5255dde4c3031c17e7e"
+    },
+    {
+      "path": "annoy-server/src/account-policy.ts",
+      "status": "modified",
+      "beforeSha256": "4e4baaef5834713dfcc4cf486cb8ed402cf285d512a619b83c9604474dffdcb8",
+      "afterSha256": "d1de8be1392a195da9338d7409cad51ae59b6217761faad5afaa6e094d0939e6"
+    },
+    {
+      "path": "annoy-server/src/accounts.ts",
+      "status": "modified",
+      "beforeSha256": "abc104d9f80d91651bb86d9d468afd6214e057a4f882da2e1094cecd00ffda3c",
+      "afterSha256": "22dccf7eb2f03df062f1fca557f34e7343eca65644146e59225d24e7654836aa"
+    },
+    {
+      "path": "annoy-server/src/auth-limits.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "3868e3d2beb75fe5f74495d9857f0c284ea43bc7353093cea347f66cff82aad5"
+    },
+    {
+      "path": "annoy-server/src/auth.ts",
+      "status": "modified",
+      "beforeSha256": "bcae97f19950f542c7b5f30805a0e1f8a0eb3220e0e39eeeba05141545c4a385",
+      "afterSha256": "8f8ced23502d9fcaab580c55dc58adc89ae3da0f4496d5a662eba4d1b54e065e"
+    },
+    {
+      "path": "annoy-server/src/calls.ts",
+      "status": "modified",
+      "beforeSha256": "162b4fc52e14870e19d22cb00c003bde8009889316585e31d3390df73ef81340",
+      "afterSha256": "7f32516dc4af7ef443d12b824ad17bac3f033d62affdce11125f42d7729d0d81"
+    },
+    {
+      "path": "annoy-server/src/code.ts",
+      "status": "modified",
+      "beforeSha256": "61b58694bddaac298afe6e196ddca1f2f65e591fe18a1a7cea889562c1fb53ec",
+      "afterSha256": "07c544b78e6e6c88aa35828c0b43ea80b195200f5ce49156be4f9538cadf984a"
+    },
+    {
+      "path": "annoy-server/src/config.ts",
+      "status": "modified",
+      "beforeSha256": "a102b1589f5624776235a73066a350c740d570a15018e08fb1e7f76d0fdb8e20",
+      "afterSha256": "ca0654a746037c57bb35b48d12b5f98d4999fb2861b8eec30392240d4e198a3a"
+    },
+    {
+      "path": "annoy-server/src/crypto-blobs.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "fb967ac13940092a9edef3c734b41dbbfa6b5f7e28e4b754c1171383721abd69"
+    },
+    {
+      "path": "annoy-server/src/crypto-delivery.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "6081b8c5d9e1a68d939a864ffff2361f49cb98e2698f1a7fe8233857b9b19cec"
+    },
+    {
+      "path": "annoy-server/src/data-lock.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "15c89a06e848dc907541d3b8313a0e2941c89979fcc781cf789c579b26208a87"
+    },
+    {
+      "path": "annoy-server/src/db.ts",
+      "status": "modified",
+      "beforeSha256": "2aad37dc341589873eadea0c3f7cce3536f2334102bd264ea7a76c0d64a4c594",
+      "afterSha256": "d4510723b51dd50975e71381ffb75a69c9446d937150e5dc7609e304614fa0dd"
+    },
+    {
+      "path": "annoy-server/src/devices.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "6e7af2a81215d1230237ef07b64dec44ba0311112afdb18cf2f3be3f441855e6"
+    },
+    {
+      "path": "annoy-server/src/discord/import.ts",
+      "status": "modified",
+      "beforeSha256": "518af200ab46306bc76d8b88e3f01cb328c4e6d09709555f04c4137ed47366d7",
+      "afterSha256": "20f216c5c8f1921a1eabba56d0c15f3df5287d6ccb2b24f11c4b7d94f6c60634"
+    },
+    {
+      "path": "annoy-server/src/discord/oauth.ts",
+      "status": "modified",
+      "beforeSha256": "1ef5783708fc9032a832658c7cca17ea634e357398ab6873ccb42126a98f9d31",
+      "afterSha256": "12a992aef5a86dc0cedbe837cbdbfa2cf102e18df2fab1cf7dd0a2ea68f9c9d0"
+    },
+    {
+      "path": "annoy-server/src/discord/rest.ts",
+      "status": "modified",
+      "beforeSha256": "936ebab1be27b8cf7ed58d62809480b0fc844921cabf6ea3ba89c8c88bf0549c",
+      "afterSha256": "db85403ffad47e1f25c2da323f382cbd090185095e94cfe4d21a824a2a55e728"
+    },
+    {
+      "path": "annoy-server/src/dpop.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "ee62ba9e843c57794b3cbe22ffedd49aa882fa0eb5b54d9727049a84c664be43"
+    },
+    {
+      "path": "annoy-server/src/gateway.ts",
+      "status": "modified",
+      "beforeSha256": "b44313900146a5727e0a12e3e48982024e0f39bcb21a265bdb6a66525d1560d8",
+      "afterSha256": "4c12f2378ff302faee761e4302543229ea6f2d407000f3ce67dcfa2948d933d6"
+    },
+    {
+      "path": "annoy-server/src/index.ts",
+      "status": "modified",
+      "beforeSha256": "57bbafae4d5e60b77f15cdf9678db8e2cc51bd8090f8372a29c2df6b9c237e73",
+      "afterSha256": "dccba741998cb024957de672b6d0cc707af84e5521f4d54e3c44b183179ec754"
+    },
+    {
+      "path": "annoy-server/src/legacy-archive.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "3daa89bd4dbcf65ef02c2d9763d741a542da6b19064f62eda6d65143f2b28d88"
+    },
+    {
+      "path": "annoy-server/src/legacy-manifest.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "6bcedbecf780594a4b54e3888f3b122130fd7225ef328fc0bb512f089205e085"
+    },
+    {
+      "path": "annoy-server/src/legacy-migration.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "fd214b9f720508ce072ae099572964849629e6375759fcec14ff48125aa0ad5a"
+    },
+    {
+      "path": "annoy-server/src/media-e2ee.ts",
+      "status": "added",
+      "afterSha256": "f431f5702b1ceab68d4328a8826fba9c350a2943306ce9666a3d670f17482a7b"
+    },
+    {
+      "path": "annoy-server/src/media-security.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "243a3acc5131bd78817685fe458d5580662c23f11771441c23b37b4589ee5741"
+    },
+    {
+      "path": "annoy-server/src/public-https.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "eb34d72481d0efb50e21552c77f854bd1d9ec7df5152e1ad0e7c85bb9409c3e8"
+    },
+    {
+      "path": "annoy-server/src/repo.ts",
+      "status": "modified",
+      "beforeSha256": "73de1ec35ad261c4a8568208c434ded0a0bf929c4d91b34194fe16b6c3e1c5c7",
+      "afterSha256": "5e94517af4c224e608b3963d69c42392eca31e60015ae64353530e3cf3ec9f40"
+    },
+    {
+      "path": "annoy-server/src/resource-limits.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "b64ae750af3c1bbe9741a63abbb91fa7eb7d8abf923e06a137eaf715d05f4b5d"
+    },
+    {
+      "path": "annoy-server/src/routes/auth.ts",
+      "status": "modified",
+      "beforeSha256": "26ce784d581a708c2499ffd8ea3e5f2ba3c53afadd92382833a04e72809a3cd3",
+      "afterSha256": "fd8572ea38a591cd7dc35f99f5ba1441b44355007568f29e0f744e39f532c48b"
+    },
+    {
+      "path": "annoy-server/src/routes/channels.ts",
+      "status": "modified",
+      "beforeSha256": "7ec4fa110b4e82014d4c208c7cd78dee37db4f60e84fc1ea01f416098f7e6b78",
+      "afterSha256": "812d705b8eeb9de489cd10def27e510257b8c627089e674dcc3cde67d2d716f7"
+    },
+    {
+      "path": "annoy-server/src/routes/discord-auth.ts",
+      "status": "modified",
+      "beforeSha256": "3590ec04fca3bbcc27cfec34c43ece4101c78ccc741aa20278d3de0ec83d312c",
+      "afterSha256": "7a6fc6f6a8243609d97ace585c2a8f3e74c719970b0a2957a46106a436b65832"
+    },
+    {
+      "path": "annoy-server/src/routes/search.ts",
+      "status": "modified",
+      "beforeSha256": "8515d88033cdfc74a002596357217dff8ca8ae8ced82dc2957d7067d4494a60f",
+      "afterSha256": "76ef083142c5420156c7369657abd24f02e6761cf63f0b32499241f8a180f39c"
+    },
+    {
+      "path": "annoy-server/src/service-lock.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "79ac42b9e8a624a098dad4cf4c1d86d6b8b7a71cb1df3924a3680bda0c75249b"
+    },
+    {
+      "path": "annoy-server/src/service-url.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "3ebe6c62a090faf060cff314c93063cce926ad67d351f3dfafc381436481d69f"
+    },
+    {
+      "path": "annoy-server/src/session-events.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "75fb7d8e778a90f7de0f486b63affb7abea596ab6dcb580d6ad6f54231432013"
+    },
+    {
+      "path": "annoy-server/src/transport-security.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "978dd90cda7cbb91fddac69a8e9bffd57dc885939dc013462cd8d2c45e6cf2f9"
+    },
+    {
+      "path": "annoy-server/src/trusted-proxies.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "4c46cf0d803be87722da33d9f25e1e061951834a96b88cba6204e191a79eb6ae"
+    },
+    {
+      "path": "annoy-server/src/uploads.ts",
+      "status": "modified",
+      "beforeSha256": "1b2e1f25b76b4f20c0d44b927d248003b133243cd8d689264be68c3b0ccdee9d",
+      "afterSha256": "c93ffb4ea5add8b2814c774cebd95e15a19277b694fce2f6483150befc96c379"
+    },
+    {
+      "path": "annoy-server/src/voice-cloudflare.ts",
+      "status": "modified",
+      "beforeSha256": "9cb6ca66098fbac88ebffb7d67ddafc4993663b086c98f98d8f83c7d91947de9",
+      "afterSha256": "daacd31db989bd95c1f9ec68042eb0c3e22791b1d198f66a412ea0cd9c318696"
+    },
+    {
+      "path": "annoy-server/src/voice.ts",
+      "status": "modified",
+      "beforeSha256": "fcb0cad5c63b6ccc964e524c93ffb51c37277a4ffdd19bee8376d8b61b881473",
+      "afterSha256": "2ee38c3082a5a82bd1459b25b63cd810a8a82fd68f71e5a51adf4cdd45f4a9c2"
+    },
+    {
+      "path": "annoy-server/tests/account-mode-migration.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "eaccc60a0bc2f9e3e845a9a7b3c37b1c76dfcbb9f3c0bd09a8386280657681d8"
+    },
+    {
+      "path": "annoy-server/tests/account-policy.test.ts",
+      "status": "modified",
+      "beforeSha256": "adb1ab9e0e4f1fdbd25f42be03e38b619a44c0cde9bb6b35776aaee6301f3cb5",
+      "afterSha256": "f2c87441e29c09cb92c56af027b118988e5b0a46e2b386b4c92549850c7074c1"
+    },
+    {
+      "path": "annoy-server/tests/channel-types.test.ts",
+      "status": "modified",
+      "beforeSha256": "89b85abd935c160ff7fe44e301103bd1c79ab9366475f33c028a4b4232b71e55",
+      "afterSha256": "69174b56b7bf0a19347bb03805a1f8fe1dd4009119ada300bf472e95a5ce40b1"
+    },
+    {
+      "path": "annoy-server/tests/crypto-controller.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "019ffee4b55c4f6a54d4794b2f2f1ff76fede90bcb1b19be3aef1d167df264da"
+    },
+    {
+      "path": "annoy-server/tests/crypto-delivery.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "c6b716bd42cd2e05b4bf50e5cebbb87bbdb8363d5e4a2d97d475e01a2251ca9d"
+    },
+    {
+      "path": "annoy-server/tests/data-lock.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "0aac5976f8ccf6aafb19eb20ab5c0f83752e8cf5ace77621cf79fffc0ec98176"
+    },
+    {
+      "path": "annoy-server/tests/devices.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "a62e49eae710071fa55e14dc9875d35a8964aeef9b90ccfaedb7ab11e3f2b0e6"
+    },
+    {
+      "path": "annoy-server/tests/disconnect.test.ts",
+      "status": "modified",
+      "beforeSha256": "b591e8930c5280eb4e54799ed95ffde4ac537d0fd62368b09f01384462fe57da",
+      "afterSha256": "88c78c55c01618975f8d0fdbc39d14a22e581103edc09c2cf9f1c7ccf346a0b1"
+    },
+    {
+      "path": "annoy-server/tests/discovery.test.ts",
+      "status": "modified",
+      "beforeSha256": "2033b03c2ab8579018e2a7d99399de485bfdfd2a37038e5ac913b9be3e3a46ca",
+      "afterSha256": "1ee8a2973c4d271df8c8a6b47e89a336afb7212078451d7df480ba109ea7fffa"
+    },
+    {
+      "path": "annoy-server/tests/dpop.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "eae81fb6a10abac6cb1a6f531db9ff7d43452e685b8d78190e54a2d26877d8ca"
+    },
+    {
+      "path": "annoy-server/tests/fixtures/crypto-desktop.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "2a1487dbc169716dffedc6cf86182e2bf811290e2e9f9e98810a8a588a43d713"
+    },
+    {
+      "path": "annoy-server/tests/fixtures/voice-desktop.ts",
+      "status": "added",
+      "afterSha256": "04eb923019d636229455bd984d0a6339b38c24932789f83038763ab409d9d614"
+    },
+    {
+      "path": "annoy-server/tests/global.test.ts",
+      "status": "modified",
+      "beforeSha256": "d47ebc9a45bc541cb56f35528bd9b373b5745d4447aff24bfe274bbe33b546cf",
+      "afterSha256": "7a63640847ddbc2b503d396762e45f923db0587b810b4669b93194a2a896ad77"
+    },
+    {
+      "path": "annoy-server/tests/log-confidentiality.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "5ab0693290df2a67f972daec6f807458f1e96a299185f589ff20a7dd1eca1af5"
+    },
+    {
+      "path": "annoy-server/tests/media-e2ee.test.ts",
+      "status": "added",
+      "afterSha256": "fe4e0f0bb6f35d7bcf92c688167ce792243a55c4090e9cca81a9e2e4e7fad852"
+    },
+    {
+      "path": "annoy-server/tests/network-media-security.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "e5f767d0ecb416c833ae18379f16c70e499ae487cd099e592e06cbee49b759e6"
+    },
+    {
+      "path": "annoy-server/tests/profile-media.test.ts",
+      "status": "modified",
+      "beforeSha256": "66dd438013c3976d430b53ebdd7eb0e8cf3b1ab9c9397a036dd596b01175f3e4",
+      "afterSha256": "08e1bf1d050ff6476b70163c461826912fa834010dc04abf1d5ba06cd959fa62"
+    },
+    {
+      "path": "annoy-server/tests/service-url.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "ecc4222d2d6077f7d02aa80727ee62d61be60f7c1327e0c23ae49b50d7fd7563"
+    },
+    {
+      "path": "annoy-server/tests/session-gateway.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "f0c9ba196da07e7d1740807f8c907458975e88aac15d3c07b19fe4e6e362104b"
+    },
+    {
+      "path": "annoy-server/tests/shutdown.test.ts",
+      "status": "modified",
+      "beforeSha256": "b979ae4becedfe0e6c0c97beeb555fea3a996229e3a8a0ae730eba76c8633afe",
+      "afterSha256": "cc87c03c0f9d8b8c4c3a161dd31e990fafba6c07f3641d2e383f76bf9d00c2bc"
+    },
+    {
+      "path": "annoy-server/tests/social-media.test.ts",
+      "status": "modified",
+      "beforeSha256": "c379db1b987b60e311763d2d58b1eb1a38ea6fe4a0d894ebf500476893e410bf",
+      "afterSha256": "dcc58c37a93a1c30c48f36986c55f0846a2b66e6cf4b70864cb9b85ec3bd0a9a"
+    },
+    {
+      "path": "annoy-server/tests/transport-security.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "753935bf172383814224eee2b05479292e8422aaba7b0277d85dc71b6da1dfb4"
+    },
+    {
+      "path": "annoy-server/tests/trusted-proxies.test.ts",
+      "status": "added",
+      "beforeSha256": null,
+      "afterSha256": "7dbe8b5cd7d1ed5e729a962451f32b71b7fb91a0e62fb72990bb9bb5bc5add2a"
+    }
+  ]
+}

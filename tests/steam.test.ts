@@ -6,8 +6,8 @@ import { join } from "node:path";
 import Fastify from "fastify";
 
 const directory = await mkdtemp(join(tmpdir(), "annoy-steam-server-"));
+process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
-process.env.DISTOPIC_DATA_DIR = directory;
 process.env.ANNOY_PUBLIC_URL = "https://annoy.example";
 process.env.ANNOY_STEAM_API_KEY = "synthetic-private-key";
 const { db, run, one } = await import("../src/db.ts");

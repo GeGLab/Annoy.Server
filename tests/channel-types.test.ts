@@ -7,8 +7,8 @@ import { join } from "node:path";
 import Fastify from "fastify";
 
 const directory = await mkdtemp(join(tmpdir(), "annoy-channel-types-"));
+process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
-process.env.DISTOPIC_DATA_DIR = directory;
 
 // A database from 0.6: the channel type is limited by a CHECK that 0.7 has to drop.
 {
@@ -69,12 +69,12 @@ test("files channels only take messages that carry files", async () => {
   const files = await create("files", "Arquivos Úteis");
   assert.equal(files.name, "arquivos-úteis");
   const text = await app.inject({ method: "POST", url: `/channels/${files.id}/messages`, headers: auth(), payload: { content: "oi" } });
-  assert.equal(text.statusCode, 400);
+  assert.equal(text.statusCode,409);
   const boundary = "----annoy";
   const body = [`--${boundary}`, 'Content-Disposition: form-data; name="file"; filename="notes.txt"', "Content-Type: text/plain", "", "hello", `--${boundary}--`, ""].join("\r\n");
   const upload = await app.inject({ method: "POST", url: `/channels/${files.id}/messages`, headers: { ...auth("member"), "content-type": `multipart/form-data; boundary=${boundary}` }, payload: body });
-  assert.equal(upload.statusCode, 200, upload.body);
-  assert.equal(upload.json().attachments[0].filename, "notes.txt");
+  assert.equal(upload.statusCode,409,upload.body);
+  assert.match(upload.json().message,/OpenMLS/);
 });
 
 test("theater rooms keep one synced queue", async () => {

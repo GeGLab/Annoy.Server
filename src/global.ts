@@ -5,6 +5,7 @@
 import { constants, createHash, createPublicKey, randomBytes, verify } from "node:crypto";
 import { config } from "./config.ts";
 import { now, one, run } from "./db.ts";
+import { requireAccountMode } from "./account-policy.ts";
 import { HttpError } from "./errors.ts";
 
 /** A blind-signing public key from /v1/tokens/keys (RSA JWK). */
@@ -31,7 +32,7 @@ let sanctions: Sanction[] = [];
 /** This server's Global ID, or null when Global is off or not reached yet. */
 export const globalServerId = () => (config.global.enabled ? setting("global.serverId") : null);
 
-/** Global accounts can log in: Global is on, registered, keys known, and the server isn't sanctioned everywhere. */
+/** Annoy accounts can log in: Global is on, registered, keys known, and the server isn't sanctioned everywhere. */
 export function globalLoginAvailable(): boolean {
   return !!globalServerId() && keys.length > 0 && !sanctions.some((s) => s.countries === "*");
 }
@@ -59,13 +60,13 @@ async function refresh(): Promise<void> {
 
 /** Runs at startup when Global is on; failures only delay global logins, never the server. */
 export function startGlobal(log: (msg: string) => void): void {
-  if (!config.global.enabled) return log("Annoy Global: desligado (ANNOY_GLOBAL=off)");
+  if (!config.global.enabled) return log("Contas Annoy: serviço desligado (ANNOY_ACCOUNT_MODE=local)");
   const tick = async () => {
     try {
       await register();
       await refresh();
     } catch (err) {
-      log(`Annoy Global indisponível: ${(err as Error).message}`);
+      log(`Serviço de contas Annoy indisponível: ${(err as Error).message}`);
     }
   };
   void tick();
@@ -79,6 +80,7 @@ const challenges = new Map<string, number>();
 
 /** A one-time challenge the client signs with its per-server identity key. */
 export function newChallenge(): string {
+  requireAccountMode("global");
   const t = Date.now();
   for (const [c, at] of challenges) if (t - at > CHALLENGE_TTL_MS) challenges.delete(c);
   if (challenges.size > 10_000) throw new HttpError(429, "too_many_requests", "Tente de novo em instantes");
@@ -100,12 +102,12 @@ export interface GlobalProof {
 /**
  * Checks a global login and returns the identity. Proves two things without
  * asking Global: the client owns this identity (signature), and it belongs to
- * a valid, unsanctioned global account (blind token bound to this server and
+ * a valid, unsanctioned Annoy account (blind token bound to this server and
  * identity). A token is accepted once.
  */
 export function verifyGlobalProof(proof: GlobalProof): string {
   const serverId = globalServerId();
-  if (!serverId || !globalLoginAvailable()) throw new HttpError(503, "global_unavailable", "Contas globais não estão disponíveis neste servidor");
+  if (!serverId || !globalLoginAvailable()) throw new HttpError(503, "global_unavailable", "Contas Annoy não estão disponíveis neste servidor");
   const issued = challenges.get(proof.challenge);
   challenges.delete(proof.challenge);
   if (!issued || Date.now() - issued > CHALLENGE_TTL_MS) throw new HttpError(401, "invalid_challenge", "Tente entrar de novo");
@@ -114,7 +116,7 @@ export function verifyGlobalProof(proof: GlobalProof): string {
     const identityKey = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: proof.identity }, format: "jwk" });
     if (!verify(null, Buffer.from(`annoy-login:${proof.challenge}`), identityKey, Buffer.from(proof.signature, "base64url"))) throw new Error();
   } catch {
-    throw new HttpError(401, "invalid_signature", "Não foi possível confirmar a conta global");
+    throw new HttpError(401, "invalid_signature", "Não foi possível confirmar a conta Annoy");
   }
   const jwk = keys.find((k) => k.kid === proof.token.kid);
   const message = Buffer.from(proof.token.message, "base64url");
@@ -127,7 +129,7 @@ export function verifyGlobalProof(proof: GlobalProof): string {
       { key: createPublicKey({ key: { kty: "RSA", n: jwk.n, e: jwk.e }, format: "jwk" }), padding: constants.RSA_PKCS1_PSS_PADDING, saltLength: 48 },
       Buffer.from(proof.token.signature, "base64url"),
     );
-  if (!validToken) throw new HttpError(401, "invalid_token", "A credencial da conta global não vale para este servidor");
+  if (!validToken) throw new HttpError(401, "invalid_token", "A credencial da conta Annoy não vale para este servidor");
   // Replays: a token's message is random, so its hash marks it as spent.
   const spent = createHash("sha256").update(message).digest("base64url");
   if (one("SELECT 1 FROM global_spent_tokens WHERE hash = ?", spent)) throw new HttpError(401, "token_reused", "Credencial já usada");

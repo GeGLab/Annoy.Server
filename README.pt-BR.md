@@ -5,7 +5,7 @@
 **Chat de voz e texto auto-hospedado. Hospede como TeamSpeak, use como Discord.**
 
 [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-7b61ff.svg)](LICENSE)
-![Node.js](https://img.shields.io/badge/node-%E2%89%A522.13-339933?logo=node.js&logoColor=white)
+![Node.js](https://img.shields.io/badge/node-%E2%89%A524.7-339933?logo=node.js&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-pronto-2496ed?logo=docker&logoColor=white)
 
 [English](README.md) · **Português (Brasil)**
@@ -59,17 +59,16 @@ no `.env` e rode `docker compose up -d`. Um contêiner `updater` confere a cada
 nova de `ANNOY_VERSION`: `latest` segue todas as versões, `0.4` só recebe
 correções da 0.4.x. Ele usa o socket do Docker para recriar o contêiner.
 
-**Vindo do Distopic (0.2):** o projeto agora se chama Annoy. As variáveis
-mudaram de `DISTOPIC_*` para `ANNOY_*`, mas os nomes antigos continuam
-valendo, e os dados ficam no mesmo volume. Aponte o remoto para o novo
-repositório e remova o contêiner antigo:
+**Atualizando instalações antigas:** use as variáveis `ANNOY_*` no `.env`.
+Os dados permanecem no mesmo volume. Aponte o remoto para o repositório
+atual e remova o contêiner antigo:
 
 ```bash
 git remote set-url origin https://github.com/GeGLab/annoy-server.git
 git pull && docker compose pull && docker compose up -d --remove-orphans
 ```
 
-Sem Docker (Node.js 22.13 ou mais novo):
+Sem Docker (Node.js 24.7 ou mais novo):
 
 ```bash
 npm install
@@ -89,8 +88,11 @@ Tudo é por variável de ambiente; veja [`.env.example`](.env.example) e a
 - `ANNOY_PUBLIC_URL`: endereço externo da instância; configure ao usar um proxy.
 
 
-Para expor na internet, coloque um proxy com TLS (Caddy, nginx, Cloudflare
-Tunnel) na frente da porta 8787.
+Conexões remotas, inclusive na LAN, exigem HTTPS/WSS. Coloque um proxy com TLS
+(Caddy, nginx, Cloudflare Tunnel) na frente da porta 8787 e configure seus IPs
+confiáveis explicitamente. Use a origem HTTPS final: requisições com credenciais
+recusam redirecionamentos. HTTP só é permitido no loopback de desenvolvimento.
+DTLS-SRTP protege o transporte; voz legada com SFU não oferece E2EE.
 
 Fotos de perfil agora podem ser enviadas, recortadas e removidas pelo cliente.
 Após atualizar as dependências com `npm ci`, reinicie o servidor. As rotas e o
@@ -137,3 +139,5 @@ de tolerância e tenta revogar as faixas no Cloudflare durante um encerramento
 normal. A API volta automaticamente; voltar à voz exige entrar no canal de
 novo. Atualize os clientes para 0.8.0 para que também parem as capturas numa
 queda abrupta. Veja [a versão 0.8.0](docs/releases/0.8.0.md).
+
+Contas Annoy são obrigatórias por padrão. Para uma instância exclusivamente local, configure `ANNOY_ACCOUNT_MODE=local` na criação da instância. Instâncias existentes exigem migração explícita antes de reiniciar. Consulte [migração de contas](docs/account-migration.md) antes de mudar o modo.

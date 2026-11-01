@@ -10,8 +10,8 @@ import { once } from "node:events";
 import sharp from "sharp";
 const root = resolve(tmpdir()),
   directory = await mkdtemp(join(root, "distopic-discovery-"));
+process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
-process.env.DISTOPIC_DATA_DIR = directory;
 const { db, run } = await import("../src/db.ts"),
   { createSession } = await import("../src/auth.ts"),
   { searchRoutes } = await import("../src/routes/search.ts"),
@@ -21,6 +21,8 @@ const { db, run } = await import("../src/db.ts"),
   { registerGateway } = await import("../src/gateway.ts"),
   { HttpError } = await import("../src/errors.ts"),
   { Permission } = await import("@distopic/protocol");
+// Historical fixture connection, never enabled by the live server.
+db.function("annoy_legacy_source_write",()=>1);
 const app = Fastify();
 await app.register(websocket);
 app.setErrorHandler((e, _req, reply) => reply.status(e instanceof HttpError ? e.status : 500).send({ message: (e as Error).message }));
@@ -247,15 +249,15 @@ test("private calls authorize friends, isolate signaling and end on disconnect; 
   await waitFor(() => presenceOf("alice") === "idle");
   sockets.alice!.send(JSON.stringify({ op: "presence", idle: false }));
   await waitFor(() => presenceOf("alice") === "online");
-  assert.equal((await app.inject({ method: "POST", url: "/calls", headers: auth("alice"), payload: { userId: "stranger", video: false, deviceId: "a" } })).statusCode, 403);
-  const result = await app.inject({ method: "POST", url: "/calls", headers: auth("alice"), payload: { userId: "bob", video: true, deviceId: "a" } });
+  assert.equal((await app.inject({ method: "POST", url: "/calls", headers: auth("alice"), payload: { userId: "stranger", video: false, protection:'transport_only_acknowledged',deviceId: "a" } })).statusCode, 403);
+  const result = await app.inject({ method: "POST", url: "/calls", headers: auth("alice"), payload: { userId: "bob", video: true, protection:'transport_only_acknowledged',deviceId: "a" } });
   assert.equal(result.statusCode, 200);
   const call = result.json();
   await waitFor(() => streams.bob!.some((event) => event.t === "CALL_UPDATE" && event.d.status === "ringing"));
-  sockets.stranger!.send(JSON.stringify({ op: "call", callId: call.id, action: "accept", deviceId: "s" }));
+  sockets.stranger!.send(JSON.stringify({ op: "call", callId: call.id, action: "accept",protection:"transport_only_acknowledged", deviceId: "s" }));
   await new Promise((resolve) => setTimeout(resolve, 25));
   assert.equal(streams.alice!.some((event) => event.t === "CALL_UPDATE" && event.d.status === "active"), false);
-  sockets.bob!.send(JSON.stringify({ op: "call", callId: call.id, action: "accept", deviceId: "b" }));
+  sockets.bob!.send(JSON.stringify({ op: "call", callId: call.id, action: "accept",protection:"transport_only_acknowledged", deviceId: "b" }));
   await waitFor(() => streams.alice!.some((event) => event.t === "CALL_UPDATE" && event.d.status === "active"));
   sockets.alice!.send(JSON.stringify({ op: "call", callId: call.id, action: "signal", deviceId: "wrong-device", signal: { description: { type: "offer", sdp: "wrong" } } }));
   sockets.alice!.send(JSON.stringify({ op: "call", callId: call.id, action: "signal", deviceId: "a", signal: { description: { type: "offer", sdp: "synthetic-offer" } } }));

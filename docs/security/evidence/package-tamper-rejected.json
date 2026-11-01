@@ -1,0 +1,6 @@
+{
+  "case": "one byte changed in a separate copy of the bundled MLS process",
+  "rejected": true,
+  "expectedExitCode": 1,
+  "actualExitCode": 1
+}

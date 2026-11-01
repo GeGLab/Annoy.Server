@@ -1,61 +1,101 @@
-import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
+import { argon2, createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import type { FastifyRequest } from "fastify";
-import { now, one, run } from "./db.ts";
-import { unauthorized } from "./errors.ts";
+import {sessionChanged} from "./session-events.ts";
+import { now, one, run, all } from "./db.ts";
+import { requireAccountMode } from "./account-policy.ts";
+import {boundDevice,hasVerifiedProof} from "./dpop.ts";
+import { config } from "./config.ts";
+import { HttpError, unauthorized } from "./errors.ts";
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
-const KEY_LEN = 64;
+const argon = promisify(argon2);
+const ARGON = { memory: 65536, passes: 3, parallelism: 1, tagLength: 32 };
+let active = 0;
+const waiting: Array<() => void> = [];
+async function passwordSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (active >= 2) {
+    if (waiting.length >= 8) throw new HttpError(429, "auth_busy", "Tente novamente mais tarde");
+    await new Promise<void>(resolve => waiting.push(resolve));
+  } else active++;
+  try { return await work(); }
+  finally { const next = waiting.shift(); if (next) next(); else active--; }
+}
+export const SESSION_TTL_MS = 24 * 60 * 60_000;
+const BOOTSTRAP_TTL_MS=5*60_000;
 
 export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const key = await scrypt(password, salt, KEY_LEN);
-  return `scrypt$${salt.toString("base64")}$${key.toString("base64")}`;
+  if (password.length > 256) throw new HttpError(400, "invalid_password", "Senha muito longa");
+  return passwordSlot(async () => {
+    const salt = randomBytes(16);
+    const key = await argon("argon2id", { message: password, nonce: salt, ...ARGON });
+    try { return `$argon2id$v=19$m=65536,t=3,p=1$${salt.toString("base64")}$${key.toString("base64")}`; }
+    finally { key.fill(0); }
+  });
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [scheme, saltB64, keyB64] = stored.split("$");
-  if (scheme !== "scrypt" || !saltB64 || !keyB64) return false;
-  const expected = Buffer.from(keyB64, "base64");
-  const actual = await scrypt(password, Buffer.from(saltB64, "base64"), expected.length);
-  return timingSafeEqual(actual, expected);
+  if (password.length > 256) return false;
+  const m = /^\$argon2id\$v=19\$m=65536,t=3,p=1\$([A-Za-z0-9+/]{22}==)\$([A-Za-z0-9+/]{43}=)$/.exec(stored);
+  const legacy = /^scrypt\$([A-Za-z0-9+/]{22}==)\$([A-Za-z0-9+/]{86}==)$/.exec(stored);
+  if (!m && !legacy) return false;
+  return passwordSlot(async () => {
+    const parts = m ?? legacy!;
+    const expected = Buffer.from(parts[2]!, "base64");
+    const salt = Buffer.from(parts[1]!, "base64");
+    const actual = m ? await argon("argon2id", { message: password, nonce: salt, ...ARGON })
+      : await scrypt(password, salt, 64);
+    try { return timingSafeEqual(actual, expected); }
+    finally { actual.fill(0); expected.fill(0); }
+  });
 }
 
-const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+// Fixed public dummy hash: unknown users still incur the same Argon2 cost.
+const DUMMY = "$argon2id$v=19$m=65536,t=3,p=1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+export const spendPasswordTime = (password: string) => verifyPassword(password, DUMMY);
+
+export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 export function createSession(userId: string): string {
+  requireAccountMode(config.accountMode);
   const token = randomBytes(32).toString("base64url");
-  run("INSERT INTO sessions (token_hash, user_id, created_at) VALUES (?, ?, ?)", hashToken(token), userId, now());
+  run("INSERT INTO sessions (token_hash, user_id, created_at, account_mode, expires_at) VALUES (?, ?, ?, ?, ?)", hashToken(token), userId, now(), config.accountMode, new Date(Date.now() + BOOTSTRAP_TTL_MS).toISOString());
   return token;
 }
 
 export function deleteSession(token: string): void {
-  run("DELETE FROM sessions WHERE token_hash = ?", hashToken(token));
+  const hash=hashToken(token);run("DELETE FROM sessions WHERE token_hash = ?", hash);sessionChanged(hash,"revoked");
 }
 
 /** Sessions of suspended accounts are rejected even if a ban raced a request. */
 export function userIdForToken(token: string): string | null {
+  return userIdForSessionHash(hashToken(token));
+}
+
+export function userIdForSessionHash(tokenHash: string): string | null {
   const row = one<{ user_id: string }>(
-    "SELECT s.user_id FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.banned_at IS NULL",
-    hashToken(token),
+    "SELECT s.user_id FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND u.banned_at IS NULL AND s.expires_at > ? AND s.account_mode = ? AND ((? = 'global' AND u.global_id IS NOT NULL) OR (? = 'local' AND u.global_id IS NULL))",
+    tokenHash, now(), config.accountMode, config.accountMode, config.accountMode,
   );
   return row?.user_id ?? null;
 }
 
 export function deleteSessionsOf(userId: string): void {
+  const sessions=all<{token_hash:string}>("SELECT token_hash FROM sessions WHERE user_id=?",userId);
   run("DELETE FROM sessions WHERE user_id = ?", userId);
+  for(const session of sessions)sessionChanged(session.token_hash,"revoked");
 }
 
 export function bearerToken(req: FastifyRequest): string | null {
   const header = req.headers.authorization;
-  if (!header?.startsWith("Bearer ")) return null;
-  return header.slice(7).trim() || null;
+  const match=header?.match(/^(?:Bearer|DPoP) (.+)$/);
+  return match?.[1]?.trim() || null;
 }
 
 /** Resolves the authenticated user id or throws 401. */
 export function requireUser(req: FastifyRequest): string {
   const token = bearerToken(req);
   const userId = token ? userIdForToken(token) : null;
-  if (!userId) throw unauthorized();
+  if (!userId || (token && boundDevice(token) && !hasVerifiedProof(req))) throw unauthorized();
   return userId;
 }

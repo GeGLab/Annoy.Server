@@ -15,6 +15,7 @@ export function discordAuthRoutes(app: FastifyInstance): void {
   app.post("/auth/discord/begin", async (req) => {
     if (!discordLoginEnabled()) throw new HttpError(404, "disabled", "Login com Discord não está configurado nesta instância");
     const body = parse(beginBody, req.body);
+    if (!body.link) throw new HttpError(403, "account_mode", "Discord pode ser vinculado somente a uma conta já autenticada");
     const linkUserId = body.link ? requireUser(req) : null;
     try {
       return beginLogin(originOf(req), linkUserId, body.inviteCode);

@@ -10,8 +10,11 @@ import Fastify from "fastify";
 import multipart from "@fastify/multipart";
 import sharp from "sharp";
 const root=resolve(tmpdir()), directory=await mkdtemp(join(root,"annoy-social-test-"));
+process.env.ANNOY_ACCOUNT_MODE="local";
 process.env.ANNOY_DATA_DIR=directory;
 const {db,run,one}=await import("../src/db.ts"), {authRoutes}=await import("../src/routes/auth.ts"), {channelRoutes}=await import("../src/routes/channels.ts"), {serverRoutes}=await import("../src/routes/servers.ts"), {createSession}=await import("../src/auth.ts"), {HttpError}=await import("../src/errors.ts"), {Permission}=await import("@distopic/protocol");
+// Historical fixture connection, never enabled by the live server.
+db.function("annoy_legacy_source_write",()=>1);
 const app=Fastify(); await app.register(multipart); await app.register(websocket);
 app.setErrorHandler((error,_request,reply)=>reply.status(error instanceof HttpError?error.status:500).send({message:(error as Error).message}));
 authRoutes(app); channelRoutes(app); serverRoutes(app);
@@ -28,24 +31,19 @@ const multipartBody=(bytes:Buffer)=>Buffer.concat([Buffer.from('--social-boundar
 const upload=(url:string,bytes:Buffer,user="owner")=>app.inject({method:"POST",url,headers:{...auth(user),host:"localhost:8787","content-type":"multipart/form-data; boundary=social-boundary"},payload:multipartBody(bytes)});
 after(async()=>{await app.close();db.close();if(dirname(directory)!==root||!basename(directory).startsWith("annoy-social-test-"))throw new Error("Unsafe path");await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:100});});
 
-test("reactions persist, are idempotent and require access and send permission",async()=>{
+test("legacy reactions remain readable; new plaintext mutations require MLS and preserve authorization",async()=>{
  const path=`/channels/general/messages/message/reactions/${encodeURIComponent("👍")}`;
  assert.equal((await app.inject({method:"PUT",url:path})).statusCode,401);
  assert.equal((await app.inject({method:"PUT",url:path,headers:auth("outside")})).statusCode,404);
- for(let n=0;n<2;n++)assert.equal((await app.inject({method:"PUT",url:path,headers:auth("owner")})).statusCode,200);
- let message=(await app.inject({method:"PUT",url:path,headers:auth("member")})).json();
- assert.deepEqual(message.reactions,[{emoji:"👍",userIds:["member","owner"]}]);
- message=(await app.inject({url:"/channels/general/messages",headers:auth("member")})).json()[0];
- assert.equal(message.reactions[0].userIds.length,2);
- assert.equal((await app.inject({method:"PUT",url:path.replace(encodeURIComponent("👍"),"not-an-emoji"),headers:auth("member")})).statusCode,400);
+ run("INSERT INTO message_reactions(message_id,user_id,emoji) VALUES('message','owner','👍')");
+ for(const user of ['owner','member'])assert.equal((await app.inject({method:"PUT",url:path,headers:auth(user)})).statusCode,409);
+ const message=(await app.inject({url:"/channels/general/messages",headers:auth("member")})).json()[0];
+ assert.deepEqual(message.reactions,[{emoji:"👍",userIds:["owner"]}]);
+ assert.equal((await app.inject({method:"DELETE",url:path,headers:auth("member")})).statusCode,409);
  assert.equal((await app.inject({method:"PUT",url:path.replace("/general/","/missing/"),headers:auth("member")})).statusCode,404);
  run("INSERT INTO overwrites(channel_id,target_id,target_type,allow,deny) VALUES('general','member','member',0,?)",Permission.SEND_MESSAGES);
  assert.equal((await app.inject({method:"PUT",url:path,headers:auth("member")})).statusCode,403);
  run("DELETE FROM overwrites WHERE target_id='member'");
- message=(await app.inject({method:"DELETE",url:path,headers:auth("member")})).json();
- assert.deepEqual(message.reactions,[{emoji:"👍",userIds:["owner"]}]);
- await app.inject({method:"DELETE",url:path,headers:auth("owner")});
- assert.equal(one<{n:number}>("SELECT COUNT(*) AS n FROM message_reactions")!.n,0);
 });
 
 test("animated profile GIF keeps multiple frames and loops indefinitely",async()=>{
@@ -76,7 +74,7 @@ test("GIF provider configuration requires authentication and is not cached",asyn
 });
 
 
-test("participants receive one shared reaction counter and retain it after disconnecting", async (t) => {
+test("legacy counters survive disconnects and rejected plaintext reactions never broadcast", async (t) => {
   const origin = await app.listen({ host: "127.0.0.1", port: 0 });
   const sockets: WebSocket[] = [], events: Record<string, any[]> = {};
   t.after(async () => {
@@ -96,20 +94,12 @@ test("participants receive one shared reaction counter and retain it after disco
     await waitFor(() => events[id]!.some((event) => event.t === "READY"));
   }
   const path = `/channels/general/messages/message/reactions/${encodeURIComponent("😂")}`;
-  const reaction = (id: string) => events[id]!.filter((event) => event.t === "MESSAGE_UPDATE").at(-1)?.d.reactions.find((item: any) => item.emoji === "😂");
-  assert.equal((await app.inject({ method: "PUT", url: path, headers: auth("owner") })).statusCode, 200);
-  await waitFor(() => reaction("member")?.userIds.length === 1);
-  assert.equal((await app.inject({ method: "PUT", url: path, headers: auth("member") })).statusCode, 200);
-  await waitFor(() => reaction("owner")?.userIds.length === 2 && reaction("member")?.userIds.length === 2);
-  assert.deepEqual(reaction("owner").userIds, ["member", "owner"]);
-  const stored = (await app.inject({ url: "/channels/general/messages", headers: auth("member") })).json()[0];
-  assert.equal(stored.reactions.filter((item: any) => item.emoji === "😂").length, 1);
-  assert.deepEqual(stored.reactions.find((item: any) => item.emoji === "😂").userIds, ["member", "owner"]);
-  await app.inject({ method: "DELETE", url: path, headers: auth("member") });
-  await waitFor(() => reaction("owner")?.userIds.length === 1);
-  assert.deepEqual(reaction("owner").userIds, ["owner"]);
-  assert.equal(events.outside!.some((event) => event.t === "MESSAGE_UPDATE"), false);
-  const closed = once(sockets[1]!, "close"); sockets[1]!.close(); await closed;
-  const reread = (await app.inject({ url: "/channels/general/messages", headers: auth("owner") })).json()[0];
-  assert.deepEqual(reread.reactions.find((item: any) => item.emoji === "😂").userIds, ["owner"]);
+  for(const user of ['owner','member'])assert.equal((await app.inject({method:"PUT",url:path,headers:auth(user)})).statusCode,409);
+  const stored=(await app.inject({url:"/channels/general/messages",headers:auth("member")})).json()[0];
+  assert.equal(stored.reactions.some((r:any)=>r.emoji==='😂'),false);
+  const closed=once(sockets[1]!,"close");sockets[1]!.close();await closed;
+  const reread=(await app.inject({url:"/channels/general/messages",headers:auth("owner")})).json()[0];
+  assert.deepEqual(reread.reactions,stored.reactions);
+  for(const user of ['owner','member','outside'])assert.equal(events[user]!.some(e=>e.t==='MESSAGE_UPDATE'),false);
+
 });

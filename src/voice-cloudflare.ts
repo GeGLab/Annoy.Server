@@ -1,3 +1,5 @@
+import {requireMediaConsent} from './media-security.ts';
+import { handleMedia, mediaJoin, mediaLeave } from "./media-e2ee.ts";
 // Voice through Cloudflare's Realtime SFU, for hosts without a reachable
 // public address (CGNAT). Media flows between each client and Cloudflare; this
 // server keeps every decision: who may publish, who may receive which track,
@@ -53,14 +55,14 @@ async function cf(method: "GET" | "POST" | "PUT", path: string, body?: unknown, 
   });
   const json = (await res.json().catch(() => ({}))) as CfResponse;
   if (!res.ok || json.errorCode) {
-    throw new HttpError(502, "sfu_error", `Cloudflare SFU: ${json.errorDescription || json.errorCode || `HTTP ${res.status}`}`);
+    throw new HttpError(502, "sfu_error", "Serviço de mídia recusou a operação");
   }
   return json;
 }
 
 function firstTrack(res: CfResponse): CfTrackResult {
   const track = res.tracks?.[0];
-  if (!track || track.errorCode) throw new HttpError(502, "sfu_error", `Cloudflare SFU: ${track?.errorDescription || track?.errorCode || "faixa recusada"}`);
+  if (!track || track.errorCode) throw new HttpError(502, "sfu_error", "Serviço de mídia recusou a faixa");
   return track;
 }
 
@@ -184,6 +186,7 @@ export function leaveVoice(conn: Connection): void {
   const peer = peersByConn.get(conn.id);
   if (!peer) return;
   peersByConn.delete(conn.id);
+  mediaLeave(peer.channelId, conn.id);
   // Revoke this session too: legacy clients may keep their peer connection open.
   closeTracks(peer.sessionId, [...peer.published.values()].map((track) => track.mid).concat([...peer.pulled.values()]));
   for (const track of peer.published.values()) {
@@ -286,6 +289,7 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
 
   switch (method) {
     case "join": {
+      const protection = requireMediaConsent(data);
       const channelId = str(data, "channelId");
       const channel = getChannel(channelId);
       const perms = channel ? channelPermissions(channel, userId) : 0;
@@ -294,9 +298,16 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       if (budget.level() === "off") throw forbidden(VOICE_PAUSED);
       leaveVoice(conn);
       for (const other of [...peersByConn.values()]) if (other.userId === userId) kick(other, "Conectado em outro dispositivo");
-      const session = await cf("POST", "/sessions/new");
-      if (stopping || conn.socket.readyState !== conn.socket.OPEN) throw badRequest("Conexão encerrada");
-      if (!session.sessionId) throw new HttpError(502, "sfu_error", "Cloudflare SFU não criou a sessão");
+      const media = mediaJoin(channelId, conn, protection);
+      let session: { sessionId?: string };
+      try {
+        session = await cf("POST", "/sessions/new");
+        if (stopping || conn.socket.readyState !== conn.socket.OPEN) throw badRequest("Conexão encerrada");
+        if (!session.sessionId) throw new HttpError(502, "sfu_error", "Cloudflare SFU não criou a sessão");
+      } catch (err) {
+        mediaLeave(channelId, conn.id);
+        throw err;
+      }
       const peer: Peer = { conn, userId, serverId: channel.serverId, channelId, sessionId: session.sessionId, published: new Map(), pulled: new Map() };
       peersByConn.set(conn.id, peer);
       states.set(userId, {
@@ -309,9 +320,11 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         speaking: false,
         video: false,
         screen: false,
+        e2ee: protection === "sframe",
       });
       publishState(userId, channel.serverId);
       return {
+        media,
         backend: "cloudflare",
         iceServers: ICE_SERVERS,
         canSpeak: has(perms, Permission.SPEAK),
@@ -320,6 +333,11 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         sessionId: session.sessionId,
       };
     }
+
+    case "mediaCreate":
+    case "mediaPropose":
+    case "mediaCommit":
+      return handleMedia(conn, peerOf(conn).channelId, method, data);
 
     case "resume":
       throw badRequest("A sessão de voz foi encerrada. Entre no canal novamente.");

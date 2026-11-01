@@ -1,0 +1,12 @@
+{
+  "monitor": "DP-5",
+  "class": "annoy-security-tests",
+  "observedTestWindowCount": 1,
+  "allObservedWindowsOnDedicatedMonitor": true,
+  "focusedBefore": "HDMI-A-3",
+  "focusedAfter": "HDMI-A-3",
+  "runtimeOnlyRule": true,
+  "compositor": "Hyprland",
+  "backend": "XWayland",
+  "noProductionConfigurationChanged": true
+}

@@ -283,6 +283,7 @@ export function hydrate(rows: MessageRow[]): Message[] {
     group.userIds.push(reaction.user_id); reactions.set(reaction.message_id, groups);
   }
   return rows.map((r) => ({
+    protection:"legacy_plaintext",
     id: r.id,
     reactions: reactions.get(r.id) ?? [],
     channelId: r.channel_id,

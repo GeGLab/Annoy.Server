@@ -140,7 +140,7 @@ const CDN_HOSTS = /^(cdn\.discordapp\.com|media\.discordapp\.net)$/;
 export function isDiscordCdn(raw: string): boolean {
   try {
     const url = new URL(raw);
-    return url.protocol === "https:" && CDN_HOSTS.test(url.hostname);
+    return url.protocol === "https:" && !url.username&&!url.password&&!url.port&&CDN_HOSTS.test(url.hostname);
   } catch {
     return false;
   }

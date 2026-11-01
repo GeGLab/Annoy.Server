@@ -1,0 +1,89 @@
+{
+  "createdAt": "2026-10-31T22:43:24.840795+00:00",
+  "platform": "linux",
+  "node": "v24.22.2",
+  "reason": "Follow-up after the integrated 231 cases: wipe late retired-process buffers; repeat relevant crypto, build and real Electron test; package and verify latest build and exercise shipped native binary. Repeated cases are not counted twice.",
+  "packagedNativeTestEnvironment": {
+    "ANNOY_REQUIRE_NATIVE": "1",
+    "ANNOY_CRYPTO_BINARY": "/tmp/annoy-linux-verified-JiLfc0/linux-unpacked/resources/crypto/annoy-crypto"
+  },
+  "results": [
+    {
+      "name": "late-buffer",
+      "command": [
+        "npm",
+        "run",
+        "test:crypto"
+      ],
+      "exitCode": 0,
+      "log": "late-buffer.log",
+      "logSha256": "cfccdfad92f6fde4d3ba9779b96d5088dbc4b380e5b440e956e21c6ca7592638"
+    },
+    {
+      "name": "late-buffer-build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exitCode": 0,
+      "log": "late-buffer-build.log",
+      "logSha256": "4c4ec4248e49951d57f4d0f9cf5002074abd4ba35a79304e0786455774fbc213"
+    },
+    {
+      "name": "late-buffer-electron",
+      "command": [
+        "npm",
+        "exec",
+        "--",
+        "playwright",
+        "test",
+        "tests/crypto-desktop.spec.ts"
+      ],
+      "exitCode": 0,
+      "log": "late-buffer-electron.log",
+      "logSha256": "33b2d08dcdd856074ccff12e5af26a265c1a7068d5cf2f86df435cd0845cddc8"
+    },
+    {
+      "name": "package-build",
+      "command": [
+        "npm",
+        "exec",
+        "--",
+        "electron-builder",
+        "--linux",
+        "--x64",
+        "--dir",
+        "--publish",
+        "never",
+        "--config.directories.output=/tmp/annoy-linux-verified-JiLfc0",
+        "--config.npmRebuild=false"
+      ],
+      "exitCode": 0,
+      "log": "package-build.log",
+      "logSha256": "ee17533abb842056f7127d534c7eca0c712d8e865b777e93828191381252f7ca"
+    },
+    {
+      "name": "package-content",
+      "command": [
+        "node",
+        "scripts/verify-native-package.mjs",
+        "/tmp/annoy-linux-verified-JiLfc0/linux-unpacked"
+      ],
+      "exitCode": 0,
+      "log": "package-content.json",
+      "logSha256": "2d16521d16633b82916281ff650a5be10ffe13416c93af03cbc07993d87b8c9c"
+    },
+    {
+      "name": "package-native-tests",
+      "command": [
+        "npm",
+        "run",
+        "test:crypto"
+      ],
+      "exitCode": 0,
+      "log": "package-native-tests.log",
+      "logSha256": "3f9603a4f414f58b1949c0d1b92662bfc27a03257524a605ce77876a29703454"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+// Isolated real HTTP backend for the Electron security integration tests.
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import {db,run} from '../../src/db.ts';
+import {createSession} from '../../src/auth.ts';
+import {authRoutes} from '../../src/routes/auth.ts';
+import {deviceRoutes} from '../../src/devices.ts';
+import {deliveryRoutes} from '../../src/crypto-delivery.ts';
+import {cryptoBlobRoutes} from '../../src/crypto-blobs.ts';
+import {HttpError} from '../../src/errors.ts';
+const app=Fastify({bodyLimit:2*1024*1024});
+app.addHook('onRequest',async request=>{if(request.headers.cookie)throw new Error('Native API leaked browser cookies');});
+await app.register(cors,{origin:'http://127.0.0.1:5178'});
+app.setErrorHandler((e,_req,reply)=>reply.status(e instanceof HttpError?e.status:500).send({error:e instanceof HttpError?e.code:'internal_error',message:e instanceof HttpError?e.message:'Erro interno'}));
+await app.register(async api=>{authRoutes(api);deviceRoutes(api);deliveryRoutes(api);cryptoBlobRoutes(api);},{prefix:'/api'});
+for(const id of ['alice','bob'])run("INSERT INTO users(id,username,display_name,password_hash,created_at) VALUES(?,?,?,'!','2026-01-01')",id,id,id);
+run("INSERT INTO channels(id,type,name,created_at) VALUES('private','dm','private','2026-01-01')");
+run("INSERT INTO dm_recipients VALUES('private','alice'),('private','bob')");
+run("INSERT INTO relationships(user_id,other_id,status) VALUES('alice','bob','friend'),('bob','alice','friend')");
+const url=await app.listen({host:'127.0.0.1',port:0});
+process.stdout.write(JSON.stringify({url,alice:createSession('alice'),bob:createSession('bob')})+'\n');
+let closing=false;const close=async()=>{if(closing)return;closing=true;await app.close();db.close();process.exit(0);};
+process.on('SIGTERM',()=>void close());process.on('SIGINT',()=>void close());

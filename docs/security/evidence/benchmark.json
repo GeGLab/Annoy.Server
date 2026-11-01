@@ -1,0 +1,15 @@
+{
+  "synthetic": true,
+  "platform": "linux",
+  "node": "v26.11.1",
+  "participants": 2,
+  "messages": 100,
+  "payload": "small text",
+  "includes": "native IPC, authenticated vault persistence, ratchet and decryption",
+  "p50Ms": 2.092130999999995,
+  "p95Ms": 2.4838400000000007,
+  "totalMs": 215.31396500000005,
+  "messagesPerSecond": 464.4380590919868,
+  "mainRssBytes": 101965824,
+  "excludes": "network, large groups, large files and native RSS"
+}

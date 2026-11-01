@@ -1,3 +1,4 @@
+import {requireLegacyWrite} from '../crypto-delivery.ts';
 import { Readable } from "node:stream";
 import {
   DEFAULT_EVERYONE_PERMISSIONS,
@@ -167,6 +168,7 @@ function pruneFinished(): void {
 }
 
 export function startImport(userId: string, req: ImportRequest): ImportJob {
+  if(req.messageChannelIds.length)requireLegacyWrite("discord-import");
   for (const r of jobs.values()) {
     if (r.userId === userId && (r.job.phase === "structure" || r.job.phase === "messages")) throw conflict("Já existe uma importação em andamento");
   }
@@ -232,7 +234,7 @@ async function runImport(r: Running, req: ImportRequest): Promise<void> {
     else {
       job.phase = "failed";
       job.error = err instanceof Error ? err.message : String(err);
-      if (!(err instanceof DiscordError)) console.error("discord import failed", err);
+      if (!(err instanceof DiscordError)) console.error("discord import failed", {code:"import_failed"});
     }
   } finally {
     channelMap.delete(job.id);
@@ -400,9 +402,9 @@ async function downloadAttachments(r: Running, m: DMessage): Promise<StoredAttac
     if (!isDiscordCdn(a.url)) continue;
     const id = secretId();
     try {
-      const res = await fetch(a.url, { signal: r.abort.signal });
+      const res = await fetch(a.url, { signal: AbortSignal.any([r.abort.signal,AbortSignal.timeout(30000)]),redirect:'error' });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-      const size = await writeBlob(id, Readable.fromWeb(res.body as import("node:stream/web").ReadableStream));
+      const size = await writeBlob(id, Readable.fromWeb(res.body as import("node:stream/web").ReadableStream),maxUploadBytes());
       out.push({ id, filename: a.filename.replace(/[/\\\0]/g, "_").slice(0, 200), size, contentType: a.content_type ?? "application/octet-stream" });
     } catch (err) {
       await discardBlobs([id]);
@@ -422,6 +424,7 @@ async function importMessages(
   channelNames: Map<string, string>,
   roleNames: Map<string, string>,
 ): Promise<void> {
+  requireLegacyWrite(targetId);
   const { job } = r;
   const authors = new Map<string, string>();
   // Ids derive from the Discord snowflake, so replies resolve without a lookup table
@@ -432,6 +435,7 @@ async function importMessages(
   const limit = req.messageLimit ?? Number.POSITIVE_INFINITY;
 
   while (copied < limit) {
+    requireLegacyWrite(targetId);
     const size = Math.min(PAGE, limit - copied);
     let page: DMessage[];
     try {
@@ -454,6 +458,7 @@ async function importMessages(
     }
     const rows: { m: DMessage; content: string; files: StoredAttachment[] }[] = [];
     for (const m of userMessages) {
+      requireLegacyWrite(targetId);
       const files = req.attachments ? await downloadAttachments(r, m) : [];
       const content = convertContent(m, channelNames, roleNames);
       if (!content && files.length === 0) continue;

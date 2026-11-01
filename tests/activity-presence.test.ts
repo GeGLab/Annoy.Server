@@ -6,8 +6,8 @@ import { join } from "node:path";
 import type { WebSocket } from "ws";
 
 const directory = await mkdtemp(join(tmpdir(), "annoy-activity-presence-"));
+process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
-process.env.DISTOPIC_DATA_DIR = directory;
 const { db, run } = await import("../src/db.ts");
 const { Connection, register, unregister } = await import("../src/events.ts");
 const { addConnection, removeConnection, setConnectionIdle, presenceOf } = await import("../src/presence.ts");

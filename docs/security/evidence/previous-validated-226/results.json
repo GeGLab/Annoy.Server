@@ -1,0 +1,137 @@
+{
+  "createdAt": "2026-10-31T19:53:41.728Z",
+  "platform": "linux",
+  "architecture": "x64",
+  "node": "v24.22.2",
+  "results": [
+    {
+      "name": "native",
+      "repository": "annoy-client",
+      "command": [
+        "/tmp/annoy-cargo/bin/cargo",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "native/annoy-crypto/Cargo.toml"
+      ],
+      "exitCode": 0,
+      "durationMs": 476,
+      "logSha256": "07efd1ff7ed7a0fe41850f4c50863f3834aea1436d92337920271e6644cff273"
+    },
+    {
+      "name": "server-types",
+      "repository": "annoy-server",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "durationMs": 704,
+      "logSha256": "c7b4dcc766a93cf2b363e2a3573be0d19a9ad638e6a3be6023674095fbd6b71a"
+    },
+    {
+      "name": "client-types",
+      "repository": "annoy-client",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exitCode": 0,
+      "durationMs": 684,
+      "logSha256": "93fa627fd3343ab191dd730ca2f0f038db543971b0f8f027d1317e289890b6db"
+    },
+    {
+      "name": "local-crypto",
+      "repository": "annoy-client",
+      "command": [
+        "npm",
+        "run",
+        "test:crypto"
+      ],
+      "exitCode": 0,
+      "durationMs": 884,
+      "logSha256": "84e3da6fd44f5979cb5b8bc182b90ca25f5c063f3af3db47818f57193d4b1f04"
+    },
+    {
+      "name": "client-units",
+      "repository": "annoy-client",
+      "command": [
+        "/tmp/annoy-node24/node-v24.22.2-linux-x64/bin/node",
+        "--experimental-strip-types",
+        "--test",
+        "scripts/tests/app-access.test.mjs",
+        "scripts/tests/security-updates.test.mjs",
+        "scripts/tests/update-signature.test.mjs",
+        "scripts/tests/transport.test.mjs",
+        "scripts/tests/server-removal.test.mjs",
+        "scripts/tests/user-volume.test.mjs"
+      ],
+      "exitCode": 0,
+      "durationMs": 240,
+      "logSha256": "2c8e1905a303154f9901c09ba6b71a538a4bc9ddb1c1917e0f087f81cb5e945f"
+    },
+    {
+      "name": "client-activity",
+      "repository": "annoy-client",
+      "command": [
+        "npm",
+        "run",
+        "test:activity"
+      ],
+      "exitCode": 0,
+      "durationMs": 319,
+      "logSha256": "554703d7eaa03f1cf52f0717f483ca7edd0dbeb0ba77a3fad1bbc32162eeb514"
+    },
+    {
+      "name": "server",
+      "repository": "annoy-server",
+      "command": [
+        "npm",
+        "run",
+        "test:security"
+      ],
+      "exitCode": 0,
+      "durationMs": 38111,
+      "logSha256": "9e568310a099fc49202786e1bc086559711da02d7ea078b3d94e79c8e80a6798"
+    },
+    {
+      "name": "global",
+      "repository": "annoy-api-global",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "exitCode": 0,
+      "durationMs": 42566,
+      "logSha256": "cbe029d30c256a3a144a3476e6107f3982b09729cde68f49afa9e559a048338b"
+    },
+    {
+      "name": "client-build",
+      "repository": "annoy-client",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exitCode": 0,
+      "durationMs": 3083,
+      "logSha256": "63934d38a2fcf50b237d77f01a2d229d91a6962d758a7e06d532234f74642cb3"
+    },
+    {
+      "name": "electron",
+      "repository": "annoy-client",
+      "command": [
+        "npm",
+        "exec",
+        "--",
+        "playwright",
+        "test"
+      ],
+      "exitCode": 0,
+      "durationMs": 139851,
+      "logSha256": "2c5f1b4f264c9104f0faa77ebeaaa184a0fcc7720e209c01ee78d293688fd4f7"
+    }
+  ]
+}

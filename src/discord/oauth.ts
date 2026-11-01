@@ -49,6 +49,7 @@ function prune(): void {
 
 /** `origin` is how the client reached us; ANNOY_PUBLIC_URL overrides it behind proxies. */
 export function beginLogin(origin: string, linkUserId: string | null, inviteCode?: string): DiscordLoginBegin {
+  if (!linkUserId) throw new Error("Discord só pode ser vinculado a uma conta autenticada");
   prune();
   if (byState.size >= MAX_PENDING) throw new Error("Logins pendentes demais; tente de novo em alguns minutos");
   const state = secret();

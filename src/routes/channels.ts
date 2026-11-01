@@ -1,6 +1,7 @@
 import { ALL_PERMISSIONS, has, hasMessages, LIMITS, parseMentions, Permission, type Channel, type Message } from "@distopic/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { requireLegacyWrite, cryptoChannel } from "../crypto-delivery.ts";
 import { requireUser } from "../auth.ts";
 import { all, now, one, run, tx } from "../db.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../errors.ts";
@@ -148,6 +149,7 @@ export function channelRoutes(app: FastifyInstance): void {
 
   app.get<Params<"id">>("/channels/:id/messages", async (req): Promise<Message[]> => {
     const { channel } = requireChannel(req.params.id, requireUser(req));
+    if (cryptoChannel(channel.id)) throw new HttpError(409,"e2ee_required","Use o transporte MLS ou o arquivo legado identificado");
     if (!hasMessages(channel.type)) return [];
     const q = parse(listQuery, req.query);
     if (q.around) {
@@ -164,6 +166,7 @@ export function channelRoutes(app: FastifyInstance): void {
     const { channel, perms } = requireChannel(req.params.id, userId, Permission.SEND_MESSAGES);
     if (!hasMessages(channel.type)) throw badRequest("Este canal não aceita mensagens");
 
+    requireLegacyWrite(channel.id);
     const { fields, files } = req.isMultipart() ? await readMultipart(req) : { fields: req.body as Record<string, unknown>, files: [] };
     try {
       if (files.length > 0 && !has(perms, Permission.ATTACH_FILES)) throw forbidden("Sem permissão para anexar arquivos");
@@ -205,6 +208,7 @@ export function channelRoutes(app: FastifyInstance): void {
     const message = getMessage(req.params.messageId);
     if (!message || message.channelId !== channel.id) throw notFound("Mensagem");
     if (message.author.id !== userId) throw forbidden("Você só pode editar suas mensagens");
+    requireLegacyWrite(channel.id);
     const body = parse(editBody, req.body);
     const mentions = resolveMentions(channel, body.content, perms);
     run(
@@ -238,6 +242,7 @@ export function channelRoutes(app: FastifyInstance): void {
   const reaction = async (req: FastifyRequest<{ Params: { id: string; messageId: string; emoji: string } }>, add: boolean) => {
     const userId = requireUser(req);
     const { channel } = requireChannel(req.params.id, userId, Permission.SEND_MESSAGES);
+    requireLegacyWrite(channel.id);
     const message = getMessage(req.params.messageId);
     if (!message || message.channelId !== channel.id) throw notFound("Mensagem");
     const emoji = req.params.emoji.normalize("NFC");
@@ -254,13 +259,15 @@ export function channelRoutes(app: FastifyInstance): void {
   app.put<Params<"id" | "messageId" | "emoji">>("/channels/:id/messages/:messageId/reactions/:emoji", async (req) => reaction(req, true));
   app.delete<Params<"id" | "messageId" | "emoji">>("/channels/:id/messages/:messageId/reactions/:emoji", async (req) => reaction(req, false));
 
-  // Uploads are addressed by an unguessable id so <img> tags work without auth headers.
+  // Possession of an attachment URL is not authorization.
   app.get<Params<"id" | "name">>("/uploads/:id/:name", async (req, reply) => {
-    const row = one<{ filename: string; content_type: string; size: number }>(
-      "SELECT filename, content_type, size FROM attachments WHERE id = ?",
+    const user=requireUser(req);
+    const row = one<{ filename: string; content_type: string; size: number;channel_id:string }>(
+      "SELECT a.filename,a.content_type,a.size,m.channel_id FROM attachments a JOIN messages m ON m.id=a.message_id WHERE a.id=?",
       req.params.id,
     );
     if (!row || !/^[0-9a-f]{32}$/.test(req.params.id)) throw notFound("Arquivo");
+    requireChannel(row.channel_id,user);
     const inline = INLINE_TYPES.test(row.content_type);
     reply
       .header("Content-Type", inline ? row.content_type : "application/octet-stream")
@@ -268,7 +275,7 @@ export function channelRoutes(app: FastifyInstance): void {
       .header("Accept-Ranges", "bytes")
       .header("X-Content-Type-Options", "nosniff")
       .header("Content-Security-Policy", "sandbox; default-src 'none'")
-      .header("Cache-Control", "private, max-age=31536000, immutable")
+      .header("Cache-Control", "no-store")
       .header("Content-Disposition", `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.filename)}`);
     if (req.headers.range) {
       const range = byteRange(req.headers.range, row.size);

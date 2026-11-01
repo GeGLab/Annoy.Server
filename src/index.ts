@@ -1,3 +1,10 @@
+import './service-lock.ts';
+import {transportSecurity} from './transport-security.ts';
+import {legacyArchiveRoutes} from './legacy-archive.ts';
+import { cryptoBlobRoutes, startCryptoCleanup } from "./crypto-blobs.ts";
+import { resourceLimits } from "./resource-limits.ts";
+import { deliveryRoutes } from "./crypto-delivery.ts";
+import { deviceRoutes } from "./devices.ts";
 import { callRoutes } from "./calls.ts";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
@@ -24,16 +31,24 @@ import { startTempRooms, tempRoomRoutes } from "./rooms.ts";
 import { startVoice, stopVoice, voiceAddresses } from "./voice-backend.ts";
 
 const app = Fastify({
+  trustProxy:config.trustedProxies,
   logger: {
     level: process.env.LOG_LEVEL ?? "info",
     // Privacy by default: request logs carry method and path only, never client IPs.
-    serializers: { req: (req) => ({ method: req.method, url: req.url.split("?")[0] }) },
+    serializers: { req: (req) => ({ method: req.method, url: req.url.split("?")[0] }), err: () => ({ type: "Error", code: "operation_failed", message: "Operation failed", stack: "" }) },
+    redact: ["req.headers.authorization", "req.headers.dpop", "req.body", "password", "token", "privateKey"],
   },
-  bodyLimit: 1024 * 1024,
+  bodyLimit: 2 * 1024 * 1024,
+  requestTimeout: 30_000,
+  connectionTimeout: 15_000,
 });
 
-// Auth is a bearer token, never a cookie, so any origin may call the API.
-await app.register(cors, { origin: true, methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] });
+// Bearer/DPoP authentication and an explicit origin allowlist.
+transportSecurity(app);
+resourceLimits(app);
+const allowedOrigins=new Set((process.env.ANNOY_ALLOWED_ORIGINS??"null,http://127.0.0.1:5173,http://localhost:5173").split(",").map(s=>s.trim()));
+if(config.publicUrl)allowedOrigins.add(new URL(config.publicUrl).origin);
+await app.register(cors, { origin: (origin,callback)=>callback(null,!origin||allowedOrigins.has(origin)), methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] });
 // Per-upload size comes from the instance settings (see routes/channels.ts); this is only the ceiling.
 await app.register(multipart, { limits: { fileSize: config.uploadCeilingBytes, files: 10, fields: 10 } });
 await app.register(websocket, {
@@ -59,9 +74,14 @@ startGlobal((msg) => app.log.info(msg));
 await startVoice();
 registerGateway(app);
 startTempRooms();
+startCryptoCleanup(app);
 await app.register(
   async (api) => {
     authRoutes(api);
+    deviceRoutes(api);
+    deliveryRoutes(api);
+    legacyArchiveRoutes(api);
+    cryptoBlobRoutes(api);
     discordAuthRoutes(api);
     steamRoutes(api);
     serverRoutes(api);

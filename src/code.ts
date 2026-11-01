@@ -2,9 +2,8 @@ import { Permission, type Channel, type CodeEntry, type CodeFile, type CodeRepo,
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { lookup } from "node:dns/promises";
+import {resolvePublicHttps} from "./public-https.ts";
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { isIP } from "node:net";
 import { dirname, join, posix, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -42,7 +41,7 @@ function serial<T>(channelId: string, fn: () => Promise<T>): Promise<T> {
 
 class GitError extends Error {}
 
-function git(cwd: string, args: string[], opts: { token?: string; timeout?: number } = {}): Promise<string> {
+async function git(cwd: string, args: string[], opts: { token?: string; timeout?: number;remote?:string } = {}): Promise<string> {
   const config: [string, string][] = [
     ["protocol.allow", "never"],
     ["protocol.https.allow", "always"],
@@ -52,6 +51,7 @@ function git(cwd: string, args: string[], opts: { token?: string; timeout?: numb
     ["credential.helper", ""],
     ["submodule.recurse", "false"],
   ];
+  if(opts.remote)config.push(["http.curloptResolve",(await resolvePublicHttps(opts.remote)).resolveEntry]);
   // GitHub, GitLab and Gitea all accept a token as the Basic password.
   if (opts.token) config.push(["http.extraHeader", `Authorization: Basic ${Buffer.from(`x-access-token:${opts.token}`).toString("base64")}`]);
   const env: NodeJS.ProcessEnv = {
@@ -72,48 +72,19 @@ function git(cwd: string, args: string[], opts: { token?: string; timeout?: numb
   return new Promise((resolve, reject) => {
     execFile("git", args, { cwd, env, timeout: opts.timeout ?? 60_000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (!err) return resolve(stdout);
-      const message = String(stderr || err.message)
-        .replace(/Authorization: Basic \S+/g, "Authorization: ***")
-        .trim()
-        .split("\n")
-        .filter((l) => !/^hint:/.test(l))
-        .slice(-4)
-        .join("\n");
-      reject(new GitError(message || "Falha no Git"));
+      reject(new GitError("Operação Git recusada; detalhes do processo foram omitidos para proteger credenciais"));
     });
   });
 }
 
-const PRIVATE_V4 = [/^0\./, /^10\./, /^127\./, /^169\.254\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./, /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./, /^(22[4-9]|2[3-5]\d)\./];
-const isPrivate = (address: string) =>
-  isIP(address) === 4
-    ? PRIVATE_V4.some((r) => r.test(address))
-    : /^(::1?$|f[cd]|fe[89ab]|::ffff:(0|10|127|169\.254|172\.(1[6-9]|2\d|3[01])|192\.168)\.)/i.test(address);
-
-/** Only public https remotes: never this server, its LAN or a file path. */
-async function checkRemote(raw: string): Promise<string> {
-  let url: URL;
-  try {
-    url = new URL(raw.trim());
-  } catch {
-    throw badRequest("Link do repositório inválido");
-  }
-  if (url.protocol !== "https:") throw badRequest("Use o link https do repositório (ex.: https://github.com/dono/projeto)");
-  if (url.username || url.password) throw badRequest("Não coloque usuário ou token no link; informe o token no campo próprio");
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  const addresses = isIP(host) ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((a) => a.address);
-  if (addresses.length === 0) throw badRequest("Não foi possível encontrar esse endereço");
-  if (addresses.some(isPrivate)) throw badRequest("Só repositórios externos são permitidos");
-  url.hash = "";
-  url.search = "";
-  return url.toString();
-}
+/** Public HTTPS only. git() independently pins the final DNS resolution. */
+async function checkRemote(raw:string):Promise<string>{return (await resolvePublicHttps(raw)).url;}
 
 /** Normalizes a path inside the working copy; `.git` is never reachable. */
 function cleanPath(raw: unknown): string {
   if (typeof raw !== "string" || !raw.trim()) throw badRequest("Caminho inválido");
   const path = posix.normalize(raw.replace(/\\/g, "/").replace(/^\/+/, ""));
-  if (path === "." || path.startsWith("../") || path === ".." || path.split("/").some((part) => part === ".git" || part === "")) {
+  if (path === "." || path.startsWith("../") || path === ".." || path.split("/").some((part) => part.toLowerCase() === ".git" || part === "")) {
     throw badRequest("Caminho inválido");
   }
   return path;
@@ -244,7 +215,7 @@ export function codeRoutes(app: FastifyInstance): void {
       await mkdir(join(codeDir, channel.id), { recursive: true });
       await mkdir(join(codeDir, ".home"), { recursive: true });
       try {
-        await git(join(codeDir, channel.id), ["clone", "--no-recurse-submodules", "--", url, "repo"], { token: body.token, timeout: 10 * 60_000 });
+        await git(join(codeDir, channel.id), ["clone", "--no-recurse-submodules", "--", url, "repo"], { token: body.token,remote:url,timeout:10*60_000 });
         live.set(channel.id, { status: "ready", error: null });
       } catch (err) {
         live.set(channel.id, { status: "error", error: err instanceof Error ? err.message : "Falha ao clonar" });
@@ -426,7 +397,7 @@ export function codeRoutes(app: FastifyInstance): void {
     const body = parse(tokenBody, req.body ?? {});
     const cwd = repoDir(channel.id);
     await checkRemote(linkedUrl(channel.id)!);
-    await serial(channel.id, () => gitStep(() => git(cwd, ["push", "-u", "origin", "HEAD"], { token: body.token, timeout: 5 * 60_000 })));
+    await serial(channel.id, () => gitStep(() => git(cwd, ["push", "-u", "origin", "HEAD"], { token: body.token,remote:linkedUrl(channel.id)!,timeout:5*60_000 })));
     await announce(channel, [], userId);
     return repoInfo(channel.id);
   });
@@ -440,9 +411,9 @@ export function codeRoutes(app: FastifyInstance): void {
     await checkRemote(linkedUrl(channel.id)!);
     await serial(channel.id, () =>
       gitStep(async () => {
-        await git(cwd, ["fetch", "--prune", "origin"], { token: body.token, timeout: 5 * 60_000 });
+        await git(cwd, ["fetch", "--prune", "origin"], { token: body.token,remote:linkedUrl(channel.id)!,timeout:5*60_000 });
         const upstream = await git(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]).catch(() => "");
-        if (upstream.trim()) await git(cwd, ["merge", "--ff-only", "@{upstream}"], { token: body.token, timeout: 5 * 60_000 });
+        if (upstream.trim()) await git(cwd, ["merge", "--ff-only", "@{upstream}"], { token: body.token,remote:linkedUrl(channel.id)!,timeout:5*60_000 });
       }),
     );
     await announce(channel, ["*"], userId);

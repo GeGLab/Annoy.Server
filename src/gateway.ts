@@ -1,7 +1,10 @@
-import { clearCalls, handleCall, endAllCalls } from "./calls.ts";
+import {observeSessions} from "./session-events.ts";
+import {boundDevice,verifyDpop} from "./dpop.ts";
+import {config} from "./config.ts";
+import { clearCalls, handleCall, handleDirectCallMedia, endAllCalls } from "./calls.ts";
 import { Permission, type ClientOp } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
-import { userIdForToken } from "./auth.ts";
+import { hashToken, userIdForSessionHash, userIdForToken } from "./auth.ts";
 import { HttpError } from "./errors.ts";
 import { Connection, register, sendToAudience, sendToChannel, sendToUser, unregister } from "./events.ts";
 import { requireChannel } from "./perms.ts";
@@ -16,6 +19,8 @@ const IDENTIFY_TIMEOUT_MS = 10_000;
 const MAX_FRAME_BYTES = 64 * 1024;
 
 const live = new Set<Connection>();
+const sessionHashes = new WeakMap<Connection, string>();
+const gatewayOrigins = new WeakMap<Connection,string>();
 let restarting = false;
 
 /** End server-owned sessions before closing gateways, including on an update. */
@@ -26,18 +31,25 @@ export function closeForRestart(): void {
 }
 
 export function registerGateway(app: FastifyInstance): void {
+  const stopObserving=observeSessions((hash,reason)=>{for(const conn of live)if(sessionHashes.get(conn)===hash)conn.socket.close(reason==='rebound'?4011:4004,reason==='rebound'?'device proof now required':'session revoked');});
+  app.addHook('onClose',async()=>stopObserving());
 
   const sweep = setInterval(() => {
     expireActivities();
     const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
-    for (const conn of live) if (conn.lastHeartbeat < cutoff) conn.socket.close(4009, "heartbeat timeout");
+    for (const conn of live) {
+      const hash = sessionHashes.get(conn);
+      if (conn.userId && (!hash || userIdForSessionHash(hash) !== conn.userId)) conn.socket.close(4004, "session expired");
+      else if (conn.lastHeartbeat < cutoff) conn.socket.close(4009, "heartbeat timeout");
+    }
   }, 30_000);
   app.addHook("onClose", async () => clearInterval(sweep));
 
-  app.get("/gateway", { websocket: true }, (socket) => {
+  app.get("/gateway", { websocket: true }, (socket,req) => {
     if (restarting) return void socket.close(4010, "server stopping");
     const conn = new Connection(socket);
     live.add(conn);
+    gatewayOrigins.set(conn,config.publicUrl||`${req.protocol}://${req.host}`);
     const identifyTimer = setTimeout(() => {
       if (!conn.userId) socket.close(4003, "identify timeout");
     }, IDENTIFY_TIMEOUT_MS);
@@ -89,8 +101,14 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
       conn.socket.close(4004, "invalid session");
       return;
     }
+    const bound=boundDevice(msg.token);
+    if(bound){
+      try{await verifyDpop(msg.token,msg.dpop,'GET',new URL('/gateway',gatewayOrigins.get(conn)!).toString(),bound);}
+      catch{conn.socket.close(4004,'device proof required');return;}
+    }
     conn.deviceId = typeof msg.deviceId === "string" && msg.deviceId.length <= 64 ? msg.deviceId : null;
     if (Array.isArray(msg.features) && msg.features.length <= 16) conn.features = new Set(msg.features.filter((feature) => typeof feature === "string" && feature.length <= 64));
+    sessionHashes.set(conn, hashToken(msg.token));
     register(conn, userId);
     const previousPresence = presenceOf(userId);
     setManualPresence(userId, msg.presence);
@@ -118,6 +136,13 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
   }
 
   const userId = conn.userId;
+  if (userId) {
+    const hash = sessionHashes.get(conn);
+    if (!hash || userIdForSessionHash(hash) !== userId) {
+      conn.socket.close(4004, "session expired");
+      return;
+    }
+  }
   if (!userId) return void conn.socket.close(4003, "not identified");
 
   switch (msg.op) {
@@ -150,7 +175,10 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
     case "voice": {
       const id = Number(msg.id);
       try {
-        const data = await handleVoice(conn, msg.method, msg.data ?? {});
+        const params = msg.data ?? {};
+        const data = typeof params.directCall === "string" && ["mediaCreate", "mediaPropose", "mediaCommit"].includes(msg.method)
+          ? handleDirectCallMedia(conn, msg.method, params)
+          : await handleVoice(conn, msg.method, params);
         conn.send({ t: "VOICE_REPLY", d: { id, ok: true, data } });
       } catch (err) {
         const message = err instanceof HttpError ? err.message : "Erro interno de voz";

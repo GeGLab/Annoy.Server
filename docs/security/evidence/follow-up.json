@@ -1,0 +1,16 @@
+{
+  "createdAt": "2026-10-31T14:40:34.472884+00:00",
+  "repository": "annoy-api-global",
+  "command": [
+    "npm",
+    "test"
+  ],
+  "exitCode": 0,
+  "tests": 16,
+  "pass": 16,
+  "fail": 0,
+  "skipped": 0,
+  "log": "global-follow-up.log",
+  "logSha256": "068bc4b6c2722c3fa547c4196210480c579d9cad4cb931b1ebb06ddb1b00c352",
+  "reason": "Added concurrent password/reset and bounded Global KDF regression cases after the integrated execution. Production startup/deploy configuration was also corrected; no deployment ran."
+}

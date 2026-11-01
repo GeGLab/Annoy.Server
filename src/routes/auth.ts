@@ -1,19 +1,25 @@
+import {mediaProtection} from '../media-security.ts';
 import { LIMITS, PROTOCOL_VERSION, type AuthResponse, type InstanceInfo, type User } from "@distopic/protocol";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { bearerToken, createSession, deleteSession, hashPassword, requireUser, verifyPassword } from "../auth.ts";
+import { bearerToken, createSession, deleteSession, hashPassword, hashToken, deleteSessionsOf, requireUser, verifyPassword, spendPasswordTime, userIdForToken } from "../auth.ts";
 import { deleteAccount, mergeUsers, RESERVED_USERNAME } from "../accounts.ts";
+import { requireAccountMode } from "../account-policy.ts";
+import {sessionChanged} from "../session-events.ts";
+import {validateDpopRequest,dpopNonce,verifyDpop,boundDevice} from "../dpop.ts";
+import {activeDevice} from "../devices.ts";
+import { cryptoInstanceId } from "../devices.ts";
 import { config } from "../config.ts";
 import { VERSION } from "../version.ts";
-import { discordLoginEnabled } from "../discord/oauth.ts";
 import { now, one, run, tx } from "../db.ts";
 import { createAvatar, discardAvatar, MAX_AVATAR_BYTES, readAvatar } from "../avatars.ts";
-import { badRequest, conflict, HttpError, notFound } from "../errors.ts";
+import { badRequest, conflict, HttpError, notFound, forbidden, unauthorized } from "../errors.ts";
 import { checkRegistration, consumeSignupInvite, getSettings, grantBootstrapAdmin } from "../instance.ts";
 import { sendToAudience } from "../events.ts";
 import { newId } from "../ids.ts";
 import { getUser } from "../repo.ts";
 import { globalLoginAvailable, globalServerId, newChallenge, verifyGlobalProof } from "../global.ts";
+import { authAttempt } from "../auth-limits.ts";
 import { parse } from "../validate.ts";
 
 const username = z
@@ -37,7 +43,7 @@ const deleteMe = z.object({
   password: z.string().optional(),
   deleteMessages: z.boolean().default(false),
 });
-const loginBody = z.object({ username: z.string(), password: z.string() });
+const loginBody = z.object({ username: z.string().min(1).max(64), password: z.string().max(256) });
 const b64url = z.string().max(2048).regex(/^[A-Za-z0-9_-]+$/);
 const globalProof = z.object({
   identity: b64url,
@@ -65,7 +71,59 @@ const patchMe = z
     bio: z.string().max(1000).optional(), avatarUrl: z.null().optional() })
   .refine((body) => body.displayName !== undefined || body.bio !== undefined || body.avatarUrl === null, "Nenhuma alteração informada");
 
+const migrationCredentials = z.object({
+  username: z.string().max(64).optional(),
+  password: z.string().max(256).optional(),
+  recoveryCode: z.string().max(128).optional(),
+});
+interface MigrationUser {
+  id: string;
+  username: string;
+  password_hash: string;
+  global_id: string | null;
+  banned_at: string | null;
+  ban_reason: string;
+}
+interface MigrationOwner extends MigrationUser { proofKind: "session" | "password" | "recovery"; proofHash: string }
+function migrationSession(req: FastifyRequest): MigrationUser | undefined {
+  const token = bearerToken(req);
+  return token ? one<MigrationUser>("SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ? AND u.banned_at IS NULL", hashToken(token), now()) : undefined;
+}
+async function migrationOwner(req: FastifyRequest, credentials: z.infer<typeof migrationCredentials>): Promise<MigrationOwner> {
+  const sessionOwner = migrationSession(req);
+  if (sessionOwner && (!credentials.username || sessionOwner.username.toLowerCase() === credentials.username.toLowerCase())) {
+    return { ...sessionOwner, proofKind: "session", proofHash: hashToken(bearerToken(req)!) };
+  }
+  const row = credentials.username ? one<MigrationUser>("SELECT * FROM users WHERE username = ?", credentials.username) : undefined;
+  if (row) {
+    if (credentials.recoveryCode && one("SELECT 1 FROM account_recovery WHERE user_id = ? AND token_hash = ? AND expires_at > ?", row.id, hashToken(credentials.recoveryCode), now())) {
+      refuseBanned(row);
+      return { ...row, proofKind: "recovery", proofHash: hashToken(credentials.recoveryCode) };
+    }
+    if (credentials.password && await verifyPassword(credentials.password, row.password_hash)) {
+      refuseBanned(row);
+      return { ...row, proofKind: "password", proofHash: row.password_hash };
+    }
+  }
+  throw new HttpError(401, "invalid_credentials", "Confirme a conta anterior com a senha, sessão salva ou código de recuperação do administrador");
+}
+/** Recheck revocation/one-use after async password hashing, before writing. */
+function confirmMigrationOwner(owner: MigrationOwner): MigrationUser {
+  const current = one<MigrationUser>("SELECT * FROM users WHERE id = ?", owner.id);
+  if (!current) throw notFound("Conta anterior");
+  refuseBanned(current);
+  const valid = owner.proofKind === "password" ? current.password_hash === owner.proofHash
+    : owner.proofKind === "session" ? one("SELECT 1 FROM sessions WHERE user_id = ? AND token_hash = ? AND expires_at > ?", owner.id, owner.proofHash, now())
+    : one("SELECT 1 FROM account_recovery WHERE user_id = ? AND token_hash = ? AND expires_at > ?", owner.id, owner.proofHash, now());
+  if (!valid) throw new HttpError(401, "invalid_credentials", "A comprovação anterior expirou ou já foi utilizada");
+  return current;
+}
+
 export function authRoutes(app: FastifyInstance): void {
+  app.addHook("preValidation", async (req,reply) => {
+    await validateDpopRequest(req,reply);
+    if (req.method === "POST" && /(?:^|\/)auth\//.test(req.routeOptions.url ?? "")) authAttempt(req);
+  });
   app.get("/media/config", async (req, reply) => {
     requireUser(req);
     reply.header("Cache-Control", "no-store");
@@ -79,7 +137,9 @@ export function authRoutes(app: FastifyInstance): void {
       protocol: PROTOCOL_VERSION,
       registrationOpen: registration !== "closed",
       registration,
-      discordLogin: discordLoginEnabled(),
+      accountMode: config.accountMode,
+      crypto: { version: 1, protocol: "MLS-RFC9420", instanceId: cryptoInstanceId(), dpopNonce,media:mediaProtection },
+      discordLogin: false,
       globalServerId: globalLoginAvailable() ? globalServerId() : null,
     };
   });
@@ -89,6 +149,7 @@ export function authRoutes(app: FastifyInstance): void {
   app.post("/auth/global/challenge", async () => ({ challenge: newChallenge() }));
 
   app.post("/auth/global", async (req): Promise<AuthResponse> => {
+    requireAccountMode("global");
     const body = parse(globalLogin, req.body);
     const identity = verifyGlobalProof(body);
     const existing = one<{ id: string; banned_at: string | null; ban_reason: string }>("SELECT id, banned_at, ban_reason FROM users WHERE global_id = ?", identity);
@@ -116,53 +177,73 @@ export function authRoutes(app: FastifyInstance): void {
     return { token: createSession(id), user: ownUser(id) };
   });
 
-  // Items 1.7 and 1.9: a local account starts signing in with Annoy Global too.
-  // Being logged in proves the local account; the proof, the global one.
-  app.post("/users/@me/global", async (req) => {
-    const userId = requireUser(req);
-    const identity = verifyGlobalProof(parse(globalProof, req.body));
-    const holder = one<{ username: string; id: string }>("SELECT id, username FROM users WHERE global_id = ?", identity);
-    // The global account already made its own user here: that's a merge (item 1.9), not a link.
-    if (holder && holder.id !== userId) throw new HttpError(409, "global_in_use", `Sua conta global já tem o usuário @${holder.username} neste servidor`);
-    run("UPDATE users SET global_id = ? WHERE id = ?", identity, userId);
-    return ownUser(userId);
+  app.post('/auth/device-bind',async req=>{
+    const user=requireUser(req),token=bearerToken(req)!;
+    const body=parse(z.object({deviceId:z.string().regex(/^[A-Za-z0-9_-]{43}$/),proof:z.string().max(8192)}).strict(),req.body);
+    activeDevice(body.deviceId,user);
+    if(boundDevice(token) && boundDevice(token)!==body.deviceId)throw forbidden('Sessão já vinculada a outro dispositivo');
+    await verifyDpop(token,body.proof,'POST',new URL(req.url,config.publicUrl||`${req.protocol}://${req.host}`).toString(),body.deviceId);
+    if(!userIdForToken(token))throw unauthorized();
+    run('UPDATE sessions SET device_id=?,expires_at=? WHERE token_hash=?',body.deviceId,new Date(Date.now()+24*3600000).toISOString(),hashToken(token));
+    sessionChanged(hashToken(token),'rebound');
+    return {tokenType:'DPoP',deviceId:body.deviceId};
   });
 
-  // Item 1.9: the same person has a local user and a global-made user here.
-  // Proven twice: logged in as the local one (and its password, if it has one),
-  // and the global proof for the other. The local user keeps everything of both.
-  app.post("/users/@me/global/merge", async (req) => {
-    const userId = requireUser(req);
-    const body = parse(globalProof.extend({ password: z.string().max(256).optional() }), req.body);
-    const me = one<{ password_hash: string; global_id: string | null; banned_at: string | null; ban_reason: string }>(
-      "SELECT password_hash, global_id, banned_at, ban_reason FROM users WHERE id = ?",
-      userId,
-    )!;
-    if (me.password_hash.startsWith("scrypt$") && !(body.password && (await verifyPassword(body.password, me.password_hash)))) {
-      throw new HttpError(401, "invalid_credentials", "Senha incorreta");
-    }
-    if (me.global_id) throw conflict("Esta conta já entra com uma conta global");
+  // Migration credentials never create an ordinary session on their own.
+  app.post("/auth/migration/status", async (req) => {
+    const row = migrationSession(req);
+    return row ? { username: row.username, accountMode: config.accountMode,
+      pending: config.accountMode === "global" ? !row.global_id : !(row.password_hash.startsWith("scrypt$") || row.password_hash.startsWith("$argon2id$")) }
+      : { accountMode: config.accountMode, pending: false };
+  });
+
+  app.post("/auth/migrate/global", async (req): Promise<AuthResponse & { removedUserId: string | null }> => {
+    requireAccountMode("global");
+    const body = parse(globalProof.extend(migrationCredentials.shape), req.body);
+    const owner = await migrationOwner(req, body);
+    const current = confirmMigrationOwner(owner);
+    if (current.global_id && current.global_id !== owner.global_id) throw conflict("Esta conta já foi migrada; entre com a conta Annoy");
     const identity = verifyGlobalProof(body);
-    const other = one<{ id: string; banned_at: string | null; ban_reason: string }>("SELECT id, banned_at, ban_reason FROM users WHERE global_id = ?", identity);
-    if (!other) throw notFound("Usuário da conta global");
-    if (other.id === userId) return { user: ownUser(userId), removedUserId: null };
-    // A ban on either side must not be shed by merging.
-    refuseBanned(me);
-    refuseBanned(other);
-    mergeUsers(userId, other.id);
-    return { user: ownUser(userId), removedUserId: other.id };
+    const holder = one<MigrationUser>("SELECT * FROM users WHERE global_id = ?", identity);
+    if (holder) refuseBanned(holder);
+    if (owner.global_id && owner.global_id !== identity) throw conflict("Esta conta já utiliza outra conta Annoy");
+    if (holder && holder.id !== owner.id) {
+      if (owner.global_id) throw conflict("Esta conta já utiliza uma conta Annoy");
+      mergeUsers(owner.id, holder.id);
+    }
+    tx(() => {
+      run("UPDATE users SET global_id = ?, password_hash = '!' WHERE id = ?", identity, owner.id);
+      run("DELETE FROM account_recovery WHERE user_id = ?", owner.id);
+      deleteSessionsOf(owner.id);
+    });
+    return { token: createSession(owner.id), user: ownUser(owner.id), removedUserId: holder && holder.id !== owner.id ? holder.id : null };
   });
 
-  app.delete("/users/@me/global", async (req) => {
-    const userId = requireUser(req);
-    const row = one<{ password_hash: string }>("SELECT password_hash FROM users WHERE id = ?", userId)!;
-    // Without a password the account would have no way in left.
-    if (!row.password_hash.startsWith("scrypt$")) throw badRequest("Defina uma senha local antes de desligar a conta global");
-    run("UPDATE users SET global_id = NULL WHERE id = ?", userId);
-    return ownUser(userId);
+  app.post("/auth/migrate/local", async (req): Promise<AuthResponse> => {
+    requireAccountMode("local");
+    const body = parse(migrationCredentials.extend({ newPassword: z.string().min(LIMITS.passwordMin).max(256) }), req.body);
+    const owner = await migrationOwner(req, body);
+    if (owner.password_hash.startsWith("scrypt$")) throw conflict("Esta conta já tem senha local; entre normalmente");
+    const passwordHash = await hashPassword(body.newPassword);
+    tx(() => {
+      const current = confirmMigrationOwner(owner);
+      if (current.password_hash !== owner.password_hash) throw conflict("Esta conta já foi migrada; entre com a senha local");
+      run("UPDATE users SET password_hash = ?, global_id = NULL WHERE id = ?", passwordHash, owner.id);
+      run("DELETE FROM account_recovery WHERE user_id = ?", owner.id);
+      deleteSessionsOf(owner.id);
+    });
+    return { token: createSession(owner.id), user: ownUser(owner.id) };
+  });
+
+  for (const path of ["/users/@me/global", "/users/@me/global/merge"]) {
+    app.post(path, async () => { throw new HttpError(410, "migration_required", "Use o fluxo de migração de contas desta versão"); });
+  }
+  app.delete("/users/@me/global", async () => {
+    throw new HttpError(403, "account_mode", "O modo de conta é definido exclusivamente pelo servidor");
   });
 
   app.post("/auth/register", async (req): Promise<AuthResponse> => {
+    requireAccountMode("local");
     const body = parse(registerBody, req.body);
     const invite = checkRegistration(body.inviteCode);
     if (RESERVED_USERNAME.test(body.username)) throw badRequest('Os prefixos "dc." e "deleted." são reservados');
@@ -182,15 +263,31 @@ export function authRoutes(app: FastifyInstance): void {
   });
 
   app.post("/auth/login", async (req): Promise<AuthResponse> => {
+    requireAccountMode("local");
     const body = parse(loginBody, req.body);
     const row = one<{ id: string; password_hash: string; banned_at: string | null; ban_reason: string }>(
       "SELECT id, password_hash, banned_at, ban_reason FROM users WHERE username = ?",
       body.username,
     );
-    if (!row || !(await verifyPassword(body.password, row.password_hash))) {
+    if (!row) {
+      await spendPasswordTime(body.password);
+      throw new HttpError(401, "invalid_credentials", "Usuário ou senha incorretos");
+    }
+    if (!(await verifyPassword(body.password, row.password_hash))) {
       throw new HttpError(401, "invalid_credentials", "Usuário ou senha incorretos");
     }
     refuseBanned(row);
+    let expectedHash = row.password_hash;
+    if (row.password_hash.startsWith("scrypt$")) {
+      const upgraded = await hashPassword(body.password);
+      run("UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?", upgraded, row.id, row.password_hash);
+      expectedHash = upgraded;
+    }
+    const current = one<{ password_hash: string; global_id: string | null; banned_at: string | null }>("SELECT password_hash, global_id, banned_at FROM users WHERE id = ?", row.id);
+    if (!current || current.banned_at || current.global_id ||
+      current.password_hash !== expectedHash) {
+      throw new HttpError(401, "invalid_credentials", "Usuário ou senha incorretos");
+    }
     return { token: createSession(row.id), user: ownUser(row.id) };
   });
 

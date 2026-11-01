@@ -10,12 +10,14 @@ import sharp from "sharp";
 
 const tempRoot = resolve(tmpdir());
 const directory = await mkdtemp(join(tempRoot, "distopic-profile-test-"));
+process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
-process.env.DISTOPIC_DATA_DIR = directory;
 const { authRoutes } = await import("../src/routes/auth.ts");
 const { channelRoutes } = await import("../src/routes/channels.ts");
 const { HttpError } = await import("../src/errors.ts");
 const { db, run } = await import("../src/db.ts");
+// Isolated historical fixture connection, never a live HTTP option.
+db.function("annoy_legacy_source_write",()=>1);
 const { createSession } = await import("../src/auth.ts");
 const { writeBlob } = await import("../src/uploads.ts");
 const app = Fastify();
@@ -91,16 +93,18 @@ test("uploaded media supports full, partial, suffix and unsatisfiable ranges", a
   run("INSERT INTO channels(id, type, name, created_at) VALUES ('dm', 'dm', '', '2026-01-01')");
   run("INSERT INTO messages(id, channel_id, author_id, content, created_at) VALUES ('message', 'dm', 'person', '', '2026-01-01')");
   run("INSERT INTO attachments(id, message_id, filename, size, content_type) VALUES (?, 'message', 'song.wav', 10, 'audio/wav')", id);
+  run("INSERT INTO dm_recipients VALUES('dm','person')");
   const url = `/uploads/${id}/song.wav`;
-  const partial = await app.inject({ url, headers: { range: "bytes=2-5" } });
+  assert.equal((await app.inject({url})).statusCode,401);
+  const partial = await app.inject({ url, headers: { authorization,range: "bytes=2-5" } });
   assert.equal(partial.statusCode, 206);
   assert.equal(partial.body, "2345");
   assert.equal(partial.headers["content-range"], "bytes 2-5/10");
-  const suffix = await app.inject({ url, headers: { range: "bytes=-3" } });
+  const suffix = await app.inject({ url, headers: { authorization,range: "bytes=-3" } });
   assert.equal(suffix.statusCode, 206);
   assert.equal(suffix.body, "789");
-  assert.equal((await app.inject({ url })).body, "0123456789");
-  const invalid = await app.inject({ url, headers: { range: "bytes=99-100" } });
+  assert.equal((await app.inject({ url,headers:{authorization} })).body, "0123456789");
+  const invalid = await app.inject({ url, headers: { authorization,range: "bytes=99-100" } });
   assert.equal(invalid.statusCode, 416);
   assert.equal(invalid.headers["content-range"], "bytes */10");
 });

@@ -7,16 +7,17 @@ import Fastify from "fastify";
 import type { WebSocket } from "ws";
 
 const directory = await mkdtemp(join(tmpdir(), "annoy-disconnect-"));
+process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
 process.env.ANNOY_VOICE_BACKEND = "cloudflare";
 process.env.ANNOY_CF_SFU_APP_ID = "test-app";
 process.env.ANNOY_CF_SFU_APP_TOKEN = "test-token";
-process.env.ANNOY_GLOBAL = "off";
+delete process.env.ANNOY_GLOBAL;
 const { db, run } = await import("../src/db.ts");
 const { Connection, register, unregister } = await import("../src/events.ts");
 const voice = await import("../src/voice-cloudflare.ts");
 const { createSession } = await import("../src/auth.ts");
-const { callRoutes, handleCall, endAllCalls } = await import("../src/calls.ts");
+const { callRoutes, handleCall, handleDirectCallMedia, endAllCalls } = await import("../src/calls.ts");
 const { DEFAULT_EVERYONE_PERMISSIONS } = await import("@distopic/protocol");
 for (const id of ["a", "b"]) {
   run("INSERT INTO users(id,username,display_name,password_hash,created_at) VALUES(?,?,?,'!','2026-01-01')", id, id, id);
@@ -60,8 +61,8 @@ after(async () => {
 });
 
 test('losing a gateway revokes both published and received Cloudflare tracks without a grace period', async () => {
-  await voice.handleVoice(a.conn, 'join', { channelId: 'room' });
-  await voice.handleVoice(b.conn, 'join', { channelId: 'room' });
+  await voice.handleVoice(a.conn, 'join', { channelId: 'room',protection:'transport_only_acknowledged' });
+  await voice.handleVoice(b.conn, 'join', { channelId: 'room',protection:'transport_only_acknowledged' });
   const published = await voice.handleVoice(a.conn, 'publish', { kind: 'audio', source: 'mic', mid: 'mic-mid', sdp: 'v=0' }) as { producerId: string };
   await voice.handleVoice(b.conn, 'subscribe', { producerId: published.producerId });
   const before = requests.length;
@@ -78,7 +79,7 @@ test('an old client cannot resume a previous media session', async () => {
 });
 
 test('a publish finishing after disconnect is revoked instead of resurrecting a peer', async () => {
-  await voice.handleVoice(a.conn, 'join', { channelId: 'room' });
+  await voice.handleVoice(a.conn, 'join', { channelId: 'room',protection:'transport_only_acknowledged' });
   let finish!: (response: Response) => void;
   deferPublish = () => new Promise<Response>(resolve => { finish = resolve; });
   const pending = voice.handleVoice(a.conn, 'publish', { kind: 'video', source: 'screen', mid: 'late-mid', sdp: 'v=0' });
@@ -90,11 +91,36 @@ test('a publish finishing after disconnect is revoked instead of resurrecting a 
   assert.equal(voice.voiceStatesFor('server').some(s => s.userId === 'a'), false);
 });
 
+test('encrypted private calls relay only MLS media messages and never downgrade on accept', async () => {
+  const start = async () => {
+    const response = await app.inject({ method: 'POST', url: '/calls', headers: { authorization: `Bearer ${createSession('a')}` }, payload: { userId: 'b', video: false, protection: 'sframe', deviceId: 'a' } });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+  const refused = await start();
+  assert.equal(refused.protection, 'sframe');
+  handleCall(b.conn, { op: 'call', callId: refused.id, action: 'accept', protection: 'transport_only_acknowledged', deviceId: 'b' });
+  assert.ok(a.events.some(e => e.t === 'CALL_UPDATE' && e.d.id === refused.id && e.d.status === 'ended' && /atualizar/.test(e.d.reason)));
+  await new Promise(resolve => setTimeout(resolve, 3100));
+  const call = await start();
+  assert.throws(() => handleDirectCallMedia(a.conn, 'mediaCreate', { directCall: call.id, callId: 'x'.repeat(22) }), /indisponível/);
+  handleCall(b.conn, { op: 'call', callId: call.id, action: 'accept', protection: 'sframe', deviceId: 'b' });
+  const binding = (userId: string) => ({ userId, deviceId: userId, mediaKey: 'key-' + userId, signature: 'sig-' + userId });
+  assert.deepEqual(handleDirectCallMedia(a.conn, 'mediaCreate', { directCall: call.id, callId: 'x'.repeat(22), binding: binding('a') }), { created: true, callId: 'x'.repeat(22), epoch: 0 });
+  handleDirectCallMedia(b.conn, 'mediaPropose', { directCall: call.id, callId: 'x'.repeat(22), keyPackage: 'kp-b', binding: binding('b') });
+  const proposals = a.events.filter(e => e.t === 'VOICE_MEDIA').at(-1)!.d as any;
+  assert.equal(proposals.channelId, 'call:' + call.id);
+  assert.equal(proposals.adds[0].keyPackage, 'kp-b');
+  handleCall(a.conn, { op: 'call', callId: call.id, action: 'end', deviceId: 'a' });
+  assert.throws(() => handleDirectCallMedia(a.conn, 'mediaCommit', { directCall: call.id, callId: 'x'.repeat(22), epoch: 0, commit: 'c' }), /indisponível/);
+  await new Promise(resolve => setTimeout(resolve, 3100));
+});
+
 test('shutdown ends active private calls and ignores persisted handoffs from older servers', async () => {
-  const response = await app.inject({ method: 'POST', url: '/calls', headers: { authorization: `Bearer ${createSession('a')}` }, payload: { userId: 'b', video: true, deviceId: 'a' } });
+  const response = await app.inject({ method: 'POST', url: '/calls', headers: { authorization: `Bearer ${createSession('a')}` }, payload: { userId: 'b', video: true, protection:'transport_only_acknowledged',deviceId: 'a' } });
   assert.equal(response.statusCode, 200, response.body);
   const call = response.json();
-  handleCall(b.conn, { op: 'call', callId: call.id, action: 'accept', deviceId: 'b' });
+  handleCall(b.conn, { op: 'call', callId: call.id, action: 'accept',protection:'transport_only_acknowledged', deviceId: 'b' });
   run("INSERT OR REPLACE INTO instance_settings(key,value) VALUES('handoff.calls',?)", JSON.stringify({ at: Date.now(), calls: [call] }));
   endAllCalls();
   assert.ok(a.events.some(e => e.t === 'CALL_UPDATE' && e.d.id === call.id && e.d.status === 'ended'));
@@ -109,5 +135,5 @@ test('shutdown revokes every remaining track and refuses further voice operation
   assert.deepEqual(voice.voiceStatesFor('server'), []);
   assert.ok(b.events.some(e => e.t === 'VOICE_KICKED'));
   assert.ok(requests.some(r => r.path.endsWith('/tracks/close') && r.body.tracks.some((t: any) => t.mid === 'last-mid')));
-  await assert.rejects(voice.handleVoice(a.conn, 'join', { channelId: 'room' }), /encerrada/);
+  await assert.rejects(voice.handleVoice(a.conn, 'join', { channelId: 'room',protection:'transport_only_acknowledged' }), /encerrada/);
 });

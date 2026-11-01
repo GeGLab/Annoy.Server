@@ -62,11 +62,18 @@ export async function deleteAccount(userId: string, options: { deleteMessages: b
 
 /**
  * Item 1.9: one person, two users on this server (a local one and the one their
- * global account made). Everything of `drop` moves to `keep`, which then signs
- * in with the global account too, and `drop` is removed. One transaction: it
+ * Annoy account made). Everything of `drop` moves to `keep`, which signs
+ * in with the Annoy account, and `drop` is removed. One transaction: it
  * all moves or nothing does.
  */
 export function mergeUsers(keep: string, drop: string): void {
+  // MLS credentials and historical authorship bind immutable instance user IDs.
+  // A credential merge must never turn one principal into another.
+  if (one("SELECT 1 FROM sqlite_master WHERE name = 'crypto_devices'") &&
+      one("SELECT 1 FROM crypto_devices WHERE user_id IN (?,?) LIMIT 1",keep,drop))
+    throw conflict("Contas com dispositivos criptográficos não podem ser unificadas. Preserve os IDs e use a migração explícita de modo de autenticação.");
+  if (one("SELECT 1 FROM messages WHERE author_id IN (?,?) OR mention_ids LIKE ? OR mention_ids LIKE ? LIMIT 1",keep,drop,`%"${keep}"%`,`%"${drop}"%`))
+    throw conflict("Contas com histórico não podem ser unificadas sem alterar sua autoria. Preserve ambas as contas e migre o modo explicitamente.");
   const copy = (table: string, column: string, where = "") => {
     const cols = (all<{ name: string }>(`PRAGMA table_info(${table})`)).map((c) => c.name);
     const select = cols.map((c) => (c === column ? "?" : c)).join(", ");

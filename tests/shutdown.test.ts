@@ -9,7 +9,7 @@ import { WebSocket } from "ws";
 
 test('SIGTERM in the real server ends private calls before closing gateways and exits cleanly', { timeout: 15_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'annoy-shutdown-'));
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env: { ...process.env, ANNOY_DATA_DIR: directory, ANNOY_GLOBAL: 'off', ANNOY_HOST: '127.0.0.1', ANNOY_PORT: '0', ANNOY_REGISTRATION: 'open', ANNOY_VOICE_BACKEND: 'cloudflare', ANNOY_CF_SFU_APP_ID: 'test', ANNOY_CF_SFU_APP_TOKEN: 'test' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env: { ...process.env, ANNOY_DATA_DIR: directory, ANNOY_GLOBAL: undefined, ANNOY_ACCOUNT_MODE: 'local', ANNOY_HOST: '127.0.0.1', ANNOY_PORT: '0', ANNOY_REGISTRATION: 'open', ANNOY_VOICE_BACKEND: 'cloudflare', ANNOY_CF_SFU_APP_ID: 'test', ANNOY_CF_SFU_APP_TOKEN: 'test' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const exit = once(child, 'exit');
   const sockets: WebSocket[] = [];
   let errors = '';
@@ -45,8 +45,8 @@ test('SIGTERM in the real server ends private calls before closing gateways and 
       return { ws, events };
     };
     const ca = await connect(a, 'a'), cb = await connect(b, 'b');
-    const call = await api('/calls', { userId: b.user.id, video: true, deviceId: 'a' }, a.token);
-    cb.ws.send(JSON.stringify({ op: 'call', callId: call.id, action: 'accept', deviceId: 'b' }));
+    const call = await api('/calls', { userId: b.user.id, video: true, protection:'transport_only_acknowledged',deviceId: 'a' }, a.token);
+    cb.ws.send(JSON.stringify({ op: 'call', callId: call.id, action: 'accept',protection:'transport_only_acknowledged', deviceId: 'b' }));
     while (!ca.events.some(e => e.t === 'CALL_UPDATE' && e.d.status === 'active')) await once(ca.ws, 'message');
     const closed = Promise.all(sockets.map(socket => once(socket, 'close')));
     child.kill('SIGTERM');

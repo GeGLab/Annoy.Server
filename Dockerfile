@@ -12,10 +12,13 @@ COPY packages/protocol packages/protocol
 RUN npm ci --omit=dev
 
 COPY src src
+COPY scripts scripts
 
 ENV ANNOY_DATA_DIR=/data \
     ANNOY_PORT=8787 \
     ANNOY_VOICE_PORT=40000
+RUN install -d -o node -g node -m 0700 /data
+USER node
 VOLUME /data
 EXPOSE 8787/tcp 40000/udp 40000/tcp
 
