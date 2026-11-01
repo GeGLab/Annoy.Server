@@ -360,7 +360,7 @@ export function authRoutes(app: FastifyInstance): void {
     if (row.password_hash !== "!" && !(await verifyPassword(body.password ?? "", row.password_hash))) {
       throw new HttpError(401, "invalid_credentials", "Senha incorreta");
     }
-    await deleteAccount(userId, { deleteMessages: body.deleteMessages });
+    await deleteAccount(userId);
     return {};
   });
 }

@@ -204,7 +204,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const q = parse(deleteQuery, req.query);
     const owned = ownedServerNames(req.params.id);
     if (owned.length > 0) throw conflict(`Esta conta é dona de servidores; exclua-os antes: ${owned.join(", ")}`);
-    await deleteAccount(req.params.id, { deleteMessages: q.deleteMessages === "1" });
+    await deleteAccount(req.params.id);
     return {};
   });
 

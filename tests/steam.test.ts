@@ -179,7 +179,7 @@ test("failed, private and non-Steam game lookups clear activity", async () => {
 
 test("account deletion erases the Steam link and merging transfers it", async () => {
   run("INSERT INTO steam_connections VALUES('deleted', '76561198000000004', '2026-01-01')");
-  await deleteAccount("deleted", { deleteMessages: false });
+  await deleteAccount("deleted");
   assert.equal(steamStatus("deleted").connection, null);
   run("UPDATE users SET global_id = 'synthetic-global-id' WHERE id = 'drop'");
   run("INSERT INTO steam_connections VALUES('drop', '76561198000000005', '2026-01-01')");

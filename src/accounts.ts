@@ -26,38 +26,50 @@ export function ownedServerNames(userId: string): string[] {
 }
 
 /**
- * Deletes an account. The row stays as an anonymous "deleted user" so other
- * people's conversations keep their shape; personal data is erased. With
- * `deleteMessages`, the user's messages and attachments are removed too.
+ * Deletes an account and everything linked to it: messages, files, reactions, direct
+ * conversations, invites, devices and encrypted deliveries, then the user row itself.
+ * Nothing is left behind as a "deleted user". The person must hand over owned servers first.
  */
-export async function deleteAccount(userId: string, options: { deleteMessages: boolean }): Promise<void> {
+export async function deleteAccount(userId: string): Promise<void> {
   const avatar = getUser(userId)?.avatarUrl;
   const owned = ownedServerNames(userId);
   if (owned.length > 0) throw conflict(`Exclua ou transfira estes servidores antes: ${owned.join(", ")}`);
   const servers = all<{ server_id: string }>("SELECT server_id FROM members WHERE user_id = ?", userId).map((r) => r.server_id);
-  const blobs = options.deleteMessages
-    ? all<{ id: string }>("SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.author_id = ?", userId).map(
-        (r) => r.id,
-      )
-    : [];
+  const dms = all<{ channel_id: string }>("SELECT channel_id FROM dm_recipients WHERE user_id = ?", userId).map((r) => r.channel_id);
+  // Files of the person's messages and of every conversation that disappears with the account.
+  const blobs = all<{ id: string }>(
+    `SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.author_id = ?${dms.length ? ` OR m.channel_id IN (${dms.map(() => "?").join(",")})` : ""}`,
+    userId, ...dms,
+  ).map((r) => r.id);
+  const has = (table: string) => !!one("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?", table);
+  const devices = has("crypto_devices") ? all<{ id: string }>("SELECT id FROM crypto_devices WHERE user_id = ?", userId).map((r) => r.id) : [];
   disconnectEverywhere(userId, "Conta excluída");
+  const each = (ids: string[], sql: (marks: string) => string) => { if (ids.length) run(sql(ids.map(() => "?").join(",")), ...ids); };
   tx(() => {
-    if (options.deleteMessages) run("DELETE FROM messages WHERE author_id = ?", userId);
-    run("DELETE FROM steam_connections WHERE user_id = ?", userId);
-    run("DELETE FROM members WHERE user_id = ?", userId);
-    run("DELETE FROM relationships WHERE user_id = ? OR other_id = ?", userId, userId);
-    run(
-      // The Global link goes too: signing in again creates a new account, never this placeholder.
-      `UPDATE users SET username = ?, display_name = 'Usuário excluído', password_hash = '!', discord_id = NULL, global_id = NULL,
-              avatar_url = NULL, imported_from = NULL, is_admin = 0, banned_at = NULL, ban_reason = '' WHERE id = ?`,
-      `deleted.${userId}`,
-      userId,
-    );
+    each(dms, (marks) => `DELETE FROM channels WHERE id IN (${marks})`);
+    run("DELETE FROM messages WHERE author_id = ?", userId);
+    run("DELETE FROM invites WHERE creator_id = ?", userId);
+    run("DELETE FROM overwrites WHERE target_type = 'member' AND target_id = ?", userId);
+    run("UPDATE channels SET created_by = NULL WHERE created_by = ?", userId);
+    if (has("code_repos")) run("UPDATE code_repos SET linked_by = NULL WHERE linked_by = ?", userId);
+    if (has("crypto_blobs")) run("DELETE FROM crypto_blobs WHERE owner_id = ?", userId);
+    if (has("crypto_cancelled_envelopes")) run("DELETE FROM crypto_cancelled_envelopes WHERE user_id = ?", userId);
+    if (has("legacy_archive_receipts")) run("DELETE FROM legacy_archive_receipts WHERE user_id = ?", userId);
+    if (has("crypto_envelopes")) each(devices, (marks) => `DELETE FROM crypto_envelopes WHERE device_id IN (${marks})`);
+    if (has("device_key_packages")) {
+      each(devices, (marks) => `DELETE FROM device_key_packages WHERE device_id IN (${marks})`);
+      run("UPDATE device_key_packages SET claimed_by = NULL WHERE claimed_by = ?", userId);
+    }
+    if (has("crypto_devices")) {
+      each(devices, (marks) => `UPDATE crypto_devices SET approved_by = NULL WHERE approved_by IN (${marks})`);
+      run("DELETE FROM crypto_devices WHERE user_id = ?", userId);
+    }
+    if (has("device_challenges")) run("DELETE FROM device_challenges WHERE user_id = ?", userId);
+    // Sessions, memberships, roles, bans, relationships, reactions, Steam and recovery cascade.
+    run("DELETE FROM users WHERE id = ?", userId);
   });
   await discardBlobs(blobs);
   await discardAvatar(avatar);
-  const user = getUser(userId);
-  if (user) sendToAudience(userId, { t: "USER_UPDATE", d: user });
   for (const serverId of servers) serverChanged(serverId);
 }
 
