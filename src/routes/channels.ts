@@ -1,15 +1,16 @@
-import { ALL_PERMISSIONS, has, hasMessages, LIMITS, MESSAGE_TTLS, parseMentions, Permission, type Channel, type Message } from "@distopic/protocol";
+import { ALL_PERMISSIONS, has, hasMessages, LIMITS, MESSAGE_TTLS, parseMentions, Permission, type Channel, type ChannelFilePage, type Message } from "@distopic/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireLegacyWrite, cryptoChannel } from "../crypto-delivery.ts";
 import { requireUser } from "../auth.ts";
 import { all, now, one, run, tx } from "../db.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../errors.ts";
-import { sendToChannel, serverChanged } from "../events.ts";
+import { sendToChannel, sendToUser, serverChanged } from "../events.ts";
+import { advanceRead, messageWindow, readState } from "../history.ts";
 import { newId, secretId } from "../ids.ts";
 import { maxUploadBytes } from "../instance.ts";
 import { requireChannel, requireServer } from "../perms.ts";
-import { dmRecipientIds, getChannel, getMessage, getMessages, isMember } from "../repo.ts";
+import { dmRecipientIds, getChannel, getMessage, getMessages, getUser, isMember } from "../repo.ts";
 import { discardBlobs, readBlob, writeBlob } from "../uploads.ts";
 import { byteRange } from "../ranges.ts";
 import { uploadsRemoved } from "../playback.ts";
@@ -39,6 +40,12 @@ const listQuery = z.object({
   around: z.string().max(100).optional(),
   before: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+const fileListQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).max(100_000_000).default(0),
+  q: z.string().trim().max(100).default(""),
+  sort: z.enum(["recent", "name", "size"]).default("recent"),
 });
 
 interface StagedFile {
@@ -90,6 +97,17 @@ function resolveMentions(channel: Channel, content: string, perms: number): { id
 }
 
 export function channelRoutes(app: FastifyInstance): void {
+  app.get("/users/@me/read-states", async req => {
+    const userId=requireUser(req);
+    const ids=all<{id:string}>("SELECT channel_id AS id FROM dm_recipients WHERE user_id=? UNION SELECT c.id FROM channels c JOIN members m ON m.server_id=c.server_id WHERE m.user_id=?",userId,userId).map(row=>row.id);
+    return ids.flatMap(id=>{
+      try {
+        const {channel}=requireChannel(id,userId);
+        if(!hasMessages(channel.type))return [];
+        return [readState(channel.id,userId)];
+      } catch { return []; }
+    });
+  });
   app.patch<Params<"id">>("/channels/:id", async (req) => {
     const userId = requireUser(req);
     const { channel } = requireChannel(req.params.id, userId);
@@ -152,6 +170,30 @@ export function channelRoutes(app: FastifyInstance): void {
 
   // Messages ---------------------------------------------------------------
 
+  app.get<Params<"id">>("/channels/:id/files", async (req): Promise<ChannelFilePage> => {
+    const { channel } = requireChannel(req.params.id, requireUser(req));
+    if (channel.type !== "files") throw badRequest("Este canal não é de arquivos");
+    const query = parse(fileListQuery, req.query);
+    const search = "%" + query.q.replace(/[\\%_]/g, "\\$&") + "%";
+    const where = "a.message_id=m.id AND m.channel_id=? AND (?='' OR a.filename LIKE ? ESCAPE '\\' COLLATE NOCASE OR m.content LIKE ? ESCAPE '\\' COLLATE NOCASE OR u.username LIKE ? ESCAPE '\\' COLLATE NOCASE OR u.display_name LIKE ? ESCAPE '\\' COLLATE NOCASE)";
+    const params = [channel.id, query.q, search, search, search, search];
+    const total = one<{ total: number }>("SELECT COUNT(*) AS total FROM attachments a JOIN messages m ON m.id=a.message_id JOIN users u ON u.id=m.author_id WHERE " + where, ...params)?.total ?? 0;
+    const order = query.sort === "name" ? "a.filename COLLATE NOCASE ASC, a.id ASC"
+      : query.sort === "size" ? "a.size DESC, a.id ASC"
+      : "m.created_at DESC, m.id DESC, a.id DESC";
+    const rows = all<{ message_id: string; attachment_id: string }>(
+      "SELECT m.id AS message_id, a.id AS attachment_id FROM attachments a JOIN messages m ON m.id=a.message_id JOIN users u ON u.id=m.author_id WHERE " + where + " ORDER BY " + order + " LIMIT ? OFFSET ?",
+      ...params, query.limit + 1, query.offset,
+    );
+    const hasMore = rows.length > query.limit;
+    const page = rows.slice(0, query.limit).flatMap((row) => {
+      const message = getMessage(row.message_id);
+      const attachment = message?.attachments.find((item) => item.id === row.attachment_id);
+      return message && attachment ? [{ message, attachment }] : [];
+    });
+    return { files: page, nextOffset: hasMore ? query.offset + query.limit : null, total };
+  });
+
   app.get<Params<"id">>("/channels/:id/messages", async (req): Promise<Message[]> => {
     const { channel } = requireChannel(req.params.id, requireUser(req));
     if (cryptoChannel(channel.id)) throw new HttpError(409,"e2ee_required","Use o transporte MLS ou o arquivo legado identificado");
@@ -164,6 +206,56 @@ export function channelRoutes(app: FastifyInstance): void {
       return [...before,target,...after];
     }
     return getMessages(channel.id, q.before ?? null, q.limit);
+  });
+
+  // Additive cursor API. `id` is the stable, ordered key; the legacy Message[] route stays intact.
+  app.get<Params<"id">>("/channels/:id/messages/window", async (req) => {
+    const { channel } = requireChannel(req.params.id, requireUser(req));
+    if (!hasMessages(channel.type)) return { items: [], hasMoreBefore: false, hasMoreAfter: false };
+    const q = parse(z.object({ before: z.string().optional(), after: z.string().optional(), around: z.string().optional(), limit: z.coerce.number().int().min(1).max(100).default(50) }), req.query);
+    return messageWindow(channel.id,q);
+  });
+
+  app.get<Params<"id">>("/channels/:id/read-state", async (req) => {
+    const userId=requireUser(req); const {channel}=requireChannel(req.params.id,userId);
+    return readState(channel.id,userId);
+  });
+  app.put<Params<"id">>("/channels/:id/read-state", async (req) => {
+    const userId=requireUser(req); const {channel}=requireChannel(req.params.id,userId);
+    const body=parse(z.object({messageId:z.string().min(1)}),req.body);
+    const state=advanceRead(channel.id,userId,body.messageId);
+    sendToUser(userId,{t:"CHANNEL_READ_STATE",d:{userId,state}});
+    return state;
+  });
+
+  app.get<Params<"id">>("/channels/:id/pins", async (req) => {
+    const { channel } = requireChannel(req.params.id, requireUser(req));
+    const q=parse(z.object({limit:z.coerce.number().int().min(1).max(100).optional(),before:z.string().max(100).optional()}),req.query);
+    const limit=q.limit??100;
+    const rows=all<{message_id:string;pinned_by:string;pinned_at:string}>("SELECT message_id,pinned_by,pinned_at FROM pinned_messages WHERE channel_id=? AND message_id<? ORDER BY message_id DESC LIMIT ?",channel.id,q.before??"\uffff",limit+1);
+    const items=rows.slice(0,limit).flatMap(row=>{
+      const message=getMessage(row.message_id), pinnedBy=getUser(row.pinned_by);
+      return message && pinnedBy ? [{message,pinnedBy,pinnedAt:row.pinned_at}] : [];
+    });
+    return q.limit?{items,nextCursor:rows.length>limit?rows[limit-1]!.message_id:null}:items;
+  });
+  app.put<Params<"id"|"messageId">>("/channels/:id/pins/:messageId", async (req) => {
+    const userId=requireUser(req); const {channel,perms}=requireChannel(req.params.id,userId);
+    if(channel.type!=="dm" && !has(perms,Permission.MANAGE_MESSAGES)) throw forbidden();
+    const message=getMessage(req.params.messageId); if(!message || message.channelId!==channel.id) throw notFound("Mensagem");
+    if(!one("SELECT 1 FROM pinned_messages WHERE channel_id=? AND message_id=?",channel.id,message.id) && (one<{count:number}>("SELECT COUNT(*) AS count FROM pinned_messages WHERE channel_id=?",channel.id)?.count??0)>=100) throw badRequest("O canal já tem 100 mensagens fixadas. Remova uma antes de fixar outra.");
+    run("INSERT OR IGNORE INTO pinned_messages(channel_id,message_id,pinned_by,pinned_at) VALUES(?,?,?,?)",channel.id,message.id,userId,now());
+    const row=one<{pinned_by:string;pinned_at:string}>("SELECT pinned_by,pinned_at FROM pinned_messages WHERE channel_id=? AND message_id=?",channel.id,message.id)!;
+    const pinned={message,pinnedBy:getUser(row.pinned_by)!,pinnedAt:row.pinned_at};
+    sendToChannel(channel,{t:"CHANNEL_PIN_UPDATE",d:{channelId:channel.id,message:pinned,messageId:message.id}});
+    return pinned;
+  });
+  app.delete<Params<"id"|"messageId">>("/channels/:id/pins/:messageId", async (req) => {
+    const userId=requireUser(req); const {channel,perms}=requireChannel(req.params.id,userId);
+    if(channel.type!=="dm" && !has(perms,Permission.MANAGE_MESSAGES)) throw forbidden();
+    run("DELETE FROM pinned_messages WHERE channel_id=? AND message_id=?",channel.id,req.params.messageId);
+    sendToChannel(channel,{t:"CHANNEL_PIN_UPDATE",d:{channelId:channel.id,message:null,messageId:req.params.messageId}});
+    return {};
   });
 
   app.post<Params<"id">>("/channels/:id/messages", async (req) => {

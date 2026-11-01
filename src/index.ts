@@ -25,6 +25,7 @@ import { importRoutes } from "./routes/import.ts";
 import { serverRoutes } from "./routes/servers.ts";
 import { socialRoutes } from "./routes/social.ts";
 import { searchRoutes } from "./routes/search.ts";
+import { profileRoutes } from "./routes/profiles.ts";
 import { codeRoutes } from "./code.ts";
 import { playbackRoutes } from "./playback.ts";
 import { startTempRooms, tempRoomRoutes } from "./rooms.ts";
@@ -89,6 +90,7 @@ await app.register(
     socialRoutes(api);
     callRoutes(api);
     searchRoutes(api);
+    profileRoutes(api);
     importRoutes(api);
     playbackRoutes(api);
     codeRoutes(api);

@@ -10,6 +10,8 @@ import {
   type Ban,
   type Invite,
   type ChannelType,
+  type MemberPage,
+  type ServerSummaryPage,
   type ServerState,
 } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
@@ -20,7 +22,7 @@ import { badRequest, forbidden, HttpError, notFound } from "../errors.ts";
 import { sendToUser, serverChanged } from "../events.ts";
 import { inviteCode, newId } from "../ids.ts";
 import { channelPermissions, rank, requireOutranks, requireServer } from "../perms.ts";
-import { getChannels, getMembers, getRole, getRoles, getServer, getUsers, isMember } from "../repo.ts";
+import { getChannels, getMember, getMembers, getMembersPage, getRole, getRoles, getServer, getUsers, isMember, serverSummariesPage } from "../repo.ts";
 import { requireServerQuota } from "../instance.ts";
 import { discardBlobs } from "../uploads.ts";
 import { parse, type Params } from "../validate.ts";
@@ -54,6 +56,9 @@ const createInvite = z.object({
   maxUses: z.number().int().min(1).max(10_000).nullable().optional(),
   expiresInHours: z.number().min(0.5).max(24 * 30).nullable().optional(),
 });
+const memberPageQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), after: z.string().max(512).optional(), q: z.string().trim().max(100).default("") });
+const serverQuery = z.object({ membersLimit: z.coerce.number().int().min(1).max(100).optional() });
+const serverListQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), after: z.string().max(512).optional(), q: z.string().trim().max(100).default("") });
 const banBody = z.object({ reason: z.string().max(512).optional() });
 const voiceMod = z.object({ serverMute: z.boolean().optional(), disconnect: z.boolean().optional() });
 
@@ -88,14 +93,17 @@ export async function deleteServer(serverId: string, actorId: string): Promise<v
   for (const m of members) sendToUser(m.user_id, { t: "SERVER_REMOVE", d: { serverId } });
 }
 
-export function serverState(serverId: string, userId: string): ServerState {
+export function serverState(serverId: string, userId: string, membersLimit?: number): ServerState {
   const { server, perms } = requireServer(serverId, userId);
   const channels = getChannels(serverId).filter((c) => has(channelPermissions(c, userId), Permission.VIEW_CHANNEL));
+  const page = membersLimit ? getMembersPage(serverId, membersLimit, null) : null;
+  const members = page ? [getMember(serverId, userId), ...page.members].filter((member, index, all): member is NonNullable<typeof member> => !!member && all.findIndex((other) => other?.user.id === member.user.id) === index) : getMembers(serverId);
   return {
     server,
     channels,
     roles: getRoles(serverId),
-    members: getMembers(serverId),
+    members,
+    ...(page && { membersNextCursor: page.nextCursor, membersTotal: page.total }),
     voiceStates: voiceStatesFor(serverId).filter((v) => channels.some((c) => c.id === v.channelId)),
     permissions: perms,
   };
@@ -137,6 +145,11 @@ function removeMember(serverId: string, userId: string): void {
 }
 
 export function serverRoutes(app: FastifyInstance): void {
+  app.get("/servers", async (req): Promise<ServerSummaryPage> => {
+    const query = parse(serverListQuery, req.query);
+    return serverSummariesPage(requireUser(req), query.limit, query.after ?? null, query.q);
+  });
+
   // Servers ----------------------------------------------------------------
 
   app.post("/servers", async (req) => {
@@ -160,7 +173,17 @@ export function serverRoutes(app: FastifyInstance): void {
     return server;
   });
 
-  app.get<Params<"id">>("/servers/:id", async (req) => serverState(req.params.id, requireUser(req)));
+  app.get<Params<"id">>("/servers/:id", async (req): Promise<ServerState> => {
+    const query = parse(serverQuery, req.query);
+    return serverState(req.params.id, requireUser(req), query.membersLimit);
+  });
+
+  app.get<Params<"id">>("/servers/:id/members", async (req): Promise<MemberPage> => {
+    const userId = requireUser(req);
+    requireServer(req.params.id, userId);
+    const query = parse(memberPageQuery, req.query);
+    return getMembersPage(req.params.id, query.limit, query.after ?? null, query.q);
+  });
 
   app.patch<Params<"id">>("/servers/:id", async (req) => {
     const userId = requireUser(req);

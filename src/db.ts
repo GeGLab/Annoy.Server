@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS members (
   PRIMARY KEY (server_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS members_by_user ON members(user_id);
+CREATE INDEX IF NOT EXISTS members_by_user_joined_server ON members(user_id, joined_at, server_id);
 
 CREATE TABLE IF NOT EXISTS roles (
   id          TEXT PRIMARY KEY,
@@ -103,6 +104,7 @@ CREATE TABLE IF NOT EXISTS messages (
   mentions_everyone INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS messages_by_channel ON messages(channel_id, id);
+CREATE INDEX IF NOT EXISTS messages_by_channel_created ON messages(channel_id, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS attachments (
   id           TEXT PRIMARY KEY,
@@ -112,6 +114,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   content_type TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS attachments_by_message ON attachments(message_id);
+CREATE INDEX IF NOT EXISTS attachments_by_filename ON attachments(filename COLLATE NOCASE, message_id, id);
+CREATE INDEX IF NOT EXISTS attachments_by_size ON attachments(size DESC, message_id, id);
 
 CREATE TABLE IF NOT EXISTS invites (
   code       TEXT PRIMARY KEY,
@@ -313,3 +317,45 @@ CREATE TRIGGER IF NOT EXISTS crypto_plaintext_globally_disabled_update BEFORE UP
  WHEN annoy_legacy_source_write()<>1 BEGIN SELECT RAISE(ABORT,'e2ee_required'); END;
 CREATE TRIGGER IF NOT EXISTS crypto_plaintext_reactions_disabled BEFORE INSERT ON message_reactions
  WHEN annoy_legacy_source_write()<>1 BEGIN SELECT RAISE(ABORT,'e2ee_required'); END;`);
+db.exec(`CREATE TABLE IF NOT EXISTS channel_read_states (
+  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  message_id TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(channel_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS pinned_messages (
+  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  pinned_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  pinned_at TEXT NOT NULL,
+  PRIMARY KEY(channel_id, message_id)
+);`);
+db.exec(`CREATE TABLE IF NOT EXISTS profile_fields (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  audience TEXT NOT NULL DEFAULT 'self' CHECK(audience IN ('self','friends','community')),
+  PRIMARY KEY(user_id,kind)
+);
+CREATE TABLE IF NOT EXISTS profile_privacy (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  history_enabled INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS activity_history (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  connection_key TEXT NOT NULL,
+  device_id TEXT,
+  activity_key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  name TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  ended_at TEXT,
+  completed INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS activity_history_by_user ON activity_history(user_id,completed,last_seen_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS activity_history_active ON activity_history(user_id,connection_key,activity_key) WHERE completed=0;
+`);

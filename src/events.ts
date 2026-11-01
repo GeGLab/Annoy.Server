@@ -25,6 +25,11 @@ export class Connection {
       if (event.t === "ACTIVITY_UPDATE") event = { ...event, d: { ...event.d, activities: event.d.activities.filter((activity) => activity.kind !== "development") } };
       else if (event.t === "READY") event = { ...event, d: { ...event.d, activities: Object.fromEntries(Object.entries(event.d.activities ?? {}).map(([id, activities]) => [id, activities.filter((activity) => activity.kind !== "development")])) } };
     }
+    if(!this.features.has("extendedActivity")) {
+      const legacy=(activities:import("@distopic/protocol").UserActivity[])=>activities.filter(activity=>activity.kind!=="video"&&activity.kind!=="generic").slice(0,3);
+      if(event.t==="ACTIVITY_UPDATE")event={...event,d:{...event.d,activities:legacy(event.d.activities)}};
+      else if(event.t==="READY")event={...event,d:{...event.d,activities:Object.fromEntries(Object.entries(event.d.activities??{}).map(([id,activities])=>[id,legacy(activities)]))}};
+    }
     if (!this.features.has("idlePresence")) {
       if (event.t === "PRESENCE_UPDATE" && event.d.presence === "idle") event = { ...event, d: { ...event.d, presence: "online" } };
       else if (event.t === "READY") event = { ...event, d: { ...event.d, presences: Object.fromEntries(Object.entries(event.d.presences).map(([id, presence]) => [id, presence === "idle" ? "online" : presence])) } };

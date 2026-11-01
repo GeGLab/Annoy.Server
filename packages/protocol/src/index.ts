@@ -124,6 +124,12 @@ export interface ServerSummary {
   ownerId: string;
 }
 
+export interface ServerSummaryPage {
+  servers: ServerSummary[];
+  nextCursor: string | null;
+  total: number;
+}
+
 export type ChannelType = "category" | "text" | "voice" | "dm" | "files" | "code" | "theater" | "song";
 
 /** Channel types people join with voice (theater rooms also stream and watch together). */
@@ -191,6 +197,17 @@ export interface Attachment {
   url: string;
 }
 
+export interface ChannelFile {
+  attachment: Attachment;
+  message: Message;
+}
+
+export interface ChannelFilePage {
+  files: ChannelFile[];
+  nextOffset: number | null;
+  total: number;
+}
+
 export interface Message {
   sharedBy?: string;
   protection?: "e2ee" | "legacy_plaintext";
@@ -206,6 +223,45 @@ export interface Message {
   mentionIds: string[];
   mentionsEveryone: boolean;
   reactions?: { emoji: string; userIds: string[] }[];
+}
+
+export interface MessageWindow {
+  items: Message[];
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+}
+export interface ChannelReadState { channelId: string; messageId: string | null; updatedAt: string; unread?: { count:number; mention:boolean } }
+export interface PinnedMessage { message: Message; pinnedBy: User; pinnedAt: string }
+export interface PinnedMessagePage {items:PinnedMessage[];nextCursor:string|null}
+
+export const PROFILE_FIELD_KINDS=["linkedin","instagram","facebook","twitter","github","youtube","website","email","phone"] as const;
+export type ProfileFieldKind=typeof PROFILE_FIELD_KINDS[number];
+export type ProfileAudience="self"|"friends"|"community";
+export interface ProfileField {kind:ProfileFieldKind;value:string;audience:ProfileAudience}
+export interface ActivityHistoryEntry {id:string;kind:UserActivity["kind"];provider:UserActivity["provider"];name:string;startedAt:string;endedAt:string|null}
+export interface ProfileDetails {
+  user:User;
+  fields:ProfileField[];
+  hasPrivateFields:boolean;
+  history:{enabled:boolean;visibility:"visible"|"private"|"disabled";entries:ActivityHistoryEntry[]};
+}
+
+/** Shared validation for client previews and server writes. No private values belong to User. */
+export function normalizeProfileField(kind:ProfileFieldKind,raw:string):string {
+  const value=raw.trim();if(!value)return "";
+  if(value.length>2048)throw new Error("O contato deve ter no máximo 2.048 caracteres.");
+  if(kind==="email"){
+    if(value.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))throw new Error("Informe um e-mail válido.");
+    const at=value.lastIndexOf("@");return value.slice(0,at)+"@"+value.slice(at+1).toLowerCase();
+  }
+  if(kind==="phone") {if(!/^\+[1-9]\d{7,14}$/.test(value))throw new Error("Use telefone internacional, por exemplo +5511999999999.");return value;}
+  const hosts:Partial<Record<ProfileFieldKind,readonly string[]>>={linkedin:["linkedin.com"],instagram:["instagram.com"],facebook:["facebook.com"],twitter:["x.com","twitter.com"],github:["github.com"],youtube:["youtube.com","youtu.be"]};
+  const prefixes:Partial<Record<ProfileFieldKind,string>>={linkedin:"https://www.linkedin.com/in/",instagram:"https://www.instagram.com/",facebook:"https://www.facebook.com/",twitter:"https://x.com/",github:"https://github.com/",youtube:"https://www.youtube.com/@"};
+  const candidate=/^@?[\w-]+$/.test(value)&&prefixes[kind]?prefixes[kind]+value.replace(/^@/,""):value;
+  let url:URL;try{url=new URL(/^[a-z][a-z\d+.-]*:/i.test(candidate)?candidate:`https://${candidate}`);}catch{throw new Error("Informe um link HTTPS válido.");}
+  if(url.protocol!=="https:"||url.username||url.password||!url.hostname.includes("."))throw new Error("Use HTTPS, sem credenciais no link.");
+  const allowed=hosts[kind];if(allowed&&!allowed.some(host=>url.hostname===host||url.hostname.endsWith(`.${host}`)))throw new Error("O link não pertence à plataforma escolhida.");
+  return url.toString();
 }
 
 export interface Invite {
@@ -258,9 +314,17 @@ export interface ServerState {
   channels: Channel[];
   roles: Role[];
   members: Member[];
+  membersNextCursor?: string | null;
+  membersTotal?: number;
   voiceStates: VoiceState[];
   /** Server-level permissions of the requesting member. */
   permissions: number;
+}
+
+export interface MemberPage {
+  members: Member[];
+  nextCursor: string | null;
+  total: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -502,8 +566,8 @@ export interface ApiError {
 
 /** Ephemeral, opt-in desktop metadata; sent only to confirmed friends. No paths or tokens. */
 export interface UserActivity {
-  kind: "game" | "music" | "development";
-  provider: "steam" | "spotify" | "apple-music" | "vscode" | "intellij" | "dbeaver" | "ssms" | "visual-studio";
+  kind: "game" | "music" | "development" | "video" | "generic";
+  provider: "steam" | "spotify" | "apple-music" | "vscode" | "intellij" | "dbeaver" | "ssms" | "visual-studio" | "annoy-screen" | "system-media";
   name: string;
   artist?: string;
   album?: string;
@@ -585,7 +649,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; profileDetails?: boolean; extendedActivity?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
@@ -598,10 +662,13 @@ export type GatewayEvent =
   | { t: "MESSAGE_CREATE"; d: Message }
   | { t: "MESSAGE_UPDATE"; d: Message }
   | { t: "MESSAGE_DELETE"; d: { channelId: string; messageId: string } }
+  | { t: "CHANNEL_READ_STATE"; d: { userId: string; state: ChannelReadState } }
+  | { t: "CHANNEL_PIN_UPDATE"; d: { channelId: string; message: PinnedMessage | null; messageId: string } }
   | { t: "TYPING_START"; d: { channelId: string; userId: string } }
   | { t: "PRESENCE_UPDATE"; d: { userId: string; presence: Presence } }
   | { t: "ACTIVITY_UPDATE"; d: { userId: string; activities: UserActivity[] } }
   | { t: "USER_UPDATE"; d: User }
+  | { t: "PROFILE_INVALIDATE"; d: {userId:string} }
   | { t: "VOICE_STATE_UPDATE"; d: { userId: string; serverId: string; state: VoiceState | null } }
   | { t: "VOICE_NEW_PRODUCER"; d: { channelId: string; producerId: string; userId: string; kind: "audio" | "video"; source: MediaSource } }
   | { t: "VOICE_PRODUCER_CLOSED"; d: { producerId: string } }

@@ -26,7 +26,9 @@
     "test:disconnect": "node --import tsx --test tests/disconnect.test.ts tests/shutdown.test.ts",
     "account:mode": "tsx scripts/account-mode.ts",
     "test:security": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
-    "content:legacy": "tsx scripts/legacy-content.ts"
+    "content:legacy": "tsx scripts/legacy-content.ts",
+    "test:history": "node --import tsx --test tests/history.test.ts",
+    "test:privacy": "node --import tsx --test tests/profile-privacy.test.ts"
   },
   "engines": {
     "node": ">=24.7"
