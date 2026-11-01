@@ -61,7 +61,9 @@ async function applyLockedModeMigration(path: string, from: Mode, to: Mode, expe
     if (fingerprint(db) !== expected) throw new Error('Database changed during backup; plan again with service stopped');
     db.prepare("INSERT INTO instance_settings(key,value) VALUES('auth.accountMode',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(to);
     db.prepare("INSERT INTO instance_settings(key,value) VALUES('auth.lastModeMigration',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify({from,to,at:new Date().toISOString(),source:expected}));
-    db.exec('DELETE FROM sessions; DELETE FROM account_recovery; COMMIT');
+    // Databases from before account modes have no recovery table yet: the server creates it at startup.
+    const recovery = db.prepare("SELECT 1 AS x FROM sqlite_master WHERE type='table' AND name='account_recovery'").get();
+    db.exec('DELETE FROM sessions;' + (recovery ? ' DELETE FROM account_recovery;' : '') + ' COMMIT');
   } catch (error) {
     if (db.isTransaction) db.exec('ROLLBACK');
     throw error;
