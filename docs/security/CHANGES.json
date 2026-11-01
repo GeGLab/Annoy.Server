@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-11-01T03:23:46.874376+00:00",
+  "createdAt": "2026-11-01T04:31:31.954354+00:00",
   "scope": "Code, build configuration and documentation differences since private initial snapshot. Runtime data, secrets, assets and generated/security reports excluded. No source content included. Prior uncommitted changes were preserved; unchanged baseline files are not listed.",
   "repositoryHeads": {
     "annoy-server": "ba8022b392de4f39e882d994cf80647b42fd3da4",
@@ -784,7 +784,7 @@
     {
       "path": "annoy-client/tests/voice-e2ee.spec.ts",
       "status": "added",
-      "afterSha256": "ca2bfd59391ed28aedb22b6fefddf04f3d04db14569e1ede4ffe8c70e2c3915b"
+      "afterSha256": "746a81d98e8c625fda802b4bff9ccbe34fe3e882cc2bad6846a25eade7e8739c"
     },
     {
       "path": "annoy-client/tests/workspace.spec.ts",
@@ -1137,7 +1137,7 @@
       "path": "annoy-server/tests/channel-types.test.ts",
       "status": "modified",
       "beforeSha256": "89b85abd935c160ff7fe44e301103bd1c79ab9366475f33c028a4b4232b71e55",
-      "afterSha256": "69174b56b7bf0a19347bb03805a1f8fe1dd4009119ada300bf472e95a5ce40b1"
+      "afterSha256": "2fe44753e976b4fad75e5a63e6de193a74ab9d703bf495e5a205358d30f78ad5"
     },
     {
       "path": "annoy-server/tests/crypto-controller.test.ts",
@@ -1196,7 +1196,7 @@
       "path": "annoy-server/tests/global.test.ts",
       "status": "modified",
       "beforeSha256": "d47ebc9a45bc541cb56f35528bd9b373b5745d4447aff24bfe274bbe33b546cf",
-      "afterSha256": "7a63640847ddbc2b503d396762e45f923db0587b810b4669b93194a2a896ad77"
+      "afterSha256": "f655464f7d85c7865a813bfd1cdb993ac416197d895e8affc9c20bbd73948e7f"
     },
     {
       "path": "annoy-server/tests/log-confidentiality.test.ts",
@@ -1237,7 +1237,7 @@
       "path": "annoy-server/tests/shutdown.test.ts",
       "status": "modified",
       "beforeSha256": "b979ae4becedfe0e6c0c97beeb555fea3a996229e3a8a0ae730eba76c8633afe",
-      "afterSha256": "cc87c03c0f9d8b8c4c3a161dd31e990fafba6c07f3641d2e383f76bf9d00c2bc"
+      "afterSha256": "a09b5276f0fd3e760f7cf7f2eb91c9b161ec2604077dd39606cb99d2d65d2285"
     },
     {
       "path": "annoy-server/tests/social-media.test.ts",

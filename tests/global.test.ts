@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import Fastify from "fastify";
 
 const globalRepo = resolve(process.env.ANNOY_GLOBAL_REPO ?? "../annoy-api-global");
@@ -24,7 +25,7 @@ delete process.env.ANNOY_GLOBAL;
 let globalApi: ChildProcess | null = null;
 const key = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64");
 
-const kdf = skip ? null! : await import(join(globalRepo, "src/client-kdf.ts"));
+const kdf = skip ? null! : await import(pathToFileURL(join(globalRepo, "src/client-kdf.ts")).href);
 const { authRoutes } = await import("../src/routes/auth.ts");
 const { startGlobal, globalLoginAvailable, globalServerId } = await import("../src/global.ts");
 const { db, run } = await import("../src/db.ts");
@@ -74,11 +75,12 @@ before(async () => {
 });
 
 after(async () => {
-  globalApi?.kill();
+  // Windows keeps the database files locked until the process has really exited.
+  if (globalApi && globalApi.exitCode === null) { const exited = new Promise((r) => globalApi!.once("exit", r)); globalApi.kill(); await exited; }
   await app.close();
   db.close();
-  await rm(dataDir, { recursive: true, force: true });
-  await rm(globalData, { recursive: true, force: true });
+  await rm(dataDir, { recursive: true, force: true, maxRetries: 5 });
+  await rm(globalData, { recursive: true, force: true, maxRetries: 5 });
 });
 
 const G = (path: string, init?: RequestInit) => fetch(`${process.env.ANNOY_GLOBAL_URL}${path}`, init).then((r) => r.json());

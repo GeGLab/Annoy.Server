@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { WebSocket } from "ws";
 
-test('SIGTERM in the real server ends private calls before closing gateways and exits cleanly', { timeout: 15_000 }, async () => {
+// Windows has no catchable SIGTERM: kill() ends the process at once. The server ships for Linux/Docker.
+test('SIGTERM in the real server ends private calls before closing gateways and exits cleanly', { timeout: 15_000, skip: process.platform === 'win32' && 'SIGTERM cannot be handled on Windows' }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'annoy-shutdown-'));
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env: { ...process.env, ANNOY_DATA_DIR: directory, ANNOY_GLOBAL: undefined, ANNOY_ACCOUNT_MODE: 'local', ANNOY_HOST: '127.0.0.1', ANNOY_PORT: '0', ANNOY_REGISTRATION: 'open', ANNOY_VOICE_BACKEND: 'cloudflare', ANNOY_CF_SFU_APP_ID: 'test', ANNOY_CF_SFU_APP_TOKEN: 'test' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const exit = once(child, 'exit');

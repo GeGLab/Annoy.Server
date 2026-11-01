@@ -1,6 +1,6 @@
 # Entrega de segurança do Annoy
 
-Implementação incremental local, 31/10/2026. Não é uma certificação nem autorização de publicação. O código integra OpenMLS para mensagens e anexos e SFrame (RFC 9605) com chaves MLS para voz, câmera, tela e chamadas privadas, ensaiado com mediasoup real; o backend Cloudflare não foi ensaiado com o serviço real. Windows e auditoria independente permanecem pendentes.
+Implementação incremental local, 31/10/2026. Não é uma certificação nem autorização de publicação. O código integra OpenMLS para mensagens e anexos e SFrame (RFC 9605) com chaves MLS para voz, câmera, tela e chamadas privadas, ensaiado com mediasoup, Cloudflare Realtime SFU real e P2P, em Linux e numa VM Windows 11. A auditoria independente permanece pendente.
 
 1. [Relatório e situação de aceitação](REPORT.md)
 2. [Modelo de ameaças](THREAT-MODEL.md)

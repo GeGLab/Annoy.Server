@@ -25,6 +25,6 @@
 | Browser puro/web frontend | Não possui o processo nativo MLS do Electron | Mensagens protegidas exigem o desktop; frontend Global continua cuidando somente do cofre Global |
 | Senhas/tokens no cliente sem keychain | Cofre pode usar senha Argon2id explícita; tokens de login ficam somente na memória | Novo login após reiniciar, sem persistência legível |
 | Instalação/atualização | Mecanismos preservados, verificação Ed25519 obrigatória antes de instalar; sem chave de produção configurada | Releases antigos sem manifesto não instalam; bootstrap manual verificado. Authenticode e instalação real assinada ainda não validados |
-| Windows | Código/CI preparados, runtime não executado nesta máquina | Executar e registrar antes de aceitar a plataforma |
+| Windows | Suítes completas executadas numa VM Windows 11 | Hardware físico, instalador NSIS assinado, Authenticode e atualização real ainda não ensaiados |
 
 Dispositivo comprometido, XSS no documento confiável, destinatário malicioso, capturas/gravações, SSD/swap/dumps e cópias fora do aplicativo permanecem fora de uma promessa de apagamento/confidencialidade do servidor. Não há anonimato absoluto, transparência global de chaves ou proteção contra toda negação de serviço.

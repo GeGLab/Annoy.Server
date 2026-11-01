@@ -58,8 +58,8 @@ A execução integrada final (01/11/2026, Node v26.11.1, inclui mídia E2EE) pas
 | API Global | 16 testes aprovados | Conta, cofre, recuperação, tokens e migração de escrow |
 | Desktop Electron + Chromium | 58 aprovados, 1 skip Windows (inclui chamada SFrame via mediasoup e chamada privada P2P cifrada); passo nativo de maximização excluído no modo DP-5 | Inclui 9 casos de integração de segurança: modos, dois clientes MLS com anexos/edições, IPC externo/navegação, cookies, redirects e cancelamento nativo real. Outros casos usam fixtures de UI e não demonstram criptografia |
 | Builds/typechecks | Aprovados | Client/Server tipos, Rust release e renderer, frontend Global build |
-| Windows | Não executado | Workflow `annoy-client/.github/workflows/security.yml` preparado, não acionado |
-| SFU com SFrame | mediasoup real e P2P com dois Electron: aprovados. Cloudflare: não executado com o serviço real | Captura do encaminhado pelo SFU contém só frames SFrame; vídeo decodificado no destino; troca de época ao sair |
+| Windows | Aprovado em VM | Windows 11 Pro em VM QEMU/KVM, toolchain Rust MSVC (01/11/2026): Rust 12+6, cofre 10, unidades 33, atividade 19, Server 80 (1 skip: SIGTERM não capturável no Windows), Global 16, Electron 59 (1 skip: Cloudflare sem credenciais na VM), incluindo chamadas SFrame via mediasoup e P2P e o teste exclusivo do Windows. Logs em `evidence/windows/` |
+| SFU com SFrame | mediasoup real, Cloudflare Realtime SFU real e P2P com dois Electron: aprovados (Cloudflare opcional via `ANNOY_TEST_CLOUDFLARE_ENV`) | Captura do encaminhado pelo SFU contém só frames SFrame; vídeo decodificado no destino; troca de época ao sair |
 
 Os números devem ser conferidos nos logs finais, não presumidos a partir desta tabela. CI faz checkout dos repositórios irmãos: definir refs contendo as mesmas mudanças antes de interpretar o resultado. `main` ainda não contém necessariamente o trabalho local. Não existe push ou publicação implícita neste workflow.
 
@@ -85,7 +85,7 @@ Os números devem ser conferidos nos logs finais, não presumidos a partir desta
 | 16 | IPC Electron | Duas WebContents e navegação do documento da própria janela com preload não podem desbloquear cofre; prefs sandbox/isolation conferidas |
 | 17 | Autorização API | Ownership, social/profile/Steam, blobs/canais, DMs e legado; testes de não membro/IDOR. Revisão de toda API ainda necessária |
 | 18 | Logs | Processo Server real com canários em query/header/DPoP/password/body; ausência em stdout/stderr e IP no serializer |
-| 19 | Mídia através do SFU | **mediasoup e P2P aprovados** (`tests/voice-e2ee.spec.ts`): SFU encaminha só SFrame, destino decodifica, remoção rotaciona a época. Cloudflare não ensaiado com o serviço real |
+| 19 | Mídia através do SFU | **mediasoup, Cloudflare e P2P aprovados** (`tests/voice-e2ee.spec.ts`): SFU encaminha só SFrame (captura no mediasoup), frames autenticam no destino, vídeo decodifica, remoção rotaciona a época |
 | 20 | Downgrade | Modos persistidos, status/groupId pins, suite MLS fixa, API legível 409, bloqueio pré-requisição no cliente e insert por SQLite de cliente antigo negado |
 
 ## Orientação ASVS 5.0.0
@@ -114,4 +114,4 @@ A etapa [LINUX-PACKAGE.md](LINUX-PACKAGE.md) verifica o pacote local sem publica
 
 Após a execução integrada de 231 casos, a limpeza de buffers foi estendida também à saída tardia de um processo encerrado. Essa guarda foi validada novamente pelos dez testes crypto, pelo build do cliente e pelo caso Electron real com dois clientes. O pacote foi reconstruído e verificado novamente contra esse build, e os dez testes foram repetidos com seu binário Rust. `evidence/follow-up-media.json` registra esses comandos separados e hashes; eles não aumentam a contagem de casos distintos.
 
-Próximos bloqueadores: auditoria independente, Windows real, chave de produção e instalação assinada, ensaio real do Cloudflare Realtime SFU, auditoria do crate sframe e testes de carga/fault injection. Nenhum foi declarado aprovado por ausência de falha nos testes existentes.
+Próximos bloqueadores: auditoria independente, Windows em hardware físico com instalador, chave de produção e instalação assinada, auditoria do crate sframe e testes de carga/fault injection. Nenhum foi declarado aprovado por ausência de falha nos testes existentes.

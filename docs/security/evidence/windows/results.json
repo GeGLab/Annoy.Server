@@ -1,0 +1,93 @@
+{
+  "createdAt": "2026-11-01T04:30:54.478022+00:00",
+  "platform": "Windows 11 Pro (QEMU/KVM VM, 4 vCPU, 4 GiB)",
+  "node": "v26.11.1",
+  "rust": "1.99.1 x86_64-pc-windows-msvc (VS 2022 Build Tools)",
+  "source": "git archive of feat/security-e2ee plus later test portability fixes",
+  "results": [
+    {
+      "name": "native",
+      "exitCode": 0,
+      "result": "12 passed",
+      "log": "native.log",
+      "logSha256": "a5336402ce7461cbc882659d331de06efb40dadae56cd1bda558cf7754300667"
+    },
+    {
+      "name": "sframe",
+      "exitCode": 0,
+      "result": "6 passed",
+      "log": "sframe.log",
+      "logSha256": "4bb54b8178967c10aed7fd4b96807211871e897687f41dd663238a4cde6bec1d"
+    },
+    {
+      "name": "crypto-release",
+      "exitCode": 0,
+      "result": "built",
+      "log": "crypto-release.log",
+      "logSha256": "753a83e226c15483a6f93f7ab73b2a01f15a97d098a209e83d68bc2e96ccd650"
+    },
+    {
+      "name": "client-types",
+      "exitCode": 0,
+      "result": "ok",
+      "log": "client-types.log",
+      "logSha256": "93fa627fd3343ab191dd730ca2f0f038db543971b0f8f027d1317e289890b6db"
+    },
+    {
+      "name": "server-types",
+      "exitCode": 0,
+      "result": "ok",
+      "log": "server-types.log",
+      "logSha256": "c7b4dcc766a93cf2b363e2a3573be0d19a9ad638e6a3be6023674095fbd6b71a"
+    },
+    {
+      "name": "local-crypto",
+      "exitCode": 0,
+      "result": "10 passed",
+      "log": "local-crypto.log",
+      "logSha256": "d13613ba18c19e8bd6af7ad6963db34cb2492139c05bcd270e0a3d8b944b7f61"
+    },
+    {
+      "name": "client-units",
+      "exitCode": 0,
+      "result": "33 passed",
+      "log": "client-units.log",
+      "logSha256": "d86599f67bebdbb1e222d6837fe9801f8ec237b9b004e47ee666c22cae79dcf1"
+    },
+    {
+      "name": "client-activity",
+      "exitCode": 0,
+      "result": "19 passed",
+      "log": "client-activity.log",
+      "logSha256": "545a5105e968c3eb045008ad85dceb581e25e3b1637087365c34734803be5dfb"
+    },
+    {
+      "name": "global",
+      "exitCode": 0,
+      "result": "16 passed",
+      "log": "global.log",
+      "logSha256": "8288e14bab2bf4b57ad85293dd6ddda64572dc2bf49ae7f85e230d34a1b6af5d"
+    },
+    {
+      "name": "server",
+      "exitCode": 0,
+      "result": "80 passed, 1 skipped (SIGTERM not catchable on Windows)",
+      "log": "server.log",
+      "logSha256": "3b64f65425e7e44a4c87f1341c0128c5ad9ccf9e59e8c87793d0758b9dfddd5f"
+    },
+    {
+      "name": "client-build",
+      "exitCode": 0,
+      "result": "ok",
+      "log": "client-build.log",
+      "logSha256": "0de7c70f55a13a772f374a7f561682653762368ce0ebc80b4a9ddfd288e5d93c"
+    },
+    {
+      "name": "electron",
+      "exitCode": 0,
+      "result": "59 passed, 1 skipped (Cloudflare credentials not provided in the VM)",
+      "log": "electron.log",
+      "logSha256": "dab774ac7d7e57f3d4c84584a0ed163ae10100c8915b201bee2439eda727dc98"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { after, mock, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -158,9 +158,13 @@ test("code channels only link public https remotes and stay inside the working c
   assert.equal((await save({ path: "README", content: "stale\n", baseHash: file.hash })).statusCode, 409);
   for (const path of ["../outside", ".git/config", "a/.git/x", "a/../../x"]) assert.equal((await save({ path, content: "x" })).statusCode, 400, path);
 
-  await symlink("/etc/hostname", join(directory, "code", code.id, "repo", "leak"));
+  // Links to an existing file and directory outside the working copy (portable to Windows).
+  const outside = join(directory, "outside");
+  await mkdir(outside, { recursive: true });
+  await writeFile(join(outside, "secret.txt"), "outside");
+  await symlink(join(outside, "secret.txt"), join(directory, "code", code.id, "repo", "leak"), "file");
   assert.equal((await app.inject({ url: `/channels/${code.id}/code/file?path=leak`, headers: auth() })).statusCode, 400);
-  await symlink("/tmp", join(directory, "code", code.id, "repo", "escape"));
+  await symlink(outside, join(directory, "code", code.id, "repo", "escape"), "junction");
   assert.equal((await save({ path: "escape/pwned", content: "x" })).statusCode, 400);
 
   const status = (await app.inject({ url: `/channels/${code.id}/code/status`, headers: auth() })).json();

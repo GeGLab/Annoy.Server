@@ -1,10 +1,10 @@
 {
-  "createdAt": "2026-11-01T03:24:04.152924+00:00",
+  "createdAt": "2026-11-01T04:31:31.954354+00:00",
   "scope": "Integrity of security documents and synthetic evidence; excludes this inventory itself. Authenticity and security need trusted source review.",
   "files": [
     {
       "path": "annoy-server/docs/security/CHANGES.json",
-      "sha256": "62c67ef2010a4a125bc285ad5d0cb5a4cec14255da108cd06ad796214c234366"
+      "sha256": "a548f4b0af5932ef622d1674f54c1b356d9ea5ad32d8f96a1f8c33d8ff025b7f"
     },
     {
       "path": "annoy-server/docs/security/CRYPTO-ARCHITECTURE.md",
@@ -24,7 +24,7 @@
     },
     {
       "path": "annoy-server/docs/security/LIMITATIONS.md",
-      "sha256": "3ad7255a96392774b4640cea75119656c725473b9dd29a5b68974de3104f3e3e"
+      "sha256": "d9160db04716d58b767223ea4f3dceab1ff8115ca7187500ed357a5d8fc18fb2"
     },
     {
       "path": "annoy-server/docs/security/LINUX-PACKAGE.md",
@@ -32,7 +32,7 @@
     },
     {
       "path": "annoy-server/docs/security/MEDIA-KEYS.md",
-      "sha256": "484dfd728fe69b670ae831241af4363811b28a963463924ed398907cce307275"
+      "sha256": "ab53fb3d2ebe483f01a1f8974eb465d34de565c3b0c93932df9994bb3a8a9ef5"
     },
     {
       "path": "annoy-server/docs/security/METADATA.md",
@@ -44,15 +44,15 @@
     },
     {
       "path": "annoy-server/docs/security/README.md",
-      "sha256": "b2c22dded7b2de90d146d93632cdaa76b16890d6cab6afec1b9c2e4daca0a521"
+      "sha256": "017b10f3b0560baeca4f1da66ceb9be407b66504acb1507d7a269d2617a6785f"
     },
     {
       "path": "annoy-server/docs/security/REPORT.md",
-      "sha256": "ab9005fdc31e2429615457e4dc71029a4eb8ff98daa58ee521c1e038b7869af0"
+      "sha256": "7635537c51c387ff96711e2b8d7c2c7c0bab6ef7f8c8316af335563398f0b206"
     },
     {
       "path": "annoy-server/docs/security/RISKS.md",
-      "sha256": "bb48f74d0d70015947fcfc0896370a9ed48ec27f64e646f6465c3f7089433254"
+      "sha256": "a60fa4337c1625e25bd03491e28a52a6a1472a3fae677bfb877facb4e3a24fdf"
     },
     {
       "path": "annoy-server/docs/security/THREAT-MODEL.md",
@@ -68,7 +68,7 @@
     },
     {
       "path": "annoy-server/docs/security/VALIDATION.md",
-      "sha256": "f2527205ee574189a4dfa68957f3d8a5948af7acf1a8bb4809ab876011690685"
+      "sha256": "b5bc08d08afe3f67e142f2ba742c323dba8ad58ee9700fbc37ec03c70df8cc8f"
     },
     {
       "path": "annoy-server/docs/security/evidence/benchmark.json",
@@ -441,6 +441,58 @@
     {
       "path": "annoy-server/docs/security/evidence/test-display.json",
       "sha256": "bd9d4cccb6b1541d9af6e5a64bc5a9662354c393d6c2c9f156711c0758079530"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/client-activity.log",
+      "sha256": "545a5105e968c3eb045008ad85dceb581e25e3b1637087365c34734803be5dfb"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/client-build.log",
+      "sha256": "0de7c70f55a13a772f374a7f561682653762368ce0ebc80b4a9ddfd288e5d93c"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/client-types.log",
+      "sha256": "93fa627fd3343ab191dd730ca2f0f038db543971b0f8f027d1317e289890b6db"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/client-units.log",
+      "sha256": "d86599f67bebdbb1e222d6837fe9801f8ec237b9b004e47ee666c22cae79dcf1"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/crypto-release.log",
+      "sha256": "753a83e226c15483a6f93f7ab73b2a01f15a97d098a209e83d68bc2e96ccd650"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/electron.log",
+      "sha256": "dab774ac7d7e57f3d4c84584a0ed163ae10100c8915b201bee2439eda727dc98"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/global.log",
+      "sha256": "8288e14bab2bf4b57ad85293dd6ddda64572dc2bf49ae7f85e230d34a1b6af5d"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/local-crypto.log",
+      "sha256": "d13613ba18c19e8bd6af7ad6963db34cb2492139c05bcd270e0a3d8b944b7f61"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/native.log",
+      "sha256": "a5336402ce7461cbc882659d331de06efb40dadae56cd1bda558cf7754300667"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/results.json",
+      "sha256": "f67ee71c808e05e3fcaef64ef8603e0a1b3948f27cae1067fa37ab8cdc041e44"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/server-types.log",
+      "sha256": "c7b4dcc766a93cf2b363e2a3573be0d19a9ad638e6a3be6023674095fbd6b71a"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/server.log",
+      "sha256": "3b64f65425e7e44a4c87f1341c0128c5ad9ccf9e59e8c87793d0758b9dfddd5f"
+    },
+    {
+      "path": "annoy-server/docs/security/evidence/windows/sframe.log",
+      "sha256": "4bb54b8178967c10aed7fd4b96807211871e897687f41dd663238a4cde6bec1d"
     }
   ]
 }

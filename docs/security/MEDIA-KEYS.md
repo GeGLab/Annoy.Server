@@ -1,6 +1,6 @@
 # Mídia E2EE: SFrame com chaves MLS por chamada
 
-Implementado e testado localmente em Linux em 01/11/2026. Cobre canais de voz nos dois backends (mediasoup e Cloudflare Realtime SFU) e chamadas privadas P2P. **Sem auditoria independente**, e o backend Cloudflare **não foi ensaiado com o serviço real** (ver Limites). `mediaProtection` passa a anunciar `{e2ee:true, protocol:'SFrame-RFC9605/MLS-RFC9420', scope:['voice','direct_calls'], status:'unaudited'}`.
+Implementado e testado em 01/11/2026 em Linux e numa VM Windows 11. Cobre canais de voz nos dois backends (mediasoup e Cloudflare Realtime SFU, ambos ensaiados com dois clientes Electron reais) e chamadas privadas P2P. **Sem auditoria independente**. `mediaProtection` passa a anunciar `{e2ee:true, protocol:'SFrame-RFC9605/MLS-RFC9420', scope:['voice','direct_calls'], status:'unaudited'}`.
 
 ## Componentes
 
@@ -45,7 +45,7 @@ Os testes usam dispositivos falsos do Chromium, `--mute-audio` e `setAudioMuted`
 
 ## Limites
 
-- **Cloudflare Realtime SFU não ensaiado com o serviço real**: o cliente usa o mesmo worker e instala as transformações antes da oferta/resposta, e o servidor usa o mesmo delivery service, mas não houve credenciais nem autorização para tráfego real. Até esse ensaio, não declarar o backend Cloudflare validado.
+- **Cloudflare Realtime SFU**: ensaiado com o serviço real (dois Electron, frames autenticados nos dois sentidos, vídeo exibido, troca de época). Não há captura do lado da Cloudflare: a prova é que os frames só abrem com a chave dos membros e chegam íntegros. Um aviso já existente de reassinatura de faixa ("Serviço de mídia recusou a faixa") apareceu em 2 de 3 rodadas sem afetar o teste.
 - `sframe` 2.1.0 implementa a RFC 9605 e passa no vetor oficial, mas **não tem auditoria pública conhecida**; nenhuma implementação SFrame auditada e compatível com RFC 9605 foi encontrada (DAVE/libdave tem formato próprio). Revisão independente do crate e do adaptador é condição de release.
 - As chaves de mídia existem no worker do renderer durante a chamada. XSS no documento confiável pode obtê-las; o mesmo vale para mensagens exibidas.
 - SFrame não autentica o emissor individualmente: qualquer membro conhece a chave base da época e pode forjar frames de outro membro.

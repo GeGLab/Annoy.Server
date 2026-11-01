@@ -4,7 +4,7 @@ Classificação interna para priorizar revisão, não resultado de pentest indep
 
 | Prioridade | Risco conhecido | Condição para fechar |
 |---|---|---|
-| Alta de mídia | Crate `sframe` 2.1.0 e adaptador WebAssembly sem auditoria; Cloudflare Realtime SFU sem ensaio com o serviço real | Auditoria do crate/adaptador/worker e ensaio controlado no Cloudflare com captura, antes de anunciar esse backend |
+| Alta de mídia | Crate `sframe` 2.1.0 e adaptador WebAssembly sem auditoria | Auditoria do crate/adaptador/worker antes de release |
 | Média de mídia | Chaves de época no worker do renderer; SFrame sem autenticação individual do emissor; dispositivo que saiu conhece a época até o commit de remoção; metadados de quadro VP8 legíveis | Documentados em MEDIA-KEYS; avaliar isolamento adicional e rotação imediata por timer |
 | Alta | Annoy e backport dos providers não foram auditados independentemente | Revisar core/provider/delta/IPC/storage/políticas e reproduzir FS/PCS antes de afirmar segurança do produto |
 | Alta | Verificador Ed25519 implementado/testado, mas sem chave confiável de produção; cadeia de instaladores do SO não validada | Fornecer chave pública sob controle do projeto e certificado quando disponível; testar instalação real e revalidação nas duas plataformas. Artefato adulterado/assinante errado já têm testes sintéticos; instalação sem chave falha fechada |
@@ -12,7 +12,7 @@ Classificação interna para priorizar revisão, não resultado de pentest indep
 | Alta | Primeira identidade é TOFU; diretório malicioso antes de pins/verificação | Comparação de código fora de banda e futura avaliação de transparência de chaves; testar servidor ativamente malicioso com vários clientes |
 | Alta | Escrow Global antigo pode ter revelado identidades e cofres anteriores | Rotação cliente, revogação/revisão de identidades afetadas e plano operacional para cópias antigas; sem garantia retroativa |
 | Alta | Imagem completa antiga de cliente pode conter chaves/cópias apagadas | Excluir temporários/estados dos backups do app já implementado; controlar backups externos e explicar o limite ao usuário |
-| Alta de aceitação | Windows não executado, inclusive durabilidade/keychain/permissões | Rodar workflow em revisão correspondente e testes reais em Windows; registrar artefatos e falhas |
+| Média de aceitação | Windows executado só em VM: hardware físico, instalador e atualização assinada não ensaiados | Rodar workflow em revisão correspondente e testes reais em Windows; registrar artefatos e falhas |
 | Média | Cliente muito atrasado pode bloquear em commits antigos envolvendo certificados agora revogados | Testar recuperação/reingresso e desenhar transição autenticada sem liberar chaves revogadas |
 | Média | Proprietário MLS indisponível e autorização de novos membros | Exercitar handover, perda total de dispositivos e recuperação em grupos grandes; não oferecer bypass administrativo |
 | Média | Envelope do cofre Global possibilita tentativa offline de senha, com o custo PBKDF2 cliente | Senhas fortes e revisão futura de KDF/versionamento. Pepper do autenticador não protege esse envelope; não alegar que vazamento de banco impede toda tentativa de senha |
