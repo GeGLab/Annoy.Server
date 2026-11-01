@@ -47,7 +47,8 @@ export async function deleteAccount(userId: string, options: { deleteMessages: b
     run("DELETE FROM members WHERE user_id = ?", userId);
     run("DELETE FROM relationships WHERE user_id = ? OR other_id = ?", userId, userId);
     run(
-      `UPDATE users SET username = ?, display_name = 'Usuário excluído', password_hash = '!', discord_id = NULL,
+      // The Global link goes too: signing in again creates a new account, never this placeholder.
+      `UPDATE users SET username = ?, display_name = 'Usuário excluído', password_hash = '!', discord_id = NULL, global_id = NULL,
               avatar_url = NULL, imported_from = NULL, is_admin = 0, banned_at = NULL, ban_reason = '' WHERE id = ?`,
       `deleted.${userId}`,
       userId,

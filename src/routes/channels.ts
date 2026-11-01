@@ -1,4 +1,4 @@
-import { ALL_PERMISSIONS, has, hasMessages, LIMITS, parseMentions, Permission, type Channel, type Message } from "@distopic/protocol";
+import { ALL_PERMISSIONS, has, hasMessages, LIMITS, MESSAGE_TTLS, parseMentions, Permission, type Channel, type Message } from "@distopic/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireLegacyWrite, cryptoChannel } from "../crypto-delivery.ts";
@@ -23,6 +23,7 @@ const patchChannel = z.object({
   topic: z.string().max(LIMITS.topicMax).optional(),
   parentId: z.string().nullable().optional(),
   position: z.number().int().min(0).optional(),
+  messageTtlMs: z.union([z.null(), z.literal(MESSAGE_TTLS[0]), z.literal(MESSAGE_TTLS[1]), z.literal(MESSAGE_TTLS[2])]).optional(),
 });
 const overwriteBody = z.object({
   targetType: z.enum(["role", "member"]),
@@ -103,6 +104,10 @@ export function channelRoutes(app: FastifyInstance): void {
       if (body.topic !== undefined) run("UPDATE channels SET topic = ? WHERE id = ?", body.topic, channel.id);
       if (body.parentId !== undefined && channel.type !== "category") run("UPDATE channels SET parent_id = ? WHERE id = ?", body.parentId, channel.id);
       if (body.position !== undefined) run("UPDATE channels SET position = ? WHERE id = ?", body.position, channel.id);
+      if (body.messageTtlMs !== undefined) {
+        if (channel.type !== "text" && body.messageTtlMs !== null) throw badRequest("Só canais de texto apagam mensagens automaticamente");
+        run("UPDATE channels SET message_ttl_ms = ? WHERE id = ?", body.messageTtlMs, channel.id);
+      }
     });
     serverChanged(channel.serverId);
     return getChannel(channel.id);

@@ -41,6 +41,7 @@ interface ChannelRow {
   parent_id: string | null;
   position: number;
   temporary?: number;
+  message_ttl_ms?: number | null;
 }
 interface OverwriteRow {
   channel_id: string;
@@ -211,6 +212,7 @@ const toChannel = (r: ChannelRow, overwrites: Overwrite[]): Channel => ({
   position: r.position,
   overwrites,
   ...(r.temporary ? { temporary: true } : {}),
+  ...(r.message_ttl_ms ? { messageTtlMs: r.message_ttl_ms } : {}),
 });
 
 export function getChannel(id: string): Channel | undefined {

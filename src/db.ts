@@ -223,6 +223,10 @@ const channelColumns = (db.prepare("PRAGMA table_info(channels)").all() as { nam
 if (!channelColumns.includes("temporary")) db.exec("ALTER TABLE channels ADD COLUMN temporary INTEGER NOT NULL DEFAULT 0");
 if (!channelColumns.includes("created_by")) db.exec("ALTER TABLE channels ADD COLUMN created_by TEXT");
 if (!channelColumns.includes("temp_used")) db.exec("ALTER TABLE channels ADD COLUMN temp_used INTEGER NOT NULL DEFAULT 0");
+// Lifetime of new messages chosen by the server admins; clients seal it into each message. NULL: permanent.
+// Placeholders of deleted accounts from older versions kept their Global link; release it.
+db.exec("UPDATE users SET global_id = NULL WHERE username LIKE 'deleted.%' AND global_id IS NOT NULL");
+if (!channelColumns.includes("message_ttl_ms")) db.exec("ALTER TABLE channels ADD COLUMN message_ttl_ms INTEGER");
 db.exec(`CREATE TABLE IF NOT EXISTS playback (
   channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
   state      TEXT NOT NULL

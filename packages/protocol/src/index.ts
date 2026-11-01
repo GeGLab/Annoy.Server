@@ -153,7 +153,12 @@ export interface Channel {
   overwrites: Overwrite[];
   /** Temporary voice room: deleted when everyone leaves, or after 10 minutes if nobody joins. */
   temporary?: boolean;
+  /** New messages are deleted automatically after this long (set by the server admins). Absent: permanent. */
+  messageTtlMs?: number;
 }
+
+/** Lifetimes the server admins can choose for a text channel: 1 hour, 1 day, 7 days. */
+export const MESSAGE_TTLS = [3_600_000, 86_400_000, 604_800_000] as const;
 
 export interface DmChannel {
   id: string;

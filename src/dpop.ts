@@ -30,6 +30,7 @@ export async function verifyDpop(token:string,proof:unknown,method:string,uri:st
    const id=hash(tokenHash(token)+':'+payload.jti);
    if(one('SELECT 1 FROM dpop_replay WHERE id=?',id))throw new Error();
    run('INSERT INTO dpop_replay VALUES(?,?)',id,new Date(Date.now()+120000).toISOString());
+   renewBoundSession(token,deviceId);
   });
  }catch{throw new HttpError(401,'invalid_dpop','Prova de dispositivo inválida ou repetida');}
 }
@@ -41,4 +42,15 @@ export async function validateDpopRequest(req:FastifyRequest,reply:FastifyReply)
  const origin=config.publicUrl||`${req.protocol}://${req.host}`;
  await verifyDpop(token,req.headers.dpop,req.method,new URL(req.url,origin).toString(),device);
  verified.add(req);
+}
+
+/** A device-bound session in use stays valid: each proven request extends it by up to a day,
+ * never beyond 30 days after sign-in. Unused sessions still expire after 24 hours. */
+const SESSION_RENEWAL_MS=24*3600000,SESSION_MAX_MS=30*24*3600000;
+function renewBoundSession(token:string,deviceId:string):void{
+ const session=one<{created_at:string;expires_at:string}>('SELECT created_at,expires_at FROM sessions WHERE token_hash=? AND device_id=?',tokenHash(token),deviceId);
+ if(!session)return;
+ const next=Math.min(Date.now()+SESSION_RENEWAL_MS,Date.parse(session.created_at)+SESSION_MAX_MS);
+ // Write at most once an hour per session.
+ if(next-Date.parse(session.expires_at)>3600000)run('UPDATE sessions SET expires_at=? WHERE token_hash=? AND device_id=?',new Date(next).toISOString(),tokenHash(token),deviceId);
 }

@@ -179,3 +179,18 @@ test("code channels only link public https remotes and stay inside the working c
   const removed = await app.inject({ method: "DELETE", url: `/channels/${code.id}`, headers: auth() });
   assert.equal(removed.statusCode, 200);
 });
+
+test("server admins set how long new messages live in a text channel", async () => {
+  const text = await create("text", "efemero");
+  const voice = await create("voice", "sala-ttl");
+  const patch = (id: string, payload: object, user = "owner") => app.inject({ method: "PATCH", url: `/channels/${id}`, headers: auth(user), payload });
+  const day = await patch(text.id, { messageTtlMs: 86_400_000 });
+  assert.equal(day.statusCode, 200, day.body);
+  assert.equal(day.json().messageTtlMs, 86_400_000);
+  assert.equal((await patch(text.id, { messageTtlMs: 5_000 })).statusCode, 400);
+  assert.equal((await patch(voice.id, { messageTtlMs: 3_600_000 })).statusCode, 400);
+  assert.equal((await patch(text.id, { messageTtlMs: 3_600_000 }, "member")).statusCode, 403);
+  const permanent = await patch(text.id, { messageTtlMs: null });
+  assert.equal(permanent.statusCode, 200);
+  assert.equal("messageTtlMs" in permanent.json(), false);
+});
