@@ -134,6 +134,7 @@ export function authRoutes(app: FastifyInstance): void {
     return {
       name: config.name,
       version: VERSION,
+      minClientVersion: config.minClientVersion,
       protocol: PROTOCOL_VERSION,
       registrationOpen: registration !== "closed",
       registration,

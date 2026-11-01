@@ -1,4 +1,5 @@
 import {observeSessions} from "./session-events.ts";
+import { compareVersions, isVersion } from "./version.ts";
 import {boundDevice,verifyDpop} from "./dpop.ts";
 import {config} from "./config.ts";
 import { clearCalls, handleCall, handleDirectCallMedia, endAllCalls } from "./calls.ts";
@@ -94,6 +95,12 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
   if (restarting) return;
   if (msg.op === "identify") {
     if (conn.userId) return;
+    // A client older than this server's minimum is told to update; a newer one always connects.
+    if (isVersion(msg.clientVersion) && compareVersions(msg.clientVersion, config.minClientVersion) < 0) {
+      conn.send({ t: "INVALID_SESSION", d: { reason: `Atualize o Annoy: este servidor exige a versão ${config.minClientVersion} ou mais nova.` } });
+      conn.socket.close(4011, "client outdated");
+      return;
+    }
     const userId = typeof msg.token === "string" ? userIdForToken(msg.token) : null;
     const user = userId ? getUser(userId) : undefined;
     if (!userId || !user) {

@@ -351,6 +351,8 @@ export interface InstanceInfo {
   accountMode?: "global" | "local";
   name: string;
   version: string;
+  /** Oldest client version this server accepts. Older hosts omit it. */
+  minClientVersion?: string;
   protocol: number;
   /** True when sign-up is possible at all (open, or with an invite). */
   registrationOpen: boolean;
@@ -562,7 +564,7 @@ export type VoiceBackend = "builtin" | "cloudflare";
 export interface DirectCall { callerDeviceId?: string; calleeDeviceId?: string; id: string; callerId: string; calleeId: string; video: boolean; status: "ringing" | "active" | "ended"; reason?: string; protection?: VoiceMediaProtection; iceServers?: { urls: string | string[]; username?: string; credential?: string }[] }
 
 export type ClientOp =
-  | { op: "identify"; dpop?:string; features?: string[]; deviceId?: string; token: string; presence?: Presence }
+  | { op: "identify"; dpop?:string; clientVersion?: string; features?: string[]; deviceId?: string; token: string; presence?: Presence }
   | { op: "heartbeat" }
   | { op: "presence"; idle: boolean; status?: Presence }
   | { op: "call"; protection?: VoiceMediaProtection; deviceId: string; callId: string; action: "accept" | "reject" | "end" | "signal"; signal?: { description?: { type: "offer" | "answer"; sdp: string }; candidate?: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } } }

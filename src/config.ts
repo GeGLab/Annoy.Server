@@ -1,4 +1,5 @@
 import { createSocket } from "node:dgram";
+import { MIN_CLIENT_VERSION, isVersion } from "./version.ts";
 import { resolve } from "node:path";
 import {trustedProxies} from './trusted-proxies.ts';
 import {secureServiceUrl} from './service-url.ts';
@@ -41,6 +42,8 @@ if (env("ANNOY_VOICE_BACKEND", "builtin") === "cloudflare" && (!process.env.ANNO
   throw new Error("ANNOY_VOICE_BACKEND=cloudflare needs ANNOY_CF_SFU_APP_ID and ANNOY_CF_SFU_APP_TOKEN");
 }
 
+const minClientVersion = env("ANNOY_MIN_CLIENT_VERSION", MIN_CLIENT_VERSION);
+if (!isVersion(minClientVersion)) throw new Error(`ANNOY_MIN_CLIENT_VERSION must look like 0.8.0, got "${minClientVersion}"`);
 const registration = env("ANNOY_REGISTRATION", "invite");
 if (registration !== "open" && registration !== "invite" && registration !== "closed") {
   throw new Error(`ANNOY_REGISTRATION must be "open", "invite" or "closed", got "${registration}"`);
@@ -58,6 +61,8 @@ if (process.env.ANNOY_GLOBAL !== undefined) {
 export const config = {
   trustedProxies:trustedProxies(process.env.ANNOY_TRUSTED_PROXIES),
   accountMode: accountMode as "global" | "local",
+  /** Oldest client version this instance accepts (ANNOY_MIN_CLIENT_VERSION). */
+  minClientVersion,
   name: env("ANNOY_NAME", "Annoy"),
   host: env("ANNOY_HOST", "0.0.0.0"),
   port: int("ANNOY_PORT", 8787),
