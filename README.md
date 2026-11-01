@@ -60,7 +60,7 @@ docker compose up -d
 ```
 
 This pulls the published image `ghcr.io/geglab/annoy-server`. Pin a
-version with `ANNOY_VERSION=0.7.2`, or build from source with
+version with `ANNOY_VERSION=0.9.0`, or build from source with
 `docker compose up -d --build`. Without Compose:
 
 ```bash
@@ -132,6 +132,8 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_ACCOUNT_MODE` | `global` | Exclusive login policy: `global` or `local`. Restart to migrate; see [account migration](docs/account-migration.md). |
 | `ANNOY_GLOBAL` | removed | Remove this legacy flag and configure `ANNOY_ACCOUNT_MODE` explicitly. |
 | `ANNOY_GLOBAL_URL` | `https://global.geg.dev.br` | Annoy Accounts API |
+| `ANNOY_MIN_CLIENT_VERSION` | `0.9.0` | Oldest client version accepted. Older clients are asked to update; newer ones keep working |
+| `ANNOY_TRUSTED_PROXIES` | (empty) | Comma-separated IPs/CIDRs of your TLS proxies, trusted for the real client IP |
 | `ANNOY_ANNOUNCED_IP` | default-route IP | Voice addresses for clients, comma-separated: **public IP first, LAN IP second** (each gets its own port: 40000, 40001…). Required in Docker |
 | `ANNOY_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
 | `ANNOY_CF_SFU_APP_ID` / `_TOKEN` | (empty) | Cloudflare Realtime SFU app credentials, used with `ANNOY_VOICE_BACKEND=cloudflare` |
@@ -282,12 +284,14 @@ tests when you touch `voice.ts`.
 
 [MIT](LICENSE) © Gustavo Cruz
 
-## Security implementation status
+## Security
 
-OpenMLS messaging and encrypted attachments are implemented and covered by local
-Linux tests; the integration has not been independently audited. SFrame media
-E2EE and Windows validation remain pending. New plaintext messages are blocked;
-legacy history remains separately identified. No security release has been published. See [security report](docs/security/REPORT.md),
+0.9.0 is a mandatory security release and requires client 0.9.0. New messages,
+attachments, edits and reactions are end-to-end encrypted with OpenMLS, and
+calls use SFrame, so the SFU only forwards encrypted media. Plaintext sends are
+refused; legacy history stays separate and read-only. Sessions are bound to
+the device (DPoP). The integration has not been independently audited. See
+[release notes](docs/releases/0.9.0.md), [security report](docs/security/REPORT.md),
 [threat model](docs/security/THREAT-MODEL.md),
 [cryptographic architecture](docs/security/CRYPTO-ARCHITECTURE.md),
 [validation matrix](docs/security/VALIDATION.md) and

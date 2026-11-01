@@ -86,13 +86,16 @@ Tudo é por variável de ambiente; veja [`.env.example`](.env.example) e a
   "Entrar com Discord".
 - `ANNOY_DATA_DIR`: onde ficam o banco, os anexos e as fotos de perfil. É a pasta do backup.
 - `ANNOY_PUBLIC_URL`: endereço externo da instância; configure ao usar um proxy.
+- `ANNOY_ACCOUNT_MODE`: `global` (contas Annoy, padrão) ou `local`. Nunca os dois.
+- `ANNOY_MIN_CLIENT_VERSION`: versão mínima do app (padrão `0.9.0`). Versões antigas pedem atualização.
+- `ANNOY_TRUSTED_PROXIES`: IPs/CIDRs dos seus proxies TLS, confiáveis para o IP real do cliente.
 
 
 Conexões remotas, inclusive na LAN, exigem HTTPS/WSS. Coloque um proxy com TLS
 (Caddy, nginx, Cloudflare Tunnel) na frente da porta 8787 e configure seus IPs
 confiáveis explicitamente. Use a origem HTTPS final: requisições com credenciais
 recusam redirecionamentos. HTTP só é permitido no loopback de desenvolvimento.
-DTLS-SRTP protege o transporte; voz legada com SFU não oferece E2EE.
+DTLS-SRTP protege o transporte. Desde a 0.9.0, as chamadas usam SFrame: o SFU só repassa mídia cifrada.
 
 Fotos de perfil agora podem ser enviadas, recortadas e removidas pelo cliente.
 Após atualizar as dependências com `npm ci`, reinicie o servidor. As rotas e o
@@ -141,3 +144,12 @@ novo. Atualize os clientes para 0.8.0 para que também parem as capturas numa
 queda abrupta. Veja [a versão 0.8.0](docs/releases/0.8.0.md).
 
 Contas Annoy são obrigatórias por padrão. Para uma instância exclusivamente local, configure `ANNOY_ACCOUNT_MODE=local` na criação da instância. Instâncias existentes exigem migração explícita antes de reiniciar. Consulte [migração de contas](docs/account-migration.md) antes de mudar o modo.
+
+## Segurança a partir da 0.9
+
+A 0.9.0 é uma atualização de segurança obrigatória e exige o cliente 0.9.0.
+Mensagens, anexos, edições e reações novas são cifradas de ponta a ponta
+(OpenMLS), e as chamadas usam SFrame. Envio em texto claro é recusado; o
+histórico antigo fica separado e somente leitura. As sessões são ligadas ao
+dispositivo (DPoP). Ainda não houve auditoria independente. Veja
+[a versão 0.9.0](docs/releases/0.9.0.md).

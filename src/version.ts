@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 export const VERSION: string = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 /** Oldest client this server works with. A newer client always connects; an older one is told to update. */
-export const MIN_CLIENT_VERSION = "0.8.0";
+export const MIN_CLIENT_VERSION = "0.9.0";
 
 /** Numeric comparison of "major.minor.patch" versions: negative when a is older than b. */
 export function compareVersions(a: string, b: string): number {
