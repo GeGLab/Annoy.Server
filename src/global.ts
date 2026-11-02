@@ -58,6 +58,22 @@ async function refresh(): Promise<void> {
   if (id && secret) sanctions = (await call<{ sanctions: Sanction[] }>("/v1/servers/self", { headers: { authorization: `Server ${id}:${secret}` } })).sanctions;
 }
 
+let lastKeyRefresh = 0;
+/**
+ * Global starts a new signing key each week. A token with a key this server
+ * has not seen yet refreshes the public keys once (at most every 30 s), so a
+ * login right after the weekly change does not wait for the hourly refresh.
+ */
+export async function ensureTokenKey(kid: string): Promise<void> {
+  if (!config.global.enabled || keys.some((k) => k.kid === kid) || Date.now() - lastKeyRefresh < 30_000) return;
+  lastKeyRefresh = Date.now();
+  try {
+    keys = (await call<{ keys: PublishedKey[] }>("/v1/tokens/keys")).keys;
+  } catch {
+    // Global unreachable: the proof is then rejected as usual.
+  }
+}
+
 /** Runs at startup when Global is on; failures only delay global logins, never the server. */
 export function startGlobal(log: (msg: string) => void): void {
   if (!config.global.enabled) return log("Contas Annoy: serviço desligado (ANNOY_ACCOUNT_MODE=local)");

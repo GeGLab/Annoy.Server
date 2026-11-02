@@ -18,7 +18,7 @@ import { checkRegistration, consumeSignupInvite, getSettings, grantBootstrapAdmi
 import { sendToAudience } from "../events.ts";
 import { newId } from "../ids.ts";
 import { getUser } from "../repo.ts";
-import { globalLoginAvailable, globalServerId, newChallenge, verifyGlobalProof } from "../global.ts";
+import { ensureTokenKey, globalLoginAvailable, globalServerId, newChallenge, verifyGlobalProof } from "../global.ts";
 import { authAttempt } from "../auth-limits.ts";
 import { parse } from "../validate.ts";
 
@@ -152,6 +152,7 @@ export function authRoutes(app: FastifyInstance): void {
   app.post("/auth/global", async (req): Promise<AuthResponse> => {
     requireAccountMode("global");
     const body = parse(globalLogin, req.body);
+    await ensureTokenKey(body.token.kid);
     const identity = verifyGlobalProof(body);
     const existing = one<{ id: string; banned_at: string | null; ban_reason: string }>("SELECT id, banned_at, ban_reason FROM users WHERE global_id = ?", identity);
     if (existing) {
@@ -204,6 +205,7 @@ export function authRoutes(app: FastifyInstance): void {
     const owner = await migrationOwner(req, body);
     const current = confirmMigrationOwner(owner);
     if (current.global_id && current.global_id !== owner.global_id) throw conflict("Esta conta já foi migrada; entre com a conta Annoy");
+    await ensureTokenKey(body.token.kid);
     const identity = verifyGlobalProof(body);
     const holder = one<MigrationUser>("SELECT * FROM users WHERE global_id = ?", identity);
     if (holder) refuseBanned(holder);
