@@ -1,3 +1,4 @@
+import {clientModule,cryptoBinary} from './fixtures/client-root.ts';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
@@ -7,13 +8,13 @@ import {join,resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {tmpdir} from 'node:os';
 import Fastify from 'fastify';
-const binary=resolve('../annoy-client/native/annoy-crypto/target/debug/annoy-crypto'+(process.platform==='win32'?'.exe':''));
+const binary=cryptoBinary;
 if(process.env.ANNOY_REQUIRE_NATIVE==='1'&&!existsSync(binary))throw new Error('Native OpenMLS binary missing; security validation cannot skip this test');
 test('two client controllers enroll devices and exchange MLS messages through real HTTP', {skip:!existsSync(binary),timeout:60000},async()=>{
  const dir=await mkdtemp(join(tmpdir(),'annoy-controllers-'));process.env.ANNOY_DATA_DIR=join(dir,'server');process.env.ANNOY_ACCOUNT_MODE='local';delete process.env.ANNOY_GLOBAL;
  const {db,run,all,one}=await import('../src/db.ts');const {createSession}=await import('../src/auth.ts');
  const {channelRoutes}=await import('../src/routes/channels.ts');const {legacyArchiveRoutes}=await import('../src/legacy-archive.ts');const {cryptoBlobRoutes}=await import('../src/crypto-blobs.ts');const {deviceRoutes}=await import('../src/devices.ts');const {deliveryRoutes}=await import('../src/crypto-delivery.ts');const {authRoutes}=await import('../src/routes/auth.ts');const {HttpError}=await import('../src/errors.ts');
- const {EncryptedVault,seal,open}=await import('../../annoy-client/src/main/crypto/vault.ts');const {CryptoController}=await import('../../annoy-client/src/main/crypto/controller.ts');
+ const {EncryptedVault,seal,open}=await import(clientModule('src/main/crypto/vault.ts'));const {CryptoController}=await import(clientModule('src/main/crypto/controller.ts'));
  const app=Fastify({bodyLimit:2*1024*1024});app.setErrorHandler((e,req,reply)=>reply.status(e instanceof HttpError?e.status:500).send({error:e.code,message:e.message}));await app.register(async api=>{authRoutes(api);deviceRoutes(api);deliveryRoutes(api);cryptoBlobRoutes(api);channelRoutes(api);legacyArchiveRoutes(api);},{prefix:'/api'});
  let commitWaiters:(()=>void)[]=[],raceCommits=false,dropCommit=false,holdApplication:Promise<void>|null=null,applicationHeld:(()=>void)|null=null,heldRequest:{input:Parameters<typeof fetch>[0];init:RequestInit}|null=null,abortAfterDelivery:AbortController|null=null;
  const transport:typeof fetch=async(input,init)=>{const body=typeof init?.body==='string'?JSON.parse(init.body):null;
@@ -40,8 +41,8 @@ test('two client controllers enroll devices and exchange MLS messages through re
   assert.equal((await bob.sync(url,tb,'c'))[0]?.content,'controller secret');
   assert.equal((await alice.importLegacy(url,ta,'c')).complete,true);
   assert.equal((await bob.importLegacy(url,tb,'c')).complete,true);
-  assert.equal(alice.localMessages(url,'alice','c','legacy')[0]?.protection,'legacy_plaintext');
-  const localFile=alice.localLegacyFile(url,'alice','c','legacy-1',legacyFile);assert.deepEqual(localFile.bytes,legacyBytes);localFile.bytes.fill(0);
+  assert.equal((await alice.localMessages(url,'alice','c','legacy'))[0]?.protection,'legacy_plaintext');
+  const localFile=await alice.localLegacyFile(url,'alice','c','legacy-1',legacyFile);assert.deepEqual(localFile.bytes,legacyBytes);localFile.bytes.fill(0);
   // A malicious identity endpoint cannot use a different user's local keys.
   const wrong=createSession('bob');alice.expect(url,wrong,'alice');await assert.rejects(alice.status(url,wrong,'c'),/identidade|conta|sessão/i);
   await bob.send(url,tb,'c','resposta',sent.id);
@@ -92,7 +93,7 @@ test('two client controllers enroll devices and exchange MLS messages through re
   const oldBackup=await alice.exportBackup(url,ta);
   await alice.action(url,ta,'c','delete',sent.id);
   assert.ok((await bob.reconcile(url,tb,'c',[sent.id])).deletedIds.includes(sent.id));
-  alice.importBackup(oldBackup.data,oldBackup.key);
+  await alice.importBackup(oldBackup.data,oldBackup.key);
   assert.ok(!(await alice.sync(url,ta,'c')).some(m=>m.id===sent.id),'old backup cannot undo local deletion tombstone');
   await alice.configureChannel(url,ta,'c','share_permanent',null);
   await bob.sync(url,tb,'c');
@@ -132,7 +133,7 @@ test('two client controllers enroll devices and exchange MLS messages through re
   run('UPDATE crypto_channels SET group_id=? WHERE channel_id=?',pinnedGroup,'c');
   const recoveryBackup=await alice.exportBackup(url,ta),oldDevice=(await alice.status(url,ta,'c')).deviceId;
   const preliminary=createSession('alice');recovered.expect(url,preliminary,'alice');await assert.rejects(recovered.status(url,preliminary,'c'),/Novo dispositivo/);
-  recovered.importBackup(recoveryBackup.data,recoveryBackup.key);
+  await recovered.importBackup(recoveryBackup.data,recoveryBackup.key);
   await alice.revoke(url,ta,oldDevice);
   const newToken=createSession('alice');recovered.expect(url,newToken,'alice');
   await recovered.status(url,newToken,'c');

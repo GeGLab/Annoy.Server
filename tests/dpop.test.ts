@@ -1,3 +1,4 @@
+import {clientModule} from './fixtures/client-root.ts';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {generateKeyPairSync,createHash} from 'node:crypto';
@@ -10,7 +11,7 @@ import Fastify from 'fastify';
 test('DPoP binds sessions to device, method, URI and token; proofs cannot replay after database restore/restart',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'annoy-dpop-'));process.env.ANNOY_DATA_DIR=dir;process.env.ANNOY_ACCOUNT_MODE='local';delete process.env.ANNOY_GLOBAL;
  const {db,run}=await import('../src/db.ts');const {authRoutes}=await import('../src/routes/auth.ts');const {createSession,requireUser}=await import('../src/auth.ts');const {dpopNonce}=await import('../src/dpop.ts');const {HttpError}=await import('../src/errors.ts');
- const {deviceProof}=await import('../../annoy-client/src/main/crypto/dpop.ts');
+ const {deviceProof}=await import(clientModule('src/main/crypto/dpop.ts'));
  const app=Fastify();app.setErrorHandler((e,req,reply)=>reply.status(e instanceof HttpError?e.status:500).send({error:e.code}));authRoutes(app);app.get('/protected',async req=>({user:requireUser(req)}));
  const pair=generateKeyPairSync('ed25519'),pub=pair.publicKey.export({format:'jwk'}).x!,privateKey=pair.privateKey.export({format:'der',type:'pkcs8'}).toString('base64'),id=createHash('sha256').update(Buffer.from(pub,'base64url')).digest('base64url');
  const origin='http://127.0.0.1:48102';
