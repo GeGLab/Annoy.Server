@@ -1,3 +1,4 @@
+import {clientModule,cryptoBinary} from './fixtures/client-root.ts';
 import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
 import assert from 'node:assert/strict';
@@ -7,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {existsSync} from 'node:fs';
 import Fastify from 'fastify';
-const binary=resolve('../annoy-client/native/annoy-crypto/target/debug/annoy-crypto'+(process.platform==='win32'?'.exe':''));
+const binary=cryptoBinary;
 
 if(process.env.ANNOY_REQUIRE_NATIVE==='1'&&!existsSync(binary))throw new Error('Native OpenMLS binary missing; security validation cannot skip this test');
 test('real MLS clients deliver opaque messages; activation prevents plaintext through routes and SQLite', {skip:!existsSync(binary)},async()=>{
@@ -20,11 +21,11 @@ test('real MLS clients deliver opaque messages; activation prevents plaintext th
  const {deliveryRoutes}=await import('../src/crypto-delivery.ts');
  const {channelRoutes}=await import('../src/routes/channels.ts');
  const {HttpError}=await import('../src/errors.ts');
- const {EncryptedVault,seal,open}=await import('../../annoy-client/src/main/crypto/vault.ts');
- const {MlsService}=await import('../../annoy-client/src/main/crypto/mls-service.ts');
+ const {EncryptedVault,seal,open}=await import(clientModule('src/main/crypto/vault.ts'));
+ const {MlsService}=await import(clientModule('src/main/crypto/mls-service.ts'));
  const app=Fastify();app.setErrorHandler((e,req,reply)=>reply.status(e instanceof HttpError?e.status:500).send({error:e.code,message:e.message}));
  deviceRoutes(app);deliveryRoutes(app);channelRoutes(app);
- const os=randomBytes(32);const vault=new EncryptedVault(join(dir,'client'),{available:()=>true,seal:b=>seal(os,b,'os'),open:b=>open(os,b,'os')});vault.unlock();
+ const os=randomBytes(32);const vault=new EncryptedVault(join(dir,'client'),{available:()=>true,seal:b=>seal(os,b,'os'),open:b=>open(os,b,'os')});await vault.unlock();
  const key=()=>{const k=generateKeyPairSync('ed25519');const pub=k.publicKey.export({format:'jwk'}).x!;return {...k,pub,id:createHash('sha256').update(Buffer.from(pub,'base64url')).digest('base64url')};};
  const a=key(),b=key(),recovery=key();const instance=cryptoInstanceId();
  const ai=JSON.stringify([instance,'alice',a.id]),bi=JSON.stringify([instance,'bob',b.id]);

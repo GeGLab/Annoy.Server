@@ -131,7 +131,7 @@ test("temporary rooms vanish after 10 idle minutes, or when the last person leav
   }
 });
 
-test("code channels only link public https remotes and stay inside the working copy", async () => {
+test("code channels only link public https remotes and stay inside the working copy", async (t) => {
   const code = await create("code", "site");
   const link = (url: string, who = "owner") => app.inject({ method: "PUT", url: `/channels/${code.id}/code`, headers: auth(who), payload: { url } });
   for (const url of ["http://github.com/a/b", "https://localhost/a.git", "https://127.0.0.1/a.git", "https://192.168.0.10/a.git", "https://[::1]/a.git", "file:///etc", "https://user:token@github.com/a/b"]) {
@@ -162,8 +162,17 @@ test("code channels only link public https remotes and stay inside the working c
   const outside = join(directory, "outside");
   await mkdir(outside, { recursive: true });
   await writeFile(join(outside, "secret.txt"), "outside");
-  await symlink(join(outside, "secret.txt"), join(directory, "code", code.id, "repo", "leak"), "file");
-  assert.equal((await app.inject({ url: `/channels/${code.id}/code/file?path=leak`, headers: auth() })).statusCode, 400);
+  await t.test("file symlinks cannot escape the working copy", async (context) => {
+    try { await symlink(join(outside, "secret.txt"), join(directory, "code", code.id, "repo", "leak"), "file"); }
+    catch (error) {
+      if (process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM") {
+        context.skip("Windows requires Developer Mode or symlink privileges; the junction escape is still tested below.");
+        return;
+      }
+      throw error;
+    }
+    assert.equal((await app.inject({ url: `/channels/${code.id}/code/file?path=leak`, headers: auth() })).statusCode, 400);
+  });
   await symlink(outside, join(directory, "code", code.id, "repo", "escape"), "junction");
   assert.equal((await save({ path: "escape/pwned", content: "x" })).statusCode, 400);
 
