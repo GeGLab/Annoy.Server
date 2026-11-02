@@ -24,7 +24,9 @@ export async function verifyDpop(token:string,proof:unknown,method:string,uri:st
   const publicKey=await importJWK({kty:'OKP',crv:'Ed25519',x:device.public_key},'EdDSA');
   const {payload}=await jwtVerify(proof,publicKey,{algorithms:['EdDSA'],typ:'dpop+jwt',requiredClaims:['iat','jti','htm','htu','ath','nonce'],maxTokenAge:'60s',clockTolerance:5});
   const target=new URL(uri);target.search='';target.hash='';
-  if(payload.htm!==method.toUpperCase()||payload.htu!==target.toString()||payload.ath!==hash(token)||payload.nonce!==dpopNonce||typeof payload.jti!=='string'||payload.jti.length<16||payload.jti.length>100)throw new Error();
+  const reason=payload.htm!==method.toUpperCase()?'htm':payload.htu!==target.toString()?'htu':payload.ath!==hash(token)?'ath':payload.nonce!==dpopNonce?'nonce':typeof payload.jti!=='string'||payload.jti.length<16||payload.jti.length>100?'jti':'';
+  // Diagnostics only: which claim failed (no secrets: htu and target are public URLs).
+  if(reason){console.error(`invalid_dpop ${reason} htu=${String(payload.htu)} target=${target}`);throw new Error();}
   tx(()=>{
    run('DELETE FROM dpop_replay WHERE expires_at<=?',now());
    const id=hash(tokenHash(token)+':'+payload.jti);
@@ -32,7 +34,7 @@ export async function verifyDpop(token:string,proof:unknown,method:string,uri:st
    run('INSERT INTO dpop_replay VALUES(?,?)',id,new Date(Date.now()+120000).toISOString());
    renewBoundSession(token,deviceId);
   });
- }catch{throw new HttpError(401,'invalid_dpop','Prova de dispositivo inválida ou repetida');}
+ }catch(e){if(e instanceof Error&&e.message)console.error('invalid_dpop',e.message);throw new HttpError(401,'invalid_dpop','Prova de dispositivo inválida ou repetida');}
 }
 export async function validateDpopRequest(req:FastifyRequest,reply:FastifyReply):Promise<void>{
  reply.header('DPoP-Nonce',dpopNonce);
