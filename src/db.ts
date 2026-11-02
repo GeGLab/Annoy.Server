@@ -170,6 +170,9 @@ if (!userColumns.includes("ban_reason")) db.exec("ALTER TABLE users ADD COLUMN b
 // public key unique to this server. Not the account's global ID, which no server sees.
 if (!userColumns.includes("global_id")) db.exec("ALTER TABLE users ADD COLUMN global_id TEXT");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_global_id ON users(global_id) WHERE global_id IS NOT NULL");
+// Annoy Global public ID (decided 2026-11-01): links an account to an existing user here.
+if (!userColumns.includes("global_public_id")) db.exec("ALTER TABLE users ADD COLUMN global_public_id TEXT");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_global_public_id ON users(global_public_id) WHERE global_public_id IS NOT NULL");
 db.exec(`CREATE TABLE IF NOT EXISTS global_spent_tokens (
   hash     TEXT PRIMARY KEY,
   kid      TEXT NOT NULL,

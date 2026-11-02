@@ -440,6 +440,8 @@ export interface GlobalProof {
   signature: string;
   /** Blind token from Annoy Global, bound to this server and identity. */
   token: { kid: string; message: string; signature: string };
+  /** Global's signature that this identity belongs to the account with this public ID. */
+  attestation?: { publicId: string; expires: number; signature: string };
 }
 
 export interface GlobalLogin extends GlobalProof {

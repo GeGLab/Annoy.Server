@@ -18,7 +18,7 @@ import { checkRegistration, consumeSignupInvite, getSettings, grantBootstrapAdmi
 import { sendToAudience } from "../events.ts";
 import { newId } from "../ids.ts";
 import { getUser } from "../repo.ts";
-import { ensureTokenKey, globalLoginAvailable, globalServerId, newChallenge, verifyGlobalProof } from "../global.ts";
+import { attestedPublicId, ensureTokenKey, globalLoginAvailable, globalServerId, newChallenge, verifyGlobalProof } from "../global.ts";
 import { authAttempt } from "../auth-limits.ts";
 import { parse } from "../validate.ts";
 
@@ -50,6 +50,7 @@ const globalProof = z.object({
   challenge: b64url,
   signature: b64url,
   token: z.object({ kid: z.string().max(32), message: b64url, signature: b64url }),
+  attestation: z.object({ publicId: z.string().max(32), expires: z.number().int(), signature: b64url }).optional(),
 });
 const globalLogin = globalProof.extend({
   username: username.optional(),
@@ -154,9 +155,16 @@ export function authRoutes(app: FastifyInstance): void {
     const body = parse(globalLogin, req.body);
     await ensureTokenKey(body.token.kid);
     const identity = verifyGlobalProof(body);
-    const existing = one<{ id: string; banned_at: string | null; ban_reason: string }>("SELECT id, banned_at, ban_reason FROM users WHERE global_id = ?", identity);
+    const publicId = attestedPublicId(identity, body.attestation);
+    let existing = one<{ id: string; banned_at: string | null; ban_reason: string }>("SELECT id, banned_at, ban_reason FROM users WHERE global_id = ?", identity);
+    // A user an admin linked to this Annoy account (public ID) takes this identity.
+    if (!existing && publicId) {
+      existing = one<{ id: string; banned_at: string | null; ban_reason: string }>("SELECT id, banned_at, ban_reason FROM users WHERE global_public_id = ?", publicId);
+      if (existing) run("UPDATE users SET global_id = ? WHERE id = ?", identity, existing.id);
+    }
     if (existing) {
       refuseBanned(existing);
+      if (publicId) run("UPDATE users SET global_public_id = ? WHERE id = ? AND global_public_id IS NULL", publicId, existing.id);
       return { token: createSession(existing.id), user: ownUser(existing.id) };
     }
     // First time here: a new account on this server, under its registration rules.
@@ -167,11 +175,12 @@ export function authRoutes(app: FastifyInstance): void {
     const id = newId();
     // No password: "!" never matches a scrypt hash, so only the global login opens it.
     run(
-      "INSERT INTO users (id, username, display_name, password_hash, global_id, created_at) VALUES (?, ?, ?, '!', ?, ?)",
+      "INSERT INTO users (id, username, display_name, password_hash, global_id, global_public_id, created_at) VALUES (?, ?, ?, '!', ?, ?, ?)",
       id,
       body.username,
       body.displayName ?? body.username,
       identity,
+      publicId && !one("SELECT 1 AS x FROM users WHERE global_public_id = ?", publicId) ? publicId : null,
       now(),
     );
     consumeSignupInvite(invite);

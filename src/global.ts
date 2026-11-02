@@ -51,8 +51,10 @@ async function register(): Promise<void> {
   store("global.serverSecret", res.serverSecret);
 }
 
+let attestX: string | null = null;
 async function refresh(): Promise<void> {
   keys = (await call<{ keys: PublishedKey[] }>("/v1/tokens/keys")).keys;
+  attestX = (await call<{ x: string }>("/v1/attest/key").catch(() => null))?.x ?? attestX;
   const id = setting("global.serverId");
   const secret = setting("global.serverSecret");
   if (id && secret) sanctions = (await call<{ sanctions: Sanction[] }>("/v1/servers/self", { headers: { authorization: `Server ${id}:${secret}` } })).sanctions;
@@ -152,4 +154,16 @@ export function verifyGlobalProof(proof: GlobalProof): string {
   run("INSERT INTO global_spent_tokens (hash, kid, spent_at) VALUES (?, ?, ?)", spent, proof.token.kid, now());
   run("DELETE FROM global_spent_tokens WHERE kid NOT IN (" + keys.map(() => "?").join(",") + ")", ...keys.map((k) => k.kid));
   return proof.identity;
+}
+
+/** Global's statement "this identity belongs to the account with this public ID". Null when absent or invalid. */
+export function attestedPublicId(identity: string, attestation: { publicId: string; expires: number; signature: string } | undefined): string | null {
+  if (!attestation || !attestX || attestation.expires < Date.now() || !/^[A-Za-z0-9]{6,32}$/.test(attestation.publicId)) return null;
+  try {
+    const key = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: attestX }, format: "jwk" });
+    const message = `annoy-attest/v1|${identity}|${attestation.publicId}|${attestation.expires}`;
+    return verify(null, Buffer.from(message), key, Buffer.from(attestation.signature, "base64url")) ? attestation.publicId : null;
+  } catch {
+    return null;
+  }
 }
