@@ -39,9 +39,7 @@ o updater lê só as 10 entradas mais novas do feed de releases.
 Todas as releases até a 0.9.x passaram a ter título `-alpha`. As tags também
 viraram `-alpha` (mesmo commit; a tag antiga foi apagada), com duas exceções:
 
-- Client `v0.9.3`: é a "latest", e os apps abaixo dela buscam o manifest
-  assinado em `releases/download/v0.9.3/`. Renomear a tag para `v0.9.3-alpha`
-  depois que a `0.10.0-alpha.1` for publicada (e atualizar a `url` do
-  DSA-2026-001 em `security/advisories.json`).
+- Client `v0.9.3`: renomeada para `v0.9.3-alpha` em 05/11/2026, depois que a
+  `0.10.0-alpha.1` virou a "latest".
 - Server `v0.9.0`–`v0.9.4`: releases imutáveis no GitHub, a tag não pode mudar.
   Ficam só com o título `-alpha`. As imagens Docker não mudam.

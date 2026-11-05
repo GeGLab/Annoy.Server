@@ -21,7 +21,10 @@ async function passwordSlot<T>(work: () => Promise<T>): Promise<T> {
   finally { const next = waiting.shift(); if (next) next(); else active--; }
 }
 export const SESSION_TTL_MS = 24 * 60 * 60_000;
-const BOOTSTRAP_TTL_MS=5*60_000;
+// Sessions last until sign-out or revocation, as before the E2EE work. The
+// 5-minute "bootstrap" lifetime waited for a device-bind that 0.10 removed
+// (TODO item 3); keeping it signed everyone out after five minutes.
+const SESSION_LIFETIME_MS = 10 * 365 * 24 * 60 * 60_000;
 
 export async function hashPassword(password: string): Promise<string> {
   if (password.length > 256) throw new HttpError(400, "invalid_password", "Senha muito longa");
@@ -58,7 +61,7 @@ export const hashToken = (token: string) => createHash("sha256").update(token).d
 export function createSession(userId: string): string {
   requireAccountMode(config.accountMode);
   const token = randomBytes(32).toString("base64url");
-  run("INSERT INTO sessions (token_hash, user_id, created_at, account_mode, expires_at) VALUES (?, ?, ?, ?, ?)", hashToken(token), userId, now(), config.accountMode, new Date(Date.now() + BOOTSTRAP_TTL_MS).toISOString());
+  run("INSERT INTO sessions (token_hash, user_id, created_at, account_mode, expires_at) VALUES (?, ?, ?, ?, ?)", hashToken(token), userId, now(), config.accountMode, new Date(Date.now() + SESSION_LIFETIME_MS).toISOString());
   return token;
 }
 
