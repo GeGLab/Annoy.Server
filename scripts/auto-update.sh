@@ -21,6 +21,8 @@ fi
 
 control="${ANNOY_CONTROL_DIR:-/control}"
 mkdir -p "$control"
+# The server runs as uid 1000 (node) and writes "request" here for `update apply`.
+chown 1000:1000 "$control" 2>/dev/null || chmod 0777 "$control"
 # Up to 0.9 the app could switch automatic updates; the flag decides now.
 rm -f "$control/auto"
 
