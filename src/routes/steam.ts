@@ -2,12 +2,16 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { bearerToken, requireUser } from "../auth.ts";
 import { parse } from "../validate.ts";
-import { beginSteamLink, completeSteamLink, disconnectSteam, pollSteamLink, steamOnlineActivity, steamStatus } from "../steam.ts";
+import { beginSteamLink, completeSteamLink, disconnectSteam, pollSteamLink, refreshSteamPersona, steamOnlineActivity, steamStatus } from "../steam.ts";
 
 export function steamRoutes(app: FastifyInstance) {
   app.get("/users/@me/steam", async (req, reply) => {
     reply.header("Cache-Control", "no-store");
-    return steamStatus(requireUser(req));
+    const userId = requireUser(req);
+    const refresh = refreshSteamPersona(userId);
+    // Wait only when there is no name yet; an old name is shown while it refreshes.
+    if (!steamStatus(userId).connection?.personaName) await refresh;
+    return steamStatus(userId);
   });
   app.post("/auth/steam/begin", async (req, reply) => {
     reply.header("Cache-Control", "no-store");

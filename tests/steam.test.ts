@@ -20,7 +20,7 @@ const app = Fastify();
 app.setErrorHandler((e, _req, reply) => reply.status(e instanceof HttpError ? e.status : 500).send({ message: (e as Error).message }));
 await app.register(async (api) => steamRoutes(api), { prefix: "/api" });
 const tokens: Record<string, string> = {};
-for (const id of ["alice", "bob", "charlie", "logout", "deleted", "keep", "drop"]) {
+for (const id of ["alice", "bob", "charlie", "logout", "deleted", "keep", "drop", "persona"]) {
   run("INSERT INTO users(id,username,display_name,password_hash,created_at) VALUES(?,?,?,'!','2026-01-01')", id, id, id);
   tokens[id] = createSession(id);
 }
@@ -178,11 +178,11 @@ test("failed, private and non-Steam game lookups clear activity", async () => {
 });
 
 test("account deletion erases the Steam link and merging transfers it", async () => {
-  run("INSERT INTO steam_connections VALUES('deleted', '76561198000000004', '2026-01-01')");
+  run("INSERT INTO steam_connections(user_id, steam_id, connected_at) VALUES('deleted', '76561198000000004', '2026-01-01')");
   await deleteAccount("deleted");
   assert.equal(steamStatus("deleted").connection, null);
   run("UPDATE users SET global_id = 'synthetic-global-id' WHERE id = 'drop'");
-  run("INSERT INTO steam_connections VALUES('drop', '76561198000000005', '2026-01-01')");
+  run("INSERT INTO steam_connections(user_id, steam_id, connected_at) VALUES('drop', '76561198000000005', '2026-01-01')");
   mergeUsers("keep", "drop");
   assert.equal(steamStatus("keep").connection?.steamId, "76561198000000005");
   assert.equal(one("SELECT 1 FROM steam_connections WHERE user_id = 'drop'"), undefined);
@@ -221,4 +221,53 @@ test("linking works without an API key and no online request is made", async () 
     globalThis.fetch = async () => { throw new Error("No online request expected"); };
     assert.deepEqual(await steamOnlineActivity("alice"), []);
   } finally { mutable.steamApiKey = previous; }
+});
+
+test("the public Steam name is stored at link time, read from the profile without a key, and kept on failure", async () => {
+  const { config } = await import("../src/config.ts");
+  const mutable = config as { steamApiKey: string };
+  const previous = mutable.steamApiKey;
+  mutable.steamApiKey = "";
+  try {
+    await app.inject({ method: "DELETE", url: "/api/users/@me/steam", headers: headers("persona") });
+    const link = await begin("persona");
+    const urls: string[] = [];
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      urls.push(url);
+      if (url === "https://steamcommunity.com/openid/login") return new Response("is_valid:true\n");
+      assert.equal(url, "https://steamcommunity.com/profiles/76561198000000042/?xml=1");
+      return new Response("<?xml version=\"1.0\"?><profile><steamID64>76561198000000042</steamID64><steamID><![CDATA[Gordz\u0007illa]]></steamID></profile>");
+    };
+    await callback(assertion(link, "76561198000000042"));
+    const done = await poll(link, "persona");
+    assert.equal(done.status, "done");
+    assert.equal(done.connection.personaName, "Gordzilla");
+    assert.equal(urls.length, 2);
+    // A fresh name is not fetched again.
+    globalThis.fetch = async () => { throw new Error("No request expected"); };
+    const status = (await app.inject({ url: "/api/users/@me/steam", headers: headers("persona") })).json();
+    assert.equal(status.connection.personaName, "Gordzilla");
+    // An old name refreshes; a failed refresh keeps the last known name.
+    run("UPDATE steam_connections SET persona_checked_at = 0 WHERE user_id = 'persona'");
+    globalThis.fetch = async () => new Response("", { status: 503 });
+    const kept = (await app.inject({ url: "/api/users/@me/steam", headers: headers("persona") })).json();
+    assert.equal(kept.connection.personaName, "Gordzilla");
+    // A profile XML for another account is rejected.
+    run("UPDATE steam_connections SET persona_name = NULL, persona_checked_at = 0 WHERE user_id = 'persona'");
+    globalThis.fetch = async () => new Response("<profile><steamID64>76561198000000099</steamID64><steamID><![CDATA[Someone else]]></steamID></profile>");
+    const other = (await app.inject({ url: "/api/users/@me/steam", headers: headers("persona") })).json();
+    assert.equal(other.connection.personaName, undefined);
+  } finally { mutable.steamApiKey = previous; }
+});
+
+test("with an API key the name comes from GetPlayerSummaries", async () => {
+  run("UPDATE steam_connections SET persona_name = NULL, persona_checked_at = 0 WHERE user_id = 'persona'");
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    assert.equal(url.origin, "https://api.steampowered.com");
+    return Response.json({ response: { players: [{ steamid: "76561198000000042", personaname: "Key name" }] } });
+  };
+  const status = (await app.inject({ url: "/api/users/@me/steam", headers: headers("persona") })).json();
+  assert.equal(status.connection.personaName, "Key name");
 });
