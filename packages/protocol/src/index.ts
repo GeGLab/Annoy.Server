@@ -462,7 +462,8 @@ export type DiscordLoginPoll =
 
 /** Private connection information: returned only to the account owner. */
 export interface SteamConnectionStatus {
-  connection: { steamId: string; profileUrl: string } | null;
+  /** personaName is the public Steam display name; absent on older servers or while Steam has not answered. */
+  connection: { steamId: string; profileUrl: string; personaName?: string } | null;
   onlineActivityAvailable: boolean;
 }
 export interface SteamLinkBegin { url: string; handoff: string }

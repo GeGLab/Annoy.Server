@@ -150,6 +150,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS steam_connections (
   steam_id TEXT NOT NULL UNIQUE,
   connected_at TEXT NOT NULL
 )`);
+const steamColumns = (db.prepare("PRAGMA table_info(steam_connections)").all() as { name: string }[]).map((c) => c.name);
+if (!steamColumns.includes("persona_name")) db.exec("ALTER TABLE steam_connections ADD COLUMN persona_name TEXT");
+if (!steamColumns.includes("persona_checked_at")) db.exec("ALTER TABLE steam_connections ADD COLUMN persona_checked_at INTEGER NOT NULL DEFAULT 0");
 const userColumns = (db.prepare("PRAGMA table_info(users)").all() as { name: string }[]).map((c) => c.name);
 if (!userColumns.includes("imported_from")) {
   // "discord:<snowflake>" for authors recreated by the importer; they cannot log in.

@@ -23,11 +23,69 @@ function prune() {
   for (const [state, item] of pending) if (item.expires < Date.now()) pending.delete(state);
 }
 export function steamStatus(userId: string): SteamConnectionStatus {
-  const steamId = one<{ steam_id: string }>("SELECT steam_id FROM steam_connections WHERE user_id = ?", userId)?.steam_id;
+  const row = one<{ steam_id: string; persona_name: string | null }>("SELECT steam_id, persona_name FROM steam_connections WHERE user_id = ?", userId);
   return {
-    connection: steamId ? { steamId, profileUrl: `https://steamcommunity.com/profiles/${steamId}/` } : null,
+    connection: row ? {
+      steamId: row.steam_id,
+      profileUrl: `https://steamcommunity.com/profiles/${row.steam_id}/`,
+      ...(row.persona_name ? { personaName: row.persona_name } : {}),
+    } : null,
     onlineActivityAvailable: !!config.steamApiKey,
   };
+}
+
+const PERSONA_TTL = 6 * 60 * 60_000;
+const PERSONA_RETRY = 10 * 60_000;
+const personaInFlight = new Map<string, Promise<void>>();
+const cleanName = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  // Strip control characters; Steam names are at most 32 characters.
+  const name = value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 64);
+  return name || null;
+};
+/** The public display name. Uses the Web API when the instance has a key, else the public profile XML. */
+async function fetchPersonaName(steamId: string): Promise<string | null> {
+  if (config.steamApiKey) {
+    const url = new URL("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/");
+    url.searchParams.set("key", config.steamApiKey);
+    url.searchParams.set("steamids", steamId);
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000), redirect: "error" });
+    if (response.ok) {
+      const data = await response.json() as { response?: { players?: { steamid?: string; personaname?: string }[] } };
+      const name = cleanName(data.response?.players?.find((p) => p.steamid === steamId)?.personaname);
+      if (name) return name;
+    }
+  }
+  const response = await fetch(`https://steamcommunity.com/profiles/${steamId}/?xml=1`, { signal: AbortSignal.timeout(5000), redirect: "error" });
+  if (!response.ok) return null;
+  const xml = (await response.text()).slice(0, 64_000);
+  if (/<steamID64>(\d{17})<\/steamID64>/.exec(xml)?.[1] !== steamId) return null;
+  const raw = /<steamID><!\[CDATA\[([\s\S]*?)\]\]><\/steamID>/.exec(xml)?.[1];
+  return cleanName(raw);
+}
+/** Refreshes the stored name when it is missing or old. Failures keep the last known name. */
+export function refreshSteamPersona(userId: string): Promise<void> {
+  const row = one<{ steam_id: string; persona_name: string | null; persona_checked_at: number }>(
+    "SELECT steam_id, persona_name, persona_checked_at FROM steam_connections WHERE user_id = ?", userId);
+  if (!row) return Promise.resolve();
+  const age = Date.now() - row.persona_checked_at;
+  if (age < (row.persona_name ? PERSONA_TTL : PERSONA_RETRY)) return Promise.resolve();
+  const running = personaInFlight.get(userId);
+  if (running) return running;
+  const task = (async () => {
+    try {
+      const name = await fetchPersonaName(row.steam_id);
+      // Only update the same connection: the user may have disconnected or relinked meanwhile.
+      run("UPDATE steam_connections SET persona_name = COALESCE(?, persona_name), persona_checked_at = ? WHERE user_id = ? AND steam_id = ?",
+        name, Date.now(), userId, row.steam_id);
+    } catch {
+      run("UPDATE steam_connections SET persona_checked_at = ? WHERE user_id = ? AND steam_id = ?", Date.now(), userId, row.steam_id);
+    } finally {
+      personaInFlight.delete(userId);
+    }
+  })();
+  personaInFlight.set(userId, task);
+  return task;
 }
 export function beginSteamLink(userId: string, token: string, origin: string): SteamLinkBegin {
   prune();
@@ -91,8 +149,9 @@ export async function completeSteamLink(query: Record<string, string>): Promise<
     }
     const owner = one<{ user_id: string }>("SELECT user_id FROM steam_connections WHERE steam_id = ?", steamId)?.user_id;
     if (owner && owner !== item.userId) throw new Error("Esta Steam já está conectada a outra conta nesta instância.");
-    run("INSERT INTO steam_connections(user_id, steam_id, connected_at) VALUES(?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET steam_id=excluded.steam_id, connected_at=excluded.connected_at", item.userId, steamId, now());
+    run("INSERT INTO steam_connections(user_id, steam_id, connected_at, persona_name, persona_checked_at) VALUES(?, ?, ?, NULL, 0) ON CONFLICT(user_id) DO UPDATE SET steam_id=excluded.steam_id, connected_at=excluded.connected_at, persona_name=NULL, persona_checked_at=0", item.userId, steamId, now());
     onlineCache.delete(item.userId);
+    await refreshSteamPersona(item.userId);
     item.result = { status: "done", connection: steamStatus(item.userId).connection! };
     return page(true);
   } catch (error) {
