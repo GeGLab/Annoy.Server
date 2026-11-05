@@ -14,6 +14,11 @@ jobs:
   image:
     runs-on: ubuntu-latest
     steps:
+      - name: Main-line releases only
+        if: github.event_name == 'release' && (github.event.release.prerelease || contains(github.ref_name, '-nightly') || contains(github.ref_name, '-unstable'))
+        run: |
+          echo "${{ github.ref_name }} is a pre-release or channel build; main-line releases are ordinary releases (docs/releases/CHANNELS.md)" >&2
+          exit 1
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -26,10 +31,15 @@ jobs:
         with:
           # Keep the image address used by existing deployments after a repository rename.
           images: ghcr.io/geglab/annoy-server
+          # Releases are the main line (alpha now, then beta, then stable): they
+          # move "latest" and "alpha". {{major}}.{{minor}} is only made for
+          # stable versions, so ANNOY_VERSION=0.9 never gets an alpha.
+          # Nightly and unstable images come from docker-channel.yml.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=alpha,enable=${{ github.event_name == 'release' }}
       - uses: docker/build-push-action@v6
         with:
           context: .

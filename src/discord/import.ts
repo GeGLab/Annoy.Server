@@ -1,5 +1,3 @@
-import {requireLegacyWrite} from '../crypto-delivery.ts';
-import { Readable } from "node:stream";
 import {
   DEFAULT_EVERYONE_PERMISSIONS,
   LIMITS,
@@ -12,26 +10,26 @@ import {
   type ImportRequest,
   type ImportStructure,
 } from "@distopic/protocol";
-import { maxUploadBytes, requireServerQuota } from "../instance.ts";
+import { requireServerQuota } from "../instance.ts";
 import { now, one, run, tx } from "../db.ts";
 import { badRequest, conflict, forbidden } from "../errors.ts";
 import { sendToUser, serverChanged } from "../events.ts";
-import { idAt, newId, secretId } from "../ids.ts";
+import { newId } from "../ids.ts";
 import { requireServer } from "../perms.ts";
 import { getServer } from "../repo.ts";
-import { discardBlobs, writeBlob } from "../uploads.ts";
-import { avatarUrlOf, DiscordError, DiscordRest, isDiscordCdn, snowflakeTime, type DChannel, type DGuild, type DMessage, type DUser } from "./rest.ts";
+import { DiscordError, DiscordRest, type DChannel, type DGuild, type DUser } from "./rest.ts";
 
 // Discord -> Annoy mapping ------------------------------------------------
 
 const TEXT_TYPES = new Set([0, 5]); // text, announcement
 const VOICE_TYPES = new Set([2, 13]); // voice, stage
 const TYPE_LABELS: Record<number, string> = { 0: "texto", 2: "voz", 4: "categoria", 5: "anúncios", 13: "palco", 15: "fórum", 16: "mídia" };
-/** Message types that carry user content: default, reply, slash-command response. */
-const CONTENT_TYPES = new Set([0, 19, 20]);
-const PAGE = 100;
-/** View Channels + Read Message History: everything the importer needs. */
-const BOT_PERMISSIONS = 1024 + 65536;
+/**
+ * View Channels only: the importer copies structure, roles and permissions.
+ * Messages are never imported: they belong to other people, who didn't agree
+ * to move them (decided 2026-11-04).
+ */
+const BOT_PERMISSIONS = 1024;
 
 const PERMISSION_MAP: [bigint, number][] = [
   [1n << 10n, Permission.VIEW_CHANNEL],
@@ -168,9 +166,8 @@ function pruneFinished(): void {
 }
 
 export function startImport(userId: string, req: ImportRequest): ImportJob {
-  if(req.messageChannelIds.length)requireLegacyWrite("discord-import");
   for (const r of jobs.values()) {
-    if (r.userId === userId && (r.job.phase === "structure" || r.job.phase === "messages")) throw conflict("Já existe uma importação em andamento");
+    if (r.userId === userId && r.job.phase === "structure") throw conflict("Já existe uma importação em andamento");
   }
   if (req.target.kind === "new") requireServerQuota(userId);
   if (req.target.kind === "existing") {
@@ -188,11 +185,8 @@ export function startImport(userId: string, req: ImportRequest): ImportJob {
       serverId: req.target.kind === "existing" ? req.target.serverId : null,
       guildName: "",
       phase: "structure",
-      currentChannel: null,
       channelsDone: 0,
       channelsTotal: 0,
-      messagesImported: 0,
-      attachmentsImported: 0,
       warnings: [],
       error: null,
     },
@@ -213,22 +207,7 @@ async function runImport(r: Running, req: ImportRequest): Promise<void> {
     job.serverId = serverId;
     emit(r, true);
 
-    const wanted = new Set(req.messageChannelIds);
-    const targets = sidebarOrder(channels).filter((c) => wanted.has(c.id) && TEXT_TYPES.has(c.type) && channelMap.get(job.id)?.has(c.id));
-    job.phase = "messages";
-    job.channelsTotal = targets.length;
-    emit(r, true);
-    const names = new Map(channels.map((c) => [c.id, c.name]));
-    const roleNames = new Map(guild.roles.map((role) => [role.id, role.name]));
-    for (const channel of targets) {
-      job.currentChannel = channel.name;
-      emit(r, true);
-      await importMessages(r, req, rest, channel, channelMap.get(job.id)!.get(channel.id)!, names, roleNames);
-      job.channelsDone++;
-      serverChanged(serverId);
-    }
     job.phase = "done";
-    job.currentChannel = null;
   } catch (err) {
     if (r.abort.signal.aborted) job.phase = "cancelled";
     else {
@@ -237,14 +216,11 @@ async function runImport(r: Running, req: ImportRequest): Promise<void> {
       if (!(err instanceof DiscordError)) console.error("discord import failed", {code:"import_failed"});
     }
   } finally {
-    channelMap.delete(job.id);
     if (job.serverId) serverChanged(job.serverId);
     emit(r, true);
   }
 }
 
-/** Discord channel id -> Annoy channel id, per job, for the message phase. */
-const channelMap = new Map<string, Map<string, string>>();
 
 function importStructure(r: Running, req: ImportRequest, guild: DGuild, channels: DChannel[]): string {
   const { job, userId } = r;
@@ -327,7 +303,6 @@ function importStructure(r: Running, req: ImportRequest, guild: DGuild, channels
     if (skippedMemberOverwrites > 0) warn(job, `${skippedMemberOverwrites} permissões por membro foram ignoradas (membros do Discord não têm conta aqui)`);
     const unsupported = channels.filter((c) => selectedChannels.has(c.id) && kindOf(c.type) === "unsupported");
     if (unsupported.length > 0) warn(job, `Canais sem equivalente ignorados: ${unsupported.map((c) => c.name).join(", ")}`);
-    channelMap.set(job.id, ids);
     return sid;
   });
 
@@ -335,164 +310,4 @@ function importStructure(r: Running, req: ImportRequest, guild: DGuild, channels
   if (req.target.kind === "new") sendToUser(userId, { t: "SERVER_CREATE", d: server });
   serverChanged(serverId);
   return serverId;
-}
-
-// Messages -------------------------------------------------------------------
-
-/** Imported authors are profiles without credentials, reused across imports. */
-function ghostUser(user: DUser, cache: Map<string, string>): string {
-  const cached = cache.get(user.id);
-  if (cached) return cached;
-  const key = `discord:${user.id}`;
-  const displayName = (user.global_name || user.username).slice(0, LIMITS.usernameMax);
-  // Someone who already signed in with this Discord account authors their own history.
-  const linked = one<{ id: string }>("SELECT id FROM users WHERE discord_id = ?", user.id)?.id;
-  if (linked) {
-    cache.set(user.id, linked);
-    return linked;
-  }
-  let id = one<{ id: string }>("SELECT id FROM users WHERE imported_from = ?", key)?.id;
-  if (id) run("UPDATE users SET display_name = ?, avatar_url = ? WHERE id = ?", displayName, avatarUrlOf(user), id);
-  else {
-    id = newId();
-    // "dc." is reserved at registration, and "!" never verifies as a password hash.
-    run(
-      "INSERT INTO users (id, username, display_name, password_hash, created_at, imported_from, avatar_url) VALUES (?, ?, ?, '!', ?, ?, ?)",
-      id,
-      `dc.${user.id}`,
-      displayName,
-      now(),
-      key,
-      avatarUrlOf(user),
-    );
-  }
-  cache.set(user.id, id);
-  return id;
-}
-
-function convertContent(m: DMessage, channelNames: Map<string, string>, roleNames: Map<string, string>): string {
-  const users = new Map(m.mentions.map((u) => [u.id, u.global_name || u.username]));
-  let content = m.content
-    .replace(/<@!?(\d+)>/g, (_, id: string) => `@${users.get(id) ?? "usuário"}`)
-    .replace(/<@&(\d+)>/g, (_, id: string) => `@${roleNames.get(id) ?? "cargo"}`)
-    .replace(/<#(\d+)>/g, (_, id: string) => `#${channelNames.get(id) ?? "canal"}`)
-    .replace(/<a?:(\w+):\d+>/g, ":$1:")
-    .replace(/<t:(\d+)(?::\w)?>/g, (_, s: string) => new Date(Number(s) * 1000).toLocaleString("pt-BR"));
-  if (!content && m.attachments.length === 0) {
-    if (m.sticker_items?.length) content = `[figurinha: ${m.sticker_items.map((s) => s.name).join(", ")}]`;
-    else if (m.embeds.length) content = "[embed não suportado]";
-  }
-  return content.slice(0, LIMITS.messageMax);
-}
-
-interface StoredAttachment {
-  id: string;
-  filename: string;
-  size: number;
-  contentType: string;
-}
-
-async function downloadAttachments(r: Running, m: DMessage): Promise<StoredAttachment[]> {
-  const out: StoredAttachment[] = [];
-  for (const a of m.attachments) {
-    if (a.size > maxUploadBytes()) {
-      warn(r.job, `Anexo ${a.filename} (${Math.round(a.size / 1048576)} MB) excede o limite e foi ignorado`);
-      continue;
-    }
-    if (!isDiscordCdn(a.url)) continue;
-    const id = secretId();
-    try {
-      const res = await fetch(a.url, { signal: AbortSignal.any([r.abort.signal,AbortSignal.timeout(30000)]),redirect:'error' });
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-      const size = await writeBlob(id, Readable.fromWeb(res.body as import("node:stream/web").ReadableStream),maxUploadBytes());
-      out.push({ id, filename: a.filename.replace(/[/\\\0]/g, "_").slice(0, 200), size, contentType: a.content_type ?? "application/octet-stream" });
-    } catch (err) {
-      await discardBlobs([id]);
-      if (r.abort.signal.aborted) throw err;
-      warn(r.job, `Falha ao baixar ${a.filename}`);
-    }
-  }
-  return out;
-}
-
-async function importMessages(
-  r: Running,
-  req: ImportRequest,
-  rest: DiscordRest,
-  channel: DChannel,
-  targetId: string,
-  channelNames: Map<string, string>,
-  roleNames: Map<string, string>,
-): Promise<void> {
-  requireLegacyWrite(targetId);
-  const { job } = r;
-  const authors = new Map<string, string>();
-  // Ids derive from the Discord snowflake, so replies resolve without a lookup table
-  // and pages can be stored newest-first while history still sorts by time.
-  const ourId = (discordId: string) => idAt(snowflakeTime(discordId), `${job.id}:${discordId}`);
-  let before: string | null = null;
-  let copied = 0;
-  const limit = req.messageLimit ?? Number.POSITIVE_INFINITY;
-
-  while (copied < limit) {
-    requireLegacyWrite(targetId);
-    const size = Math.min(PAGE, limit - copied);
-    let page: DMessage[];
-    try {
-      page = await rest.get<DMessage[]>(`/channels/${channel.id}/messages?limit=${size}${before ? `&before=${before}` : ""}`);
-    } catch (err) {
-      if (err instanceof DiscordError && err.status === 403) {
-        warn(job, `#${channel.name}: o bot não pode ler o histórico (falta "Ler histórico de mensagens")`);
-        return;
-      }
-      throw err;
-    }
-    if (page.length === 0) return;
-    before = page[page.length - 1]!.id;
-    copied += page.length;
-
-    const userMessages = page.filter((m) => CONTENT_TYPES.has(m.type));
-    // Without the privileged intent Discord blanks content, attachments and embeds alike.
-    if (userMessages.length > 0 && userMessages.every((m) => !m.content && m.attachments.length === 0 && m.embeds.length === 0 && !m.sticker_items?.length)) {
-      warn(job, 'Mensagens chegaram vazias: ative "Message Content Intent" na aba Bot do portal do Discord');
-    }
-    const rows: { m: DMessage; content: string; files: StoredAttachment[] }[] = [];
-    for (const m of userMessages) {
-      requireLegacyWrite(targetId);
-      const files = req.attachments ? await downloadAttachments(r, m) : [];
-      const content = convertContent(m, channelNames, roleNames);
-      if (!content && files.length === 0) continue;
-      rows.push({ m, content, files });
-    }
-
-    try {
-      tx(() => {
-        for (const { m, content, files } of rows) {
-          const id = ourId(m.id);
-          const ref = m.message_reference;
-          const replyTo = ref?.message_id && (!ref.channel_id || ref.channel_id === channel.id) ? ourId(ref.message_id) : null;
-          run(
-            "INSERT OR IGNORE INTO messages (id, channel_id, author_id, content, created_at, edited_at, reply_to_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            id,
-            targetId,
-            ghostUser(m.author, authors),
-            content,
-            m.timestamp,
-            m.edited_timestamp,
-            replyTo,
-          );
-          for (const f of files) {
-            run("INSERT INTO attachments (id, message_id, filename, size, content_type) VALUES (?, ?, ?, ?, ?)", f.id, id, f.filename, f.size, f.contentType);
-          }
-        }
-      });
-    } catch (err) {
-      await discardBlobs(rows.flatMap((row) => row.files.map((f) => f.id)));
-      throw err;
-    }
-    job.messagesImported += rows.length;
-    job.attachmentsImported += rows.reduce((n, row) => n + row.files.length, 0);
-    emit(r);
-    if (page.length < size) return;
-  }
 }

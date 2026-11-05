@@ -54,8 +54,8 @@ services:
       - distopic-data:/data
       - annoy-control:/control
 
-  # Updates the server when the admin asks in the app (Administrar instância →
-  # Atualizações), and on its own when automatic updates are on there.
+  # Updates the server when asked (./scripts/annoy-admin.sh update apply), and
+  # on its own when ANNOY_AUTO_UPDATE=on.
   updater:
     image: docker:28-cli
     restart: unless-stopped

@@ -3,8 +3,9 @@
 An owner cannot delete a community while it has other members. Offline members
 count too. `DELETE /api/servers/:id` checks membership again within the deletion
 transaction, so a stale "alone" snapshot cannot bypass the rule. The same guard
-applies when the owner uses the instance administration route. Moderation by an
-independent instance administrator keeps its existing authorization.
+applies to accounts of the app: the administration routes accept only the
+`annoy-admin` command on the host (loopback and the token in the data folder),
+which may remove any server.
 
 `POST /api/servers/:id/ownership` takes `{ userId }`. Only the current owner can
 transfer, and the target must be another existing member with an active account.
@@ -27,5 +28,6 @@ account action and does not change community ownership.
 
 `npm run test:ownership` covers owner/membership guards, offline members, a member
 joining after a client snapshot, validated transfers, former-owner permissions,
-and the owner attempting deletion through instance administration. Tests use
+the owner attempting deletion through the administration route, and the host
+removing a server with members. Tests use
 an isolated SQLite database and Fastify injection, without a live SFU.

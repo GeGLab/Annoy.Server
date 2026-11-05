@@ -17,8 +17,6 @@ const { db, run } = await import("../src/db.ts"),
   { channelRoutes } = await import("../src/routes/channels.ts"),
   { registerGateway } = await import("../src/gateway.ts"),
   { HttpError } = await import("../src/errors.ts");
-// These fixtures stand for history written before E2EE, as the legacy import does.
-db.function("annoy_legacy_source_write", () => 1);
 const app = Fastify();
 await app.register(websocket);
 channelRoutes(app);

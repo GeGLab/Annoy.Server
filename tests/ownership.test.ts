@@ -89,6 +89,16 @@ test("owners cannot bypass the membership guard through the administrative delet
   assert.equal(ownerOf("admin-owned"), "owner");
 });
 
+test("the host (annoy-admin) deletes anyone's server, members or not", async () => {
+  const { ensureAdminToken, adminTokenPath, ADMIN_TOKEN_HEADER } = await import("../src/admin-control.ts");
+  const { readFileSync } = await import("node:fs");
+  ensureAdminToken();
+  server("host-deleted");
+  const res = await app.inject({ method: "DELETE", url: "/admin/servers/host-deleted", headers: { [ADMIN_TOKEN_HEADER]: readFileSync(adminTokenPath(), "utf8").trim() } });
+  assert.equal(res.statusCode, 200, res.body);
+  assert.equal(ownerOf("host-deleted"), undefined);
+});
+
 test("owners must transfer ownership before leaving; nonowners cannot delete even with administrator permissions", async () => {
   server("leave-protected");
   assert.equal((await app.inject({ method: "DELETE", url: "/servers/leave-protected/members/@me", headers: auth() })).statusCode, 400);

@@ -1,14 +1,9 @@
-import {mediaProtection} from '../media-security.ts';
 import { LIMITS, PROTOCOL_VERSION, type AuthResponse, type InstanceInfo, type User } from "@distopic/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { bearerToken, createSession, deleteSession, hashPassword, hashToken, deleteSessionsOf, requireUser, verifyPassword, spendPasswordTime, userIdForToken } from "../auth.ts";
 import { deleteAccount, mergeUsers, RESERVED_USERNAME } from "../accounts.ts";
 import { requireAccountMode } from "../account-policy.ts";
-import {sessionChanged} from "../session-events.ts";
-import {validateDpopRequest,dpopNonce,verifyDpop,boundDevice} from "../dpop.ts";
-import {activeDevice} from "../devices.ts";
-import { cryptoInstanceId } from "../devices.ts";
 import { config } from "../config.ts";
 import { VERSION } from "../version.ts";
 import { now, one, run, tx } from "../db.ts";
@@ -121,8 +116,7 @@ function confirmMigrationOwner(owner: MigrationOwner): MigrationUser {
 }
 
 export function authRoutes(app: FastifyInstance): void {
-  app.addHook("preValidation", async (req,reply) => {
-    await validateDpopRequest(req,reply);
+  app.addHook("preValidation", async (req) => {
     if (req.method === "POST" && /(?:^|\/)auth\//.test(req.routeOptions.url ?? "")) authAttempt(req);
   });
   app.get("/media/config", async (req, reply) => {
@@ -140,7 +134,6 @@ export function authRoutes(app: FastifyInstance): void {
       registrationOpen: registration !== "closed",
       registration,
       accountMode: config.accountMode,
-      crypto: { version: 1, protocol: "MLS-RFC9420", instanceId: cryptoInstanceId(), dpopNonce,media:mediaProtection },
       discordLogin: false,
       globalServerId: globalLoginAvailable() ? globalServerId() : null,
     };
@@ -186,18 +179,6 @@ export function authRoutes(app: FastifyInstance): void {
     consumeSignupInvite(invite);
     grantBootstrapAdmin(id, body.username);
     return { token: createSession(id), user: ownUser(id) };
-  });
-
-  app.post('/auth/device-bind',async req=>{
-    const user=requireUser(req),token=bearerToken(req)!;
-    const body=parse(z.object({deviceId:z.string().regex(/^[A-Za-z0-9_-]{43}$/),proof:z.string().max(8192)}).strict(),req.body);
-    activeDevice(body.deviceId,user);
-    if(boundDevice(token) && boundDevice(token)!==body.deviceId)throw forbidden('Sessão já vinculada a outro dispositivo');
-    await verifyDpop(token,body.proof,'POST',new URL(req.url,config.publicUrl||`${req.protocol}://${req.host}`).toString(),body.deviceId);
-    if(!userIdForToken(token))throw unauthorized();
-    run('UPDATE sessions SET device_id=?,expires_at=? WHERE token_hash=?',body.deviceId,new Date(Date.now()+24*3600000).toISOString(),hashToken(token));
-    sessionChanged(hashToken(token),'rebound');
-    return {tokenType:'DPoP',deviceId:body.deviceId};
   });
 
   // Migration credentials never create an ordinary session on their own.

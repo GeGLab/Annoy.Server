@@ -32,7 +32,7 @@ dá para migrar aos poucos.
 | **Voz** | WebRTC com SFU embutido ([mediasoup](https://mediasoup.org)), detecção de voz ou apertar para falar, mute/deafen, quem está falando, silenciar e desconectar membros |
 | **Permissões** | Hierarquia de cargos, 15 permissões, permitir/herdar/negar por canal para cargos e membros, convites com validade e limite, expulsar e banir |
 | **Social** | Amigos, presença e mensagens diretas |
-| **Importar do Discord** | Canais, categorias, cargos, permissões e histórico (com anexos) de um servidor do Discord. Você escolhe o que vem |
+| **Importar do Discord** | Canais, categorias, cargos e permissões de um servidor do Discord. Você escolhe o que vem |
 | **Entrar com Discord** | OAuth2 oficial que puxa @, nome e foto. Mensagens importadas da pessoa passam a ser dela |
 | **Operação** | Um processo, SQLite, uma porta de mídia UDP/TCP, imagem Docker |
 
@@ -56,8 +56,10 @@ em **UDP e TCP** (voz).
 **Atualização automática (opcional):** coloque `COMPOSE_PROFILES=autoupdate`
 no `.env` e rode `docker compose up -d`. Um contêiner `updater` confere a cada
 6 horas (`ANNOY_UPDATE_INTERVAL_HOURS`) e reinicia o servidor com a imagem mais
-nova de `ANNOY_VERSION`: `latest` segue todas as versões, `0.4` só recebe
-correções da 0.4.x. Ele usa o socket do Docker para recriar o contêiner.
+nova de `ANNOY_VERSION`: `latest` segue todas as versões da linha principal
+(alpha por enquanto, como `0.10.0-alpha.1`), `0.4` só recebe correções estáveis
+da 0.4.x. Os canais de teste `nightly` e `unstable` ainda não foram lançados
+(docs/releases/CHANNELS.md). Ele usa o socket do Docker para recriar o contêiner.
 
 **Atualizando instalações antigas:** use as variáveis `ANNOY_*` no `.env`.
 Os dados permanecem no mesmo volume. Aponte o remoto para o repositório
@@ -86,7 +88,7 @@ Tudo é por variável de ambiente; veja [`.env.example`](.env.example) e a
   "Entrar com Discord".
 - `ANNOY_DATA_DIR`: onde ficam o banco, os anexos e as fotos de perfil. É a pasta do backup.
 - `ANNOY_PUBLIC_URL`: endereço externo da instância; configure ao usar um proxy.
-- `ANNOY_ACCOUNT_MODE`: `global` (contas Annoy, padrão) ou `local`. Nunca os dois.
+- `ANNOY_ACCOUNT_MODE`: `global` (contas Annoy, padrão) ou `local`. Nunca os dois. Com `global`, amigos, DMs, status e chamadas privadas ficam na nuvem Annoy, fora do servidor: as rotas antigas respondem 410 e, na primeira inicialização, as DMs e amizades que o servidor guardava são apagadas uma vez. Com `local`, tudo continua no servidor.
 - `ANNOY_MIN_CLIENT_VERSION`: versão mínima do app (padrão `0.9.0`). Versões antigas pedem atualização.
 - `ANNOY_TRUSTED_PROXIES`: IPs/CIDRs dos seus proxies TLS, confiáveis para o IP real do cliente.
 
@@ -95,7 +97,7 @@ Conexões remotas, inclusive na LAN, exigem HTTPS/WSS. Coloque um proxy com TLS
 (Caddy, nginx, Cloudflare Tunnel) na frente da porta 8787 e configure seus IPs
 confiáveis explicitamente. Use a origem HTTPS final: requisições com credenciais
 recusam redirecionamentos. HTTP só é permitido no loopback de desenvolvimento.
-DTLS-SRTP protege o transporte. Desde a 0.9.0, as chamadas usam SFrame: o SFU só repassa mídia cifrada.
+DTLS-SRTP protege o transporte. A voz com SFU não é cifrada de ponta a ponta.
 
 Fotos de perfil agora podem ser enviadas, recortadas e removidas pelo cliente.
 Após atualizar as dependências com `npm ci`, reinicie o servidor. As rotas e o
@@ -114,10 +116,10 @@ usada.
 
 **Importar um servidor:** crie uma aplicação no
 [portal de desenvolvedores](https://discord.com/developers/applications). Na aba
-**Bot**, ative **Message Content Intent** e copie o token. No client, vá em
+**Bot**, copie o token. No client, vá em
 **+ → Importar do Discord** e siga o assistente: adicione o bot com o link
-gerado, escolha o servidor e marque canais, histórico, cargos e opções. Os
-autores viram perfis importados (nome e foto, sem login). Membros, DMs, fóruns,
+gerado, escolha o servidor e marque canais, cargos e opções. Mensagens não são
+importadas, porque são de outras pessoas. Membros, fóruns,
 threads, emojis e figurinhas não são importados, e o token nunca é salvo.
 
 **Entrar com Discord:** na mesma aplicação, em **OAuth2 → Redirects**, adicione
@@ -148,8 +150,8 @@ Contas Annoy são obrigatórias por padrão. Para uma instância exclusivamente 
 ## Segurança a partir da 0.9
 
 A 0.9.0 é uma atualização de segurança obrigatória e exige o cliente 0.9.0.
-Mensagens, anexos, edições e reações novas são cifradas de ponta a ponta
-(OpenMLS), e as chamadas usam SFrame. Envio em texto claro é recusado; o
-histórico antigo fica separado e somente leitura. As sessões são ligadas ao
-dispositivo (DPoP). Ainda não houve auditoria independente. Veja
-[a versão 0.9.0](docs/releases/0.9.0.md).
+A criptografia de ponta a ponta dos canais (OpenMLS, SFrame e sessões ligadas
+ao dispositivo) foi removida depois da 0.9 (item 3 do TODO) e vai voltar
+pensada para cada função. Mensagens dos canais trafegam em TLS e ficam em
+texto no servidor. Na primeira inicialização, as mensagens cifradas antigas
+são apagadas. As DMs de contas Annoy continuam cifradas, na nuvem Annoy.

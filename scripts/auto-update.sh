@@ -1,9 +1,8 @@
 #!/bin/sh
-# Runs inside the "updater" Compose service. The instance admin controls it
-# from the app (Administrar instância → Atualizações) through files in
-# /control, shared with the server: "auto" (on/off) and "request" (update
-# now). It answers with /control/status.json. Pinning ANNOY_VERSION=0.7 keeps
-# updates within 0.7.x.
+# Runs inside the "updater" Compose service. Automatic updates follow only
+# ANNOY_AUTO_UPDATE in .env; `annoy-admin update apply` asks for one now by
+# writing /control/request. It answers with /control/status.json. Pinning
+# ANNOY_VERSION=0.7 keeps updates within 0.7.x.
 #
 # Updates never stop the server first: the new version starts in the idle
 # slot (annoy or annoy-b), /control/active points the proxy at it once it
@@ -13,8 +12,8 @@ set -u
 hours="${ANNOY_UPDATE_INTERVAL_HOURS:-6}"
 case "$hours" in '' | *[!0-9]* | 0) echo "ANNOY_UPDATE_INTERVAL_HOURS must be a whole number of hours" >&2; exit 1 ;; esac
 
-# Until the admin chooses in the app: ANNOY_AUTO_UPDATE, or "on" for setups
-# that enabled the old COMPOSE_PROFILES=autoupdate.
+# ANNOY_AUTO_UPDATE, or "on" for setups that enabled the old
+# COMPOSE_PROFILES=autoupdate.
 default_auto="${ANNOY_AUTO_UPDATE:-}"
 if [ -z "$default_auto" ]; then
   case ",${COMPOSE_PROFILES:-}," in *,autoupdate,*) default_auto=on ;; *) default_auto=off ;; esac
@@ -22,6 +21,8 @@ fi
 
 control="${ANNOY_CONTROL_DIR:-/control}"
 mkdir -p "$control"
+# Up to 0.9 the app could switch automatic updates; the flag decides now.
+rm -f "$control/auto"
 
 # Act on the same Compose project that started this container, so the server
 # keeps its volume, network and container name.
@@ -57,8 +58,7 @@ healthy() {
 if running "$(active)" && running "$(idle)"; then compose stop "$(idle)"; fi
 
 auto() {
-  value="$(cat "$control/auto" 2>/dev/null)"
-  [ "${value:-$default_auto}" = on ]
+  [ "$default_auto" = on ]
 }
 
 last_check=null

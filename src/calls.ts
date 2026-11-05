@@ -1,5 +1,3 @@
-import {requireMediaConsent} from './media-security.ts';
-import { handleMedia, mediaJoin, mediaLeave } from "./media-e2ee.ts";
 import type { DirectCall, ClientOp } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -26,7 +24,6 @@ function finish(id: string, reason: string) {
   const entry = calls.get(id);
   if (!entry) return;
   clearTimeout(entry.timer); calls.delete(id);
-  for (const connectionId of [entry.callerConnectionId, entry.calleeConnectionId]) if (connectionId !== undefined) mediaLeave(scope(id), connectionId);
   publish({ ...entry.call, status: "ended", reason });
 }
 export function clearCalls(userId: string, connectionId?: number) {
@@ -38,7 +35,6 @@ export function endCallsBetween(a: string, b: string) {
 export function callRoutes(app: FastifyInstance) {
   app.post("/calls", async (req) => {
     const callerId = requireUser(req);
-    const protection = requireMediaConsent(req.body as Record<string,unknown>);
     const { userId: calleeId, video, deviceId } = parse(z.object({ userId: z.string().min(1), video: z.boolean(), deviceId: device }), req.body);
     if (callerId === calleeId || !areFriends(callerId, calleeId)) throw forbidden("Apenas amigos podem iniciar chamadas privadas.");
     const callerConnection = [...connectionsOf(callerId)].find((connection) => connection.deviceId === deviceId);
@@ -49,19 +45,12 @@ export function callRoutes(app: FastifyInstance) {
     if ([...calls.values()].some(({ call }) => [call.callerId, call.calleeId].some((id) => id === callerId || id === calleeId))) throw badRequest("Uma das pessoas já está em uma chamada privada.");
     let iceServers: NonNullable<DirectCall["iceServers"]> = [{ urls: "stun:stun.l.google.com:19302" }];
     if (process.env.ANNOY_CALL_ICE_SERVERS) iceServers = parse(z.array(z.object({ urls: z.union([z.string().max(512), z.array(z.string().max(512)).max(8)]), username: z.string().max(512).optional(), credential: z.string().max(512).optional() })).max(8), JSON.parse(process.env.ANNOY_CALL_ICE_SERVERS));
-    const call: DirectCall = { id: newId(), callerId, calleeId, video, status: "ringing", callerDeviceId: deviceId, iceServers, protection };
+    const call: DirectCall = { id: newId(), callerId, calleeId, video, status: "ringing", callerDeviceId: deviceId, iceServers };
     lastInvite.set(callerId, Date.now());
     const timer = setTimeout(() => finish(call.id, "A chamada não foi atendida."), 45_000); timer.unref();
     calls.set(call.id, { call, timer, callerConnectionId: callerConnection.id }); publish(call); return call;
   });
   app.addHook("onClose", async () => { lastInvite.clear(); });
-}
-const scope = (callId: string) => "call:" + callId;
-/** Media key exchange of an active encrypted call, relayed exactly like a voice channel's. */
-export function handleDirectCallMedia(conn: Connection, method: string, data: Record<string, unknown>): unknown {
-  const entry = calls.get(String(data.directCall));
-  if (!entry || entry.call.status !== "active" || entry.call.protection !== "sframe" || ![entry.callerConnectionId, entry.calleeConnectionId].includes(conn.id)) throw forbidden("Chamada privada indisponível");
-  return handleMedia(conn, scope(entry.call.id), method, data);
 }
 export function handleCall(conn: Connection, message: Extract<ClientOp, { op: "call" }>) {
   const entry = calls.get(String(message.callId));
@@ -73,13 +62,9 @@ export function handleCall(conn: Connection, message: Extract<ClientOp, { op: "c
   if (conn.deviceId !== deviceId.data) return;
   if (message.action === "accept" && conn.userId === call.calleeId && call.status === "ringing") {
     if (conn.deviceId !== deviceId.data) return;
-    // An older client cannot open an encrypted call, and an encrypted one never falls back silently.
-    if (requireMediaConsent(message) !== call.protection) return finish(call.id, call.protection === "sframe" ? "A outra pessoa precisa atualizar o Annoy para chamadas criptografadas." : "A chamada foi iniciada sem criptografia de ponta a ponta.");
     const caller = [...connectionsOf(call.callerId)].find((connection) => connection.id === entry.callerConnectionId);
     if (!caller) return finish(call.id, "A pessoa se desconectou.");
     clearTimeout(entry.timer); entry.calleeConnectionId = conn.id; call.status = "active"; call.calleeDeviceId = deviceId.data;
-    mediaJoin(scope(call.id), caller, call.protection ?? "transport_only_acknowledged");
-    mediaJoin(scope(call.id), conn, call.protection ?? "transport_only_acknowledged");
     publish(call); return;
   }
   const expected = conn.userId === call.callerId ? call.callerDeviceId : call.calleeDeviceId;

@@ -55,28 +55,7 @@ export interface DChannel {
   permission_overwrites?: DOverwrite[];
 }
 
-export interface DAttachment {
-  id: string;
-  filename: string;
-  size: number;
-  url: string;
-  content_type?: string;
-}
 
-export interface DMessage {
-  id: string;
-  channel_id: string;
-  type: number;
-  content: string;
-  timestamp: string;
-  edited_timestamp: string | null;
-  author: DUser;
-  attachments: DAttachment[];
-  mentions: DUser[];
-  embeds: unknown[];
-  sticker_items?: { name: string }[];
-  message_reference?: { message_id?: string; channel_id?: string };
-}
 
 export class DiscordError extends Error {
   constructor(
@@ -94,8 +73,6 @@ function describe(status: number, body: { message?: string; code?: number }): st
   return body.message ? `Discord: ${body.message}` : `Discord respondeu HTTP ${status}`;
 }
 
-/** Converts a Discord snowflake into its creation time in ms. */
-export const snowflakeTime = (id: string) => Number((BigInt(id) >> 22n) + 1420070400000n);
 
 export class DiscordRest {
   /** Honors the reset window when a bucket is exhausted, before Discord answers 429. */
@@ -131,17 +108,5 @@ export class DiscordRest {
       if (!res.ok) throw new DiscordError(res.status, describe(res.status, body));
       return body as T;
     }
-  }
-}
-
-const CDN_HOSTS = /^(cdn\.discordapp\.com|media\.discordapp\.net)$/;
-
-/** Attachment URLs come from Discord's API; refuse anything outside its CDN. */
-export function isDiscordCdn(raw: string): boolean {
-  try {
-    const url = new URL(raw);
-    return url.protocol === "https:" && !url.username&&!url.password&&!url.port&&CDN_HOSTS.test(url.hostname);
-  } catch {
-    return false;
   }
 }

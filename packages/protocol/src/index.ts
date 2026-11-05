@@ -113,6 +113,12 @@ export interface User {
   avatarUrl: string | null;
   /** Signs in with an Annoy account. Only sent for the user's own profile. */
   global?: boolean;
+  /**
+   * Annoy public ID (U + 11 characters) of an Annoy account on a server in
+   * Annoy-account mode. The app uses it to read status and profile from the
+   * Annoy cloud (chatannoy, usersannoy). Absent for local accounts.
+   */
+  annoyId?: string | null;
 }
 
 export type Presence = "online" | "idle" | "dnd" | "offline";
@@ -210,7 +216,6 @@ export interface ChannelFilePage {
 
 export interface Message {
   sharedBy?: string;
-  protection?: "e2ee" | "legacy_plaintext";
   expiresAt?: string | null;
   id: string;
   channelId: string;
@@ -276,8 +281,8 @@ export interface Invite {
 export type RelationshipStatus = "friend" | "incoming" | "outgoing";
 
 export interface Relationship {
+  /** Friend nickname given by this user; private to its author. */
   nickname?: string;
-  nicknameByOther?: string;
   user: User;
   status: RelationshipStatus;
 }
@@ -295,8 +300,6 @@ export interface VoiceState {
   /** Sharing a screen or window. */
   screen: boolean;
   screenQuality?: { height: number; fps: number; width?: number };
-  /** The call this state belongs to uses end-to-end encrypted media. */
-  e2ee?: boolean;
 }
 
 /** What a producer carries; one camera and one screen per user at most. */
@@ -382,27 +385,19 @@ export interface ImportRequest {
   roleIds: string[];
   /** Channels and categories to recreate. */
   channelIds: string[];
-  /** Subset of channelIds whose history is copied. */
-  messageChannelIds: string[];
-  /** Newest messages per channel; null copies the whole history. */
-  messageLimit: number | null;
-  attachments: boolean;
   overwrites: boolean;
 }
 
-export type ImportPhase = "structure" | "messages" | "done" | "failed" | "cancelled";
+/** Structure, roles and permissions only: messages of other people are never imported. */
+export type ImportPhase = "structure" | "done" | "failed" | "cancelled";
 
 export interface ImportJob {
   id: string;
   serverId: string | null;
   guildName: string;
   phase: ImportPhase;
-  /** Channel whose history is being copied right now. */
-  currentChannel: string | null;
   channelsDone: number;
   channelsTotal: number;
-  messagesImported: number;
-  attachmentsImported: number;
   warnings: string[];
   error: string | null;
 }
@@ -410,7 +405,6 @@ export interface ImportJob {
 export type RegistrationMode = "open" | "invite" | "closed";
 
 export interface InstanceInfo {
-  crypto?: { version: 1; protocol: "MLS-RFC9420"; dpopNonce?:string; media?:{e2ee:false;protocol:null;status:"unvalidated"}|{e2ee:true;protocol:"SFrame-RFC9605/MLS-RFC9420";scope:readonly ("voice"|"direct_calls")[];status:"unaudited"}; instanceId: string };
   /** Exclusive authentication policy; older hosts may omit it. */
   accountMode?: "global" | "local";
   name: string;
@@ -599,41 +593,27 @@ export type VoiceMethod =
   | "resumeConsumer"
   | "getProducers"
   | "closeProducer"
+  /** Stops receiving one track (mediasoup); "unsubscribe" is the Cloudflare one. */
+  | "closeConsumer"
+  | "unsubscribe"
   // Cloudflare Realtime SFU backend (WebRTC negotiated through this server):
   | "publish"
   | "subscribe"
   | "renegotiate"
   /** Takes back a Cloudflare session after a reconnect or a server restart, without renegotiating media. */
   | "resume"
-  // End-to-end encrypted media (SFrame keyed by an MLS group per call), both backends:
-  | "mediaCreate"
-  | "mediaPropose"
-  | "mediaCommit"
   | "leave";
-
-/** "sframe": media is end-to-end encrypted. The other value is an explicit consent to transport-only protection. */
-export type VoiceMediaProtection = "sframe" | "transport_only_acknowledged";
-
-/** A call device, signed by that device's own Ed25519 key. Clients verify it against their pinned directory. */
-export interface VoiceMediaBinding { userId: string; deviceId: string; mediaKey: string; signature: string }
-
-export type VoiceMediaEvent =
-  | { channelId: string; kind: "proposals"; callId: string; epoch: number; adds: { ref: number; binding: VoiceMediaBinding; keyPackage: string }[]; removes: { ref: number; binding: VoiceMediaBinding }[]; bindings: VoiceMediaBinding[] }
-  | { channelId: string; kind: "commit"; callId: string; epoch: number; commit: string; bindings: VoiceMediaBinding[] }
-  | { channelId: string; kind: "welcome"; callId: string; epoch: number; welcome: string; bindings: VoiceMediaBinding[] }
-  /** Every member left before this device was admitted: start the call again. */
-  | { channelId: string; kind: "restart" };
 
 /** Where voice media flows: the built-in mediasoup SFU, or Cloudflare's Realtime SFU (works behind CGNAT). */
 export type VoiceBackend = "builtin" | "cloudflare";
 
-export interface DirectCall { callerDeviceId?: string; calleeDeviceId?: string; id: string; callerId: string; calleeId: string; video: boolean; status: "ringing" | "active" | "ended"; reason?: string; protection?: VoiceMediaProtection; iceServers?: { urls: string | string[]; username?: string; credential?: string }[] }
+export interface DirectCall { callerDeviceId?: string; calleeDeviceId?: string; id: string; callerId: string; calleeId: string; video: boolean; status: "ringing" | "active" | "ended"; reason?: string; iceServers?: { urls: string | string[]; username?: string; credential?: string }[] }
 
 export type ClientOp =
-  | { op: "identify"; dpop?:string; clientVersion?: string; features?: string[]; deviceId?: string; token: string; presence?: Presence }
+  | { op: "identify"; clientVersion?: string; features?: string[]; deviceId?: string; token: string; presence?: Presence }
   | { op: "heartbeat" }
   | { op: "presence"; idle: boolean; status?: Presence }
-  | { op: "call"; protection?: VoiceMediaProtection; deviceId: string; callId: string; action: "accept" | "reject" | "end" | "signal"; signal?: { description?: { type: "offer" | "answer"; sdp: string }; candidate?: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } } }
+  | { op: "call"; deviceId: string; callId: string; action: "accept" | "reject" | "end" | "signal"; signal?: { description?: { type: "offer" | "answer"; sdp: string }; candidate?: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null } } }
   | { op: "activity"; activities: UserActivity[] }
   | { op: "typing"; channelId: string }
   | { op: "voice_state"; selfMute: boolean; selfDeaf: boolean; screenQuality?: { height: number; fps: number; width?: number } }
@@ -651,7 +631,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; profileDetails?: boolean; extendedActivity?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
@@ -660,7 +640,6 @@ export type GatewayEvent =
   | { t: "SERVER_REMOVE"; d: { serverId: string } }
   /** Structure, roles or permissions changed: refetch GET /servers/:id. */
   | { t: "SERVER_REFRESH"; d: { serverId: string } }
-  | { t: "CRYPTO_DELIVERY"; d:{channelId:string} }
   | { t: "MESSAGE_CREATE"; d: Message }
   | { t: "MESSAGE_UPDATE"; d: Message }
   | { t: "MESSAGE_DELETE"; d: { channelId: string; messageId: string } }
@@ -674,7 +653,6 @@ export type GatewayEvent =
   | { t: "VOICE_STATE_UPDATE"; d: { userId: string; serverId: string; state: VoiceState | null } }
   | { t: "VOICE_NEW_PRODUCER"; d: { channelId: string; producerId: string; userId: string; kind: "audio" | "video"; source: MediaSource } }
   | { t: "VOICE_PRODUCER_CLOSED"; d: { producerId: string } }
-  | { t: "VOICE_MEDIA"; d: VoiceMediaEvent }
   | { t: "VOICE_KICKED"; d: { reason: string } }
   | { t: "VOICE_REPLY"; d: { id: number; ok: true; data: unknown } | { id: number; ok: false; message: string } }
   | { t: "DM_CREATE"; d: DmChannel }

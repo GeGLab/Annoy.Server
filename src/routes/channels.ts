@@ -1,7 +1,6 @@
 import { ALL_PERMISSIONS, has, hasMessages, LIMITS, MESSAGE_TTLS, parseMentions, Permission, type Channel, type ChannelFilePage, type Message } from "@distopic/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { requireLegacyWrite, cryptoChannel } from "../crypto-delivery.ts";
 import { requireUser } from "../auth.ts";
 import { all, now, one, run, tx } from "../db.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../errors.ts";
@@ -196,7 +195,6 @@ export function channelRoutes(app: FastifyInstance): void {
 
   app.get<Params<"id">>("/channels/:id/messages", async (req): Promise<Message[]> => {
     const { channel } = requireChannel(req.params.id, requireUser(req));
-    if (cryptoChannel(channel.id)) throw new HttpError(409,"e2ee_required","Use o transporte MLS ou o arquivo legado identificado");
     if (!hasMessages(channel.type)) return [];
     const q = parse(listQuery, req.query);
     if (q.around) {
@@ -263,7 +261,6 @@ export function channelRoutes(app: FastifyInstance): void {
     const { channel, perms } = requireChannel(req.params.id, userId, Permission.SEND_MESSAGES);
     if (!hasMessages(channel.type)) throw badRequest("Este canal não aceita mensagens");
 
-    requireLegacyWrite(channel.id);
     const { fields, files } = req.isMultipart() ? await readMultipart(req) : { fields: req.body as Record<string, unknown>, files: [] };
     try {
       if (files.length > 0 && !has(perms, Permission.ATTACH_FILES)) throw forbidden("Sem permissão para anexar arquivos");
@@ -305,7 +302,6 @@ export function channelRoutes(app: FastifyInstance): void {
     const message = getMessage(req.params.messageId);
     if (!message || message.channelId !== channel.id) throw notFound("Mensagem");
     if (message.author.id !== userId) throw forbidden("Você só pode editar suas mensagens");
-    requireLegacyWrite(channel.id);
     const body = parse(editBody, req.body);
     const mentions = resolveMentions(channel, body.content, perms);
     run(
@@ -339,7 +335,6 @@ export function channelRoutes(app: FastifyInstance): void {
   const reaction = async (req: FastifyRequest<{ Params: { id: string; messageId: string; emoji: string } }>, add: boolean) => {
     const userId = requireUser(req);
     const { channel } = requireChannel(req.params.id, userId, Permission.SEND_MESSAGES);
-    requireLegacyWrite(channel.id);
     const message = getMessage(req.params.messageId);
     if (!message || message.channelId !== channel.id) throw notFound("Mensagem");
     const emoji = req.params.emoji.normalize("NFC");

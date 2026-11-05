@@ -17,7 +17,6 @@ const { channelRoutes } = await import("../src/routes/channels.ts");
 const { HttpError } = await import("../src/errors.ts");
 const { db, run } = await import("../src/db.ts");
 // Isolated historical fixture connection, never a live HTTP option.
-db.function("annoy_legacy_source_write",()=>1);
 const { createSession } = await import("../src/auth.ts");
 const { writeBlob } = await import("../src/uploads.ts");
 const app = Fastify();

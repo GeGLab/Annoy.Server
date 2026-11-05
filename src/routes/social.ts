@@ -43,8 +43,8 @@ export function socialRoutes(app: FastifyInstance): void {
     if (relationshipStatus(userId, otherId) !== "friend" || relationshipStatus(otherId, userId) !== "friend") throw forbidden("Apenas amigos podem receber apelidos");
     const { nickname } = parse(z.object({ nickname: z.string().trim().max(64) }), req.body);
     run("UPDATE relationships SET nickname=? WHERE user_id=? AND other_id=?", nickname, userId, otherId);
+    // A friend nickname is private: only its author hears about it.
     notifyRelationship(userId, otherId);
-    notifyRelationship(otherId, userId);
     return getRelationships(userId).find((r) => r.user.id === otherId)!;
   });
   app.get("/relationships", async (req): Promise<Relationship[]> => getRelationships(requireUser(req)));

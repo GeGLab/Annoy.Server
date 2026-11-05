@@ -37,10 +37,10 @@ community gradually instead of all at once.
 | --- | --- |
 | **Text** | Servers, categories, text channels, paginated history, edit/delete, replies, `@user` / `@everyone` mentions, Markdown, file attachments, typing indicators |
 | **Voice and video** | Voice channels over WebRTC with camera and screen sharing, voice activity or push-to-talk, speaking indicators, server mute and disconnect. Built-in [mediasoup](https://mediasoup.org) SFU, or Cloudflare Realtime SFU for hosts behind CGNAT |
-| **Instance admin** | Open, invite-only or closed sign-up, sign-up invites, account suspension and deletion, server removal, limits |
+| **annoy-server admin** | `.env` flags for sign-up and limits; the `annoy-admin` command for sign-up invites, account suspension and deletion, server removal and updates |
 | **Permissions** | Role hierarchy, 15 permissions, per-channel allow/inherit/deny overwrites for roles and members, invites with expiry and use limits, kick and ban |
 | **Social** | Friends (requests and accept), presence, direct messages |
-| **Discord import** | Copy channels, categories, roles, permission overwrites and message history (with attachments) from a Discord server. You choose exactly what comes over |
+| **Discord import** | Copy channels, categories, roles and permission overwrites from a Discord server. You choose exactly what comes over |
 | **Sign in with Discord** | Official OAuth2 (`identify`), pulling username, display name and avatar. Imported message authors are claimed automatically |
 | **Ops** | One process, SQLite storage, single UDP/TCP media port, Docker image, no external services |
 
@@ -70,9 +70,8 @@ docker run -d --name annoy --restart unless-stopped \
   ghcr.io/geglab/annoy-server:latest
 ```
 
-**Updates:** the instance admin updates the server from the app, under
-Administrar instância → Atualizações, and turns automatic updates on or off
-there. A small `proxy` owns port 8787. The `updater` starts the new version
+**Updates:** `./scripts/annoy-admin.sh update apply` updates the server now;
+`ANNOY_AUTO_UPDATE=on` in `.env` turns automatic updates on. A small `proxy` owns port 8787. The `updater` starts the new version
 next to the running one (`annoy` and `annoy-b` take turns), points the proxy
 at it once it answers, then stops the old process. Since 0.8, disconnecting
 from the old process ends voice, video, screen shares and private calls.
@@ -80,10 +79,11 @@ Clients reconnect for text and presence; joining voice again is an explicit
 user action. With the built-in backend, open `40000-40003` (UDP and TCP).
 
 The updater follows the newest image of `ANNOY_VERSION` (`latest` takes every
-release, `0.7` only 0.7.x fixes). With automatic updates on, it checks every 6
-hours (`ANNOY_UPDATE_INTERVAL_HOURS`); `ANNOY_AUTO_UPDATE=on` turns them on
-until the admin chooses in the app. It needs the Docker socket to start and
-stop the server containers. Update through the app rather than
+release of the main line, which is alpha for now, e.g. `0.10.0-alpha.1`; `0.7`
+only 0.7.x stable fixes). `nightly` and `unstable` exist for test builds but
+are not launched yet (docs/releases/CHANNELS.md). With automatic updates on, it checks every 6
+hours (`ANNOY_UPDATE_INTERVAL_HOURS`). It needs the Docker socket to start and
+stop the server containers. Update with `annoy-admin update apply` rather than
 `docker compose pull` by hand, which restarts the server. Setups from before
 0.7.2 switch over once with `git pull && docker compose up -d --remove-orphans`.
 
@@ -129,7 +129,7 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_HOST` | `0.0.0.0` | Bind address |
 | `ANNOY_PORT` | `8787` | API and gateway port |
 | `ANNOY_VOICE_PORT` | `40000` | Voice media port (UDP and TCP) |
-| `ANNOY_ACCOUNT_MODE` | `global` | Exclusive login policy: `global` or `local`. Restart to migrate; see [account migration](docs/account-migration.md). |
+| `ANNOY_ACCOUNT_MODE` | `global` | Exclusive login policy: `global` or `local`. Restart to migrate; see [account migration](docs/account-migration.md). With `global`, friends, DMs, status and direct calls live in the Annoy cloud, not on this server: the old routes answer 410 and, on the first start, the DMs and friend lists this server held are deleted once. `local` keeps them on the server. |
 | `ANNOY_GLOBAL` | removed | Remove this legacy flag and configure `ANNOY_ACCOUNT_MODE` explicitly. |
 | `ANNOY_GLOBAL_URL` | `https://global.geg.dev.br` | Annoy Accounts API |
 | `ANNOY_MIN_CLIENT_VERSION` | `0.9.0` | Oldest client version accepted. Older clients are asked to update; newer ones keep working |
@@ -137,10 +137,11 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_ANNOUNCED_IP` | default-route IP | Voice addresses for clients, comma-separated: **public IP first, LAN IP second** (each gets its own port: 40000, 40001…). Required in Docker |
 | `ANNOY_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
 | `ANNOY_CF_SFU_APP_ID` / `_TOKEN` | (empty) | Cloudflare Realtime SFU app credentials, used with `ANNOY_VOICE_BACKEND=cloudflare` |
-| `ANNOY_REGISTRATION` | `invite` | Initial sign-up mode: `open`, `invite` or `closed`. The admin can change it in the app |
-| `ANNOY_ADMIN` | (empty) | Username that is always an instance admin. Otherwise the first account is |
-| `ANNOY_MAX_SERVERS_PER_USER` | unlimited | Initial limit of servers per account (admin-editable) |
-| `ANNOY_MAX_UPLOAD_MB` | `25` | Initial maximum size per attachment (admin-editable) |
+| `ANNOY_REGISTRATION` | `invite` | Sign-up mode: `open`, `invite` or `closed` |
+| `ANNOY_ADMIN` | (empty) | Username that administers the annoy-server (exempt from the limits below). Otherwise the first account |
+| `ANNOY_MAX_SERVERS_PER_USER` | unlimited | Limit of servers per account |
+| `ANNOY_MAX_UPLOAD_MB` | `25` | Maximum size per attachment |
+| `ANNOY_AUTO_UPDATE` | `off` | `on` updates the server automatically (Docker, with the `updater` service) |
 | `ANNOY_DISCORD_CLIENT_ID` | (empty) | Enables "Sign in with Discord" (with the secret) |
 | `ANNOY_DISCORD_CLIENT_SECRET` | (empty) | Discord OAuth2 client secret |
 | `ANNOY_PUBLIC_URL` | request origin | Public origin for OAuth redirects behind a proxy |
@@ -150,21 +151,37 @@ The API listens on HTTP behind a TLS reverse proxy (Caddy, nginx, Cloudflare
 Tunnel). Remote connections, including LAN clients, require HTTPS/WSS; only
 loopback development permits HTTP. Configure trusted proxy addresses explicitly
 and connect to the final `https://your.domain` origin: credential requests reject
-redirects. DTLS-SRTP protects transport; legacy voice with an SFU is not E2EE.
+redirects. DTLS-SRTP protects transport; voice through an SFU is not end-to-end encrypted.
 
 **Backups:** copy `ANNOY_DATA_DIR`. It holds `distopic.db` (SQLite, WAL mode) and
 `uploads/`.
 
-## Instance administration
+## annoy-server administration
 
-Whoever hosts the instance administers it: the account named in
-`ANNOY_ADMIN`, or else the first account created. In the client, open
-**Settings → your account → Administrar instância** to:
+The annoy-server (this program) is administered from its host, never from the
+app. Inside the app, "servidor" means a community on this annoy-server, and
+its settings live in that server's own settings.
 
-- choose how new accounts are created: **open**, **invite only** (default) or **closed**
-- generate and revoke sign-up invites (people type the code on the sign-up screen)
-- suspend, reactivate or delete accounts, promote other admins
-- list and delete any server, and set limits (servers per account, attachment size)
+- **Settings** are the flags in `.env` (table above): sign-up mode, limits,
+  admin account, automatic updates. Change them and run `docker compose up -d`.
+  Values chosen in the app panel of 0.9 and earlier are ignored (the log says so).
+- **Actions** run with `annoy-admin` on the host, in the folder with
+  `docker-compose.yml` (outside Docker: `npm run admin -- <command>`):
+
+  ```bash
+  ./scripts/annoy-admin.sh status
+  ./scripts/annoy-admin.sh invite create --uses 5 --hours 48   # prints the code
+  ./scripts/annoy-admin.sh invite list | invite revoke <code>
+  ./scripts/annoy-admin.sh user list [search]
+  ./scripts/annoy-admin.sh user ban <username> [reason] | user unban <username>
+  ./scripts/annoy-admin.sh user delete <username> --yes
+  ./scripts/annoy-admin.sh server list | server delete <id> --yes
+  ./scripts/annoy-admin.sh update status | update apply
+  ```
+
+  The command talks to the running server over 127.0.0.1 with the token in
+  `ANNOY_DATA_DIR/admin.token`, so a ban or a deletion disconnects people at
+  once. The routes refuse anything that arrives through a proxy.
 
 Privacy defaults: request logs never store client IP addresses, and every user
 can delete their own account (optionally with all their messages).
@@ -200,7 +217,7 @@ use WebRTC, which needs a reachable UDP/TCP port. Pick one:
   (`ANNOY_CF_SFU_MONTHLY_GB`, default `1000`; `0` turns it off). It
   estimates egress from the tracks each client receives, at their full
   bitrate. At 80% it pauses cameras and screen shares, at 95% it pauses voice
-  until the next month. The instance admin panel shows the month's usage.
+  until the next month. `annoy-admin status` shows the month's usage.
 
 ## Discord integration
 
@@ -209,25 +226,20 @@ Discord's **official, documented APIs**, so they don't put accounts at risk.
 
 ### Importing a Discord server
 
-<img src="docs/screenshots/discord-import.png" alt="Import wizard: pick channels, history, roles and options" width="720">
+<img src="docs/screenshots/discord-import.png" alt="Import wizard: pick channels, roles and options" width="720">
 
 1. In the [Discord Developer Portal](https://discord.com/developers/applications),
-   create an application and open **Bot**. Enable **Message Content Intent**,
-   then copy the token.
+   create an application, open **Bot** and copy the token.
 2. In the client, open **+ → Importar do Discord** (the UI is in Portuguese for now) and paste the token. The wizard gives
-   you an invite link that adds the bot with read-only access (View Channels and
-   Read Message History).
-3. Pick the server, then choose the channels, which of them keep their history,
-   how many messages to copy (100, 1k, 10k or everything), roles, per-channel
-   permissions and attachments. Import into a new server or one you own.
+   you an invite link that adds the bot with read-only access (View Channels).
+3. Pick the server, then choose the channels, roles and per-channel
+   permissions. Import into a new server or one you own.
 
 What is preserved: channel order and categories, role names, colours and
-hierarchy, permission mapping, message dates, replies, and mentions rendered as
-text. Each message author becomes an *imported profile* (name and avatar, no
-login).
+hierarchy, and the permission mapping.
 
-What is not: Discord members don't become accounts, so member-specific
-overwrites and DMs are skipped. Forums, threads, custom emoji and stickers are
+What is not: messages are never imported, because they belong to other people.
+Discord members don't become accounts, so member-specific overwrites are skipped. Forums, threads, custom emoji and stickers are
 not imported. The bot token is used only during the import and is never stored.
 
 ### Sign in with Discord
@@ -286,15 +298,10 @@ tests when you touch `voice.ts`.
 
 ## Security
 
-0.9.0 is a mandatory security release and requires client 0.9.0. New messages,
-attachments, edits and reactions are end-to-end encrypted with OpenMLS, and
-calls use SFrame, so the SFU only forwards encrypted media. Plaintext sends are
-refused; legacy history stays separate and read-only. Sessions are bound to
-the device (DPoP). The integration has not been independently audited. See
-[release notes](docs/releases/0.9.0.md), [security report](docs/security/REPORT.md),
-[threat model](docs/security/THREAT-MODEL.md),
-[cryptographic architecture](docs/security/CRYPTO-ARCHITECTURE.md),
-[validation matrix](docs/security/VALIDATION.md) and
-[independent audit instructions](docs/security/INDEPENDENT-AUDIT.md).
+Channel end-to-end encryption (OpenMLS, SFrame and device-bound sessions) was
+removed after 0.9 (TODO item 3) and will come back designed per feature.
+Channel messages travel over TLS and are stored as plain text. On the first
+start, old encrypted messages are deleted. DMs of Annoy accounts stay
+encrypted, in the Annoy cloud.
 Changing authentication mode requires the explicit offline procedure in
 [account migration](docs/account-migration.md); restarting never converts users.

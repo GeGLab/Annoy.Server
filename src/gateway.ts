@@ -1,8 +1,7 @@
 import {observeSessions} from "./session-events.ts";
 import { compareVersions, isVersion } from "./version.ts";
-import {boundDevice,verifyDpop} from "./dpop.ts";
 import {config} from "./config.ts";
-import { clearCalls, handleCall, handleDirectCallMedia, endAllCalls } from "./calls.ts";
+import { clearCalls, handleCall, endAllCalls } from "./calls.ts";
 import { Permission, type ClientOp } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { hashToken, userIdForSessionHash, userIdForToken } from "./auth.ts";
@@ -13,6 +12,7 @@ import { addConnection, presenceOf, removeConnection, setConnectionIdle, setManu
 import { audienceOf, dmChannelsForUser, getRelationships, getUser, serversForUser } from "./repo.ts";
 import { getSettings, isAdmin } from "./instance.ts";
 import { activitiesFor, clearActivity, expireActivities, updateActivity, refreshActivityPresence } from "./activity.ts";
+import { annoySocial } from "./social-moved.ts";
 import { leaveVoice, handleVoice, setSelfState, setSpeaking, voiceBackend } from "./voice-backend.ts";
 
 const HEARTBEAT_TIMEOUT_MS = 90_000;
@@ -21,7 +21,6 @@ const MAX_FRAME_BYTES = 64 * 1024;
 
 const live = new Set<Connection>();
 const sessionHashes = new WeakMap<Connection, string>();
-const gatewayOrigins = new WeakMap<Connection,string>();
 let restarting = false;
 
 /** End server-owned sessions before closing gateways, including on an update. */
@@ -32,7 +31,7 @@ export function closeForRestart(): void {
 }
 
 export function registerGateway(app: FastifyInstance): void {
-  const stopObserving=observeSessions((hash,reason)=>{for(const conn of live)if(sessionHashes.get(conn)===hash)conn.socket.close(reason==='rebound'?4011:4004,reason==='rebound'?'device proof now required':'session revoked');});
+  const stopObserving=observeSessions((hash)=>{for(const conn of live)if(sessionHashes.get(conn)===hash)conn.socket.close(4004,'session revoked');});
   app.addHook('onClose',async()=>stopObserving());
 
   const sweep = setInterval(() => {
@@ -50,7 +49,6 @@ export function registerGateway(app: FastifyInstance): void {
     if (restarting) return void socket.close(4010, "server stopping");
     const conn = new Connection(socket);
     live.add(conn);
-    gatewayOrigins.set(conn,config.publicUrl||`${req.protocol}://${req.host}`);
     const identifyTimer = setTimeout(() => {
       if (!conn.userId) socket.close(4003, "identify timeout");
     }, IDENTIFY_TIMEOUT_MS);
@@ -80,7 +78,7 @@ export function registerGateway(app: FastifyInstance): void {
       if (userId) clearCalls(userId, conn.id);
       if (userId) {
         removeConnection(userId, conn.id);
-        if (previousPresence !== presenceOf(userId)) {
+        if (!annoySocial && previousPresence !== presenceOf(userId)) {
           const event = { t: "PRESENCE_UPDATE" as const, d: { userId, presence: presenceOf(userId) } };
           sendToAudience(userId, event);
           sendToUser(userId, event);
@@ -108,11 +106,6 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
       conn.socket.close(4004, "invalid session");
       return;
     }
-    const bound=boundDevice(msg.token);
-    if(bound){
-      try{await verifyDpop(msg.token,msg.dpop,'GET',new URL('/gateway',gatewayOrigins.get(conn)!).toString(),bound);}
-      catch{conn.socket.close(4004,'device proof required');return;}
-    }
     conn.deviceId = typeof msg.deviceId === "string" && msg.deviceId.length <= 64 ? msg.deviceId : null;
     if (Array.isArray(msg.features) && msg.features.length <= 16) conn.features = new Set(msg.features.filter((feature) => typeof feature === "string" && feature.length <= 64));
     sessionHashes.set(conn, hashToken(msg.token));
@@ -120,20 +113,20 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
     const previousPresence = presenceOf(userId);
     setManualPresence(userId, msg.presence);
     const cameOnline = addConnection(userId);
-    const presences = Object.fromEntries([userId, ...audienceOf(userId)].map((id) => [id, presenceOf(id)]));
+    const presences = annoySocial ? {} : Object.fromEntries([userId, ...audienceOf(userId)].map((id) => [id, presenceOf(id)]));
     conn.send({
       t: "READY",
       d: {
         user,
         servers: serversForUser(userId),
-        dms: dmChannelsForUser(userId),
-        relationships: getRelationships(userId),
+        dms: annoySocial ? [] : dmChannelsForUser(userId),
+        relationships: annoySocial ? [] : getRelationships(userId),
         presences,
-        activities: activitiesFor(userId),
-        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: true, serverOwnership: true, developmentActivity: true, directCalls: true, socialProfiles: true, groupActivity: true, reactions: true, serverIcons: true, gifSearch: !!process.env.GIPHY_CLIENT_API_KEY, presenceStatus: true, manualPresence: true, channelTypes: true, codeChannels: true, historyWindow: true, messagePins: true, profileDetails: true, extendedActivity: true },
+        activities: annoySocial ? {} : activitiesFor(userId),
+        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: true, serverOwnership: true, developmentActivity: true, directCalls: !annoySocial, annoySocial, socialProfiles: true, groupActivity: true, reactions: true, serverIcons: true, gifSearch: !!process.env.GIPHY_CLIENT_API_KEY, presenceStatus: true, manualPresence: true, channelTypes: true, codeChannels: true, historyWindow: true, messagePins: true, profileDetails: true, extendedActivity: true },
       },
     });
-    if (cameOnline || previousPresence !== presenceOf(userId)) {
+    if (!annoySocial && (cameOnline || previousPresence !== presenceOf(userId))) {
       const event = { t: "PRESENCE_UPDATE" as const, d: { userId, presence: presenceOf(userId) } };
       sendToAudience(userId, event);
       sendToUser(userId, event);
@@ -153,8 +146,10 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
   if (!userId) return void conn.socket.close(4003, "not identified");
 
   switch (msg.op) {
-    case "call": handleCall(conn, msg); return;
+    case "call": if (!annoySocial) handleCall(conn, msg); return;
     case "presence":
+      // Annoy accounts publish status to chatannoy only.
+      if (annoySocial) return;
       if (setConnectionIdle(userId, conn.id, msg.idle === true, msg.status)) {
         const event = { t: "PRESENCE_UPDATE" as const, d: { userId, presence: presenceOf(userId) } };
         sendToAudience(userId, event);
@@ -163,6 +158,7 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
       }
       return;
     case "activity":
+      if (annoySocial) return;
       if (!updateActivity(conn, msg.activities)) conn.socket.close(4002, "invalid activity");
       return;
     case "heartbeat":
@@ -183,9 +179,7 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
       const id = Number(msg.id);
       try {
         const params = msg.data ?? {};
-        const data = typeof params.directCall === "string" && ["mediaCreate", "mediaPropose", "mediaCommit"].includes(msg.method)
-          ? handleDirectCallMedia(conn, msg.method, params)
-          : await handleVoice(conn, msg.method, params);
+        const data = await handleVoice(conn, msg.method, params);
         conn.send({ t: "VOICE_REPLY", d: { id, ok: true, data } });
       } catch (err) {
         const message = err instanceof HttpError ? err.message : "Erro interno de voz";

@@ -1,37 +1,32 @@
-// Instance administration: only the person hosting the instance (is_admin).
+// annoy-server administration (TODO item 5): never from the app. Settings come
+// from the Compose flags (.env); the rest is the `annoy-admin` command run inside
+// the server's container, which calls these routes over 127.0.0.1 with the
+// token in the data folder (see admin-control.ts).
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { AdminOverview, AdminServer, AdminUser, SignupInvite, UpdateStatus } from "@distopic/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { deleteAccount, disconnectEverywhere, ownedServerNames } from "../accounts.ts";
-import { requireUser } from "../auth.ts";
 import { config } from "../config.ts";
 import { all, now, one, run } from "../db.ts";
-import { badRequest, conflict, forbidden, notFound } from "../errors.ts";
+import { conflict, notFound } from "../errors.ts";
 import { sendToAudience } from "../events.ts";
 import { inviteCode } from "../ids.ts";
-import { getSettings, requireAdmin, updateSettings } from "../instance.ts";
+import { getSettings } from "../instance.ts";
+import { requireHostAdmin } from "../admin-control.ts";
 import { getServer, getUser, getUsers } from "../repo.ts";
 import { usage as voiceUsage } from "../sfu-budget.ts";
-import { requestUpdate, setAutoUpdate, updateStatus } from "../updates.ts";
+import { requestUpdate, updateStatus } from "../updates.ts";
 import { parse, type Params } from "../validate.ts";
 import { deleteServer } from "./servers.ts";
 
-const settingsBody = z.object({
-  registration: z.enum(["open", "invite", "closed"]).optional(),
-  maxServersPerUser: z.number().int().min(1).max(10_000).nullable().optional(),
-  maxUploadMb: z.number().int().min(1).max(500).optional(),
-});
 const inviteBody = z.object({
   maxUses: z.number().int().min(1).max(10_000).nullable().optional(),
   expiresInHours: z.number().min(0.5).max(24 * 365).nullable().optional(),
 });
-const updatesBody = z.object({ auto: z.boolean() });
 const banBody = z.object({ reason: z.string().max(512).optional() });
-const patchUser = z.object({ isAdmin: z.boolean() });
 const listQuery = z.object({ q: z.string().max(64).optional(), limit: z.coerce.number().int().min(1).max(200).default(100) });
-const deleteQuery = z.object({ deleteMessages: z.enum(["0", "1"]).default("0") });
 
 async function dirSize(dir: string): Promise<number> {
   let total = 0;
@@ -74,17 +69,18 @@ function toAdminUsers(rows: UserRow[]): AdminUser[] {
   });
 }
 
-/** Admins can't act on themselves or on other admins in destructive ways; demote first. */
-function requireTarget(actorId: string, targetId: string): void {
-  if (actorId === targetId) throw badRequest("Use as configurações da sua conta para isso");
-  const row = one<{ is_admin: number }>("SELECT is_admin FROM users WHERE id = ?", targetId);
-  if (!row) throw notFound("Usuário");
-  if (row.is_admin === 1) throw forbidden("Remova o cargo de administrador antes");
+function requireTarget(targetId: string): void {
+  if (!one("SELECT 1 AS x FROM users WHERE id = ?", targetId)) throw notFound("Usuário");
+}
+
+/** The CLI names people by username; the routes take either. */
+function userIdOf(idOrUsername: string): string {
+  return one<{ id: string }>("SELECT id FROM users WHERE id = ? OR lower(username) = lower(?)", idOrUsername, idOrUsername)?.id ?? idOrUsername;
 }
 
 /** Register inside its own plugin scope so the admin check covers exactly these routes. */
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
-  app.addHook("preHandler", async (req) => requireAdmin(requireUser(req)));
+  app.addHook("preHandler", async (req) => requireHostAdmin(req));
 
   app.get("/admin/overview", async (): Promise<AdminOverview> => ({
     settings: getSettings(),
@@ -95,19 +91,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     voiceUsage: config.voice.backend === "cloudflare" ? voiceUsage() : null,
   }));
 
-  app.patch("/admin/settings", async (req) => updateSettings(parse(settingsBody, req.body)));
-
   // Server updates ------------------------------------------------------------
 
-  const NO_UPDATER = "O atualizador não está rodando. No servidor, rode: git pull && docker compose up -d";
+  const NO_UPDATER = "O atualizador não está rodando. No host, rode: git pull && docker compose up -d";
 
   app.get("/admin/updates", async (): Promise<UpdateStatus> => updateStatus());
-
-  app.patch("/admin/updates", async (req): Promise<UpdateStatus> => {
-    const body = parse(updatesBody, req.body);
-    if (!(await setAutoUpdate(body.auto))) throw conflict(NO_UPDATER);
-    return { ...(await updateStatus()), auto: body.auto };
-  });
 
   app.post("/admin/updates/apply", async (): Promise<UpdateStatus> => {
     if (!(await requestUpdate())) throw conflict(NO_UPDATER);
@@ -132,19 +120,18 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/admin/invites", async (req) => {
-    const userId = requireUser(req);
     const body = parse(inviteBody, req.body);
     const code = inviteCode();
     const expiresAt = body.expiresInHours ? new Date(Date.now() + body.expiresInHours * 3_600_000).toISOString() : null;
     run(
       "INSERT INTO signup_invites (code, created_by, uses, max_uses, expires_at, created_at) VALUES (?, ?, 0, ?, ?, ?)",
       code,
-      userId,
+      null,
       body.maxUses ?? null,
       expiresAt,
       now(),
     );
-    return { code, uses: 0, maxUses: body.maxUses ?? null, expiresAt, createdAt: now(), createdBy: getUser(userId) ?? null } satisfies SignupInvite;
+    return { code, uses: 0, maxUses: body.maxUses ?? null, expiresAt, createdAt: now(), createdBy: null } satisfies SignupInvite;
   });
 
   app.delete<Params<"code">>("/admin/invites/:code", async (req) => {
@@ -172,39 +159,31 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     );
   });
 
-  app.patch<Params<"id">>("/admin/users/:id", async (req) => {
-    const actor = requireUser(req);
-    const body = parse(patchUser, req.body);
-    if (req.params.id === actor && !body.isAdmin) throw badRequest("Você não pode remover o próprio cargo de administrador");
-    const row = one<{ imported_from: string | null; banned_at: string | null }>("SELECT imported_from, banned_at FROM users WHERE id = ?", req.params.id);
-    if (!row) throw notFound("Usuário");
-    if (body.isAdmin && (row.imported_from || row.banned_at)) throw badRequest("Só contas ativas podem ser administradoras");
-    run("UPDATE users SET is_admin = ? WHERE id = ?", body.isAdmin ? 1 : 0, req.params.id);
-    return {};
-  });
+  // Who administers is ANNOY_ADMIN (or the first account); it is not changed here.
 
   app.post<Params<"id">>("/admin/users/:id/ban", async (req) => {
-    const actor = requireUser(req);
-    requireTarget(actor, req.params.id);
+    const id = userIdOf(req.params.id);
+    requireTarget(id);
     const body = parse(banBody, req.body);
-    run("UPDATE users SET banned_at = ?, ban_reason = ? WHERE id = ?", now(), body.reason ?? "", req.params.id);
-    disconnectEverywhere(req.params.id, "Conta suspensa nesta instância");
-    sendToAudience(req.params.id, { t: "PRESENCE_UPDATE", d: { userId: req.params.id, presence: "offline" } });
+    run("UPDATE users SET banned_at = ?, ban_reason = ? WHERE id = ?", now(), body.reason ?? "", id);
+    disconnectEverywhere(id, "Conta suspensa neste annoy-server");
+    sendToAudience(id, { t: "PRESENCE_UPDATE", d: { userId: id, presence: "offline" } });
     return {};
   });
 
   app.delete<Params<"id">>("/admin/users/:id/ban", async (req) => {
-    run("UPDATE users SET banned_at = NULL, ban_reason = '' WHERE id = ?", req.params.id);
+    const id = userIdOf(req.params.id);
+    requireTarget(id);
+    run("UPDATE users SET banned_at = NULL, ban_reason = '' WHERE id = ?", id);
     return {};
   });
 
   app.delete<Params<"id">>("/admin/users/:id", async (req) => {
-    const actor = requireUser(req);
-    requireTarget(actor, req.params.id);
-    const q = parse(deleteQuery, req.query);
-    const owned = ownedServerNames(req.params.id);
+    const id = userIdOf(req.params.id);
+    requireTarget(id);
+    const owned = ownedServerNames(id);
     if (owned.length > 0) throw conflict(`Esta conta é dona de servidores; exclua-os antes: ${owned.join(", ")}`);
-    await deleteAccount(req.params.id);
+    await deleteAccount(id);
     return {};
   });
 
@@ -228,7 +207,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete<Params<"id">>("/admin/servers/:id", async (req) => {
     if (!getServer(req.params.id)) throw notFound("Servidor");
-    await deleteServer(req.params.id, requireUser(req));
+    // No member is the actor, so the "transfer ownership first" rule for owners doesn't apply.
+    await deleteServer(req.params.id, "");
     return {};
   });
 }

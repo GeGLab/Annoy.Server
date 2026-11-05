@@ -91,31 +91,6 @@ test('a publish finishing after disconnect is revoked instead of resurrecting a 
   assert.equal(voice.voiceStatesFor('server').some(s => s.userId === 'a'), false);
 });
 
-test('encrypted private calls relay only MLS media messages and never downgrade on accept', async () => {
-  const start = async () => {
-    const response = await app.inject({ method: 'POST', url: '/calls', headers: { authorization: `Bearer ${createSession('a')}` }, payload: { userId: 'b', video: false, protection: 'sframe', deviceId: 'a' } });
-    assert.equal(response.statusCode, 200, response.body);
-    return response.json();
-  };
-  const refused = await start();
-  assert.equal(refused.protection, 'sframe');
-  handleCall(b.conn, { op: 'call', callId: refused.id, action: 'accept', protection: 'transport_only_acknowledged', deviceId: 'b' });
-  assert.ok(a.events.some(e => e.t === 'CALL_UPDATE' && e.d.id === refused.id && e.d.status === 'ended' && /atualizar/.test(e.d.reason)));
-  await new Promise(resolve => setTimeout(resolve, 3100));
-  const call = await start();
-  assert.throws(() => handleDirectCallMedia(a.conn, 'mediaCreate', { directCall: call.id, callId: 'x'.repeat(22) }), /indisponível/);
-  handleCall(b.conn, { op: 'call', callId: call.id, action: 'accept', protection: 'sframe', deviceId: 'b' });
-  const binding = (userId: string) => ({ userId, deviceId: userId, mediaKey: 'key-' + userId, signature: 'sig-' + userId });
-  assert.deepEqual(handleDirectCallMedia(a.conn, 'mediaCreate', { directCall: call.id, callId: 'x'.repeat(22), binding: binding('a') }), { created: true, callId: 'x'.repeat(22), epoch: 0 });
-  handleDirectCallMedia(b.conn, 'mediaPropose', { directCall: call.id, callId: 'x'.repeat(22), keyPackage: 'kp-b', binding: binding('b') });
-  const proposals = a.events.filter(e => e.t === 'VOICE_MEDIA').at(-1)!.d as any;
-  assert.equal(proposals.channelId, 'call:' + call.id);
-  assert.equal(proposals.adds[0].keyPackage, 'kp-b');
-  handleCall(a.conn, { op: 'call', callId: call.id, action: 'end', deviceId: 'a' });
-  assert.throws(() => handleDirectCallMedia(a.conn, 'mediaCommit', { directCall: call.id, callId: 'x'.repeat(22), epoch: 0, commit: 'c' }), /indisponível/);
-  await new Promise(resolve => setTimeout(resolve, 3100));
-});
-
 test('shutdown ends active private calls and ignores persisted handoffs from older servers', async () => {
   const response = await app.inject({ method: 'POST', url: '/calls', headers: { authorization: `Bearer ${createSession('a')}` }, payload: { userId: 'b', video: true, protection:'transport_only_acknowledged',deviceId: 'a' } });
   assert.equal(response.statusCode, 200, response.body);

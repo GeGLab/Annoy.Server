@@ -67,13 +67,13 @@ export const config = {
   host: env("ANNOY_HOST", "0.0.0.0"),
   port: int("ANNOY_PORT", 8787),
   dataDir: resolve(env("ANNOY_DATA_DIR", "./data")),
-  /** Defaults only: the instance admin can change these at runtime (see instance.ts). */
+  /** annoy-server settings; only these flags set them (see instance.ts). */
   defaults: {
     registration: registration as "open" | "invite" | "closed",
     maxUploadMb: int("ANNOY_MAX_UPLOAD_MB", 25),
     maxServersPerUser: int("ANNOY_MAX_SERVERS_PER_USER", 0) || null,
   },
-  /** Username that is always an instance admin. Otherwise the first account becomes admin. */
+  /** Username that administers the annoy-server (exempt from limits). Otherwise the first account. */
   adminUsername: env("ANNOY_ADMIN", ""),
   /** Hard ceiling for request parsing; the admin's limit applies per upload below it. */
   uploadCeilingBytes: 500 * 1024 * 1024,
@@ -93,6 +93,8 @@ export const config = {
   global: {
     enabled: accountMode === "global",
     url: accountMode==='global'?secureServiceUrl(env("ANNOY_GLOBAL_URL", "https://global.geg.dev.br")):env("ANNOY_GLOBAL_URL", "https://global.geg.dev.br").replace(/\/+$/, ""),
+    /** authannoy: blind-token and attestation keys (TODO item 2). The Global's address also serves them. */
+    authUrl: accountMode==='global'?secureServiceUrl(env("ANNOY_AUTH_URL", env("ANNOY_GLOBAL_URL", "https://global.geg.dev.br"))):"",
   },
   /**
    * Folder shared with the "updater" Compose service (/control in

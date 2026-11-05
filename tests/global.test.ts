@@ -14,15 +14,19 @@ const globalRepo = resolve(process.env.ANNOY_GLOBAL_REPO ?? "../annoy-api-global
 const skip = !existsSync(join(globalRepo, "src/server.ts")) && "needs the Annoy-api-global checkout next to this one";
 
 const GLOBAL_PORT = 18090;
+const AUTH_PORT = 18091;
 const dataDir = await mkdtemp(join(tmpdir(), "annoy-global-server-"));
 const globalData = await mkdtemp(join(tmpdir(), "annoy-global-api-"));
 process.env.ANNOY_DATA_DIR = dataDir;
 process.env.ANNOY_GLOBAL_URL = `http://127.0.0.1:${GLOBAL_PORT}`;
+// Accounts live in authannoy (TODO item 2); it needs Postgres and Valkey (annoy-api-global: npm run cloud:dev).
+process.env.ANNOY_AUTH_URL = `http://127.0.0.1:${AUTH_PORT}`;
 process.env.ANNOY_REGISTRATION = "open";
 process.env.ANNOY_ACCOUNT_MODE = "global";
 delete process.env.ANNOY_GLOBAL;
 
 let globalApi: ChildProcess | null = null;
+let authApi: ChildProcess | null = null;
 const key = () => Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64");
 
 const kdf = skip ? null! : await import(pathToFileURL(join(globalRepo, "src/client-kdf.ts")).href);
@@ -30,7 +34,6 @@ const { authRoutes } = await import("../src/routes/auth.ts");
 const { startGlobal, globalLoginAvailable, globalServerId } = await import("../src/global.ts");
 const { db, run } = await import("../src/db.ts");
 // Isolated historical fixture connection, never a live HTTP option.
-db.function("annoy_legacy_source_write",()=>1);
 const { createSession, hashPassword, userIdForToken } = await import("../src/auth.ts");
 const { newId } = await import("../src/ids.ts");
 async function legacyAccount(username: string, password: string) {
@@ -60,30 +63,46 @@ before(async () => {
       GLOBAL_PEPPER: key(),
       GLOBAL_DATA_KEY: key(),
       GLOBAL_ESCROW_KEY: key(),
+      INTERNAL_TOKEN: "server-test-internal",
       REQUIRE_EMAIL_VERIFICATION: "false",
       NODE_ENV: "test",
     },
   });
-  for (let i = 0; i < 50; i++) {
-    try {
-      if ((await fetch(`${process.env.ANNOY_GLOBAL_URL}/v1/health`)).ok) break;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 100));
-  }
+  const pepper = key(), dataKey = key();
+  authApi = spawn(process.execPath, ["services/auth/src/server.ts"], {
+    cwd: globalRepo,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      PORT: String(AUTH_PORT), HOST: "127.0.0.1", NODE_ENV: "test", AUTH_RESET_SCHEMA_FOR_TESTS: "1",
+      DATABASE_URL: process.env.TEST_DATABASE_URL ?? "postgres://annoy:annoy-dev-only@127.0.0.1:55432/annoy",
+      REDIS_URL: process.env.TEST_REDIS_URL ?? "redis://127.0.0.1:56379/8",
+      AUTH_PEPPER: pepper, AUTH_DATA_KEY: dataKey, REQUIRE_EMAIL_VERIFICATION: "false",
+      GLOBAL_URL: process.env.ANNOY_GLOBAL_URL, GLOBAL_INTERNAL_TOKEN: "server-test-internal", SANCTIONS_CACHE_SECONDS: "0",
+    },
+  });
+  for (const url of [process.env.ANNOY_GLOBAL_URL, process.env.ANNOY_AUTH_URL])
+    for (let i = 0; i < 80; i++) {
+      try {
+        if ((await fetch(`${url}/v1/health`)).ok) break;
+      } catch {}
+      await new Promise((r) => setTimeout(r, 100));
+    }
   startGlobal(() => undefined);
   for (let i = 0; i < 50 && !globalLoginAvailable(); i++) await new Promise((r) => setTimeout(r, 100));
 });
 
 after(async () => {
   // Windows keeps the database files locked until the process has really exited.
-  if (globalApi && globalApi.exitCode === null) { const exited = new Promise((r) => globalApi!.once("exit", r)); globalApi.kill(); await exited; }
+  for (const child of [globalApi, authApi]) if (child && child.exitCode === null) { const exited = new Promise((r) => child.once("exit", r)); child.kill(); await exited; }
   await app.close();
   db.close();
   await rm(dataDir, { recursive: true, force: true, maxRetries: 5 });
   await rm(globalData, { recursive: true, force: true, maxRetries: 5 });
 });
 
-const G = (path: string, init?: RequestInit) => fetch(`${process.env.ANNOY_GLOBAL_URL}${path}`, init).then((r) => r.json());
+/** Account calls go to authannoy; the registry stays in the Global. */
+const G = (path: string, init?: RequestInit) => fetch(`${/^\/v1\/(servers|admin|health)/.test(path) ? process.env.ANNOY_GLOBAL_URL : process.env.ANNOY_AUTH_URL}${path}`, init).then((r) => r.json());
 const json = (body: unknown, token?: string): RequestInit => ({
   method: "POST",
   headers: { "content-type": "application/json", ...(token && { authorization: `Bearer ${token}` }) },

@@ -1,5 +1,3 @@
-import {requireMediaConsent} from './media-security.ts';
-import { handleMedia, mediaJoin, mediaLeave } from "./media-e2ee.ts";
 import { has, isVoiceChannel, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
 import * as mediasoup from "mediasoup";
 import type { types as ms } from "mediasoup";
@@ -141,7 +139,6 @@ export function leaveVoice(conn: Connection): void {
   const peer = peersByConn.get(conn.id);
   if (!peer) return;
   peersByConn.delete(conn.id);
-  mediaLeave(peer.channelId, conn.id);
   for (const transport of peer.transports.values()) transport.close(); // closes producers/consumers too
   const room = rooms.get(peer.channelId);
   room?.peers.delete(conn.id);
@@ -239,7 +236,6 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
 
   switch (method) {
     case "join": {
-      const protection = requireMediaConsent(data);
       const channelId = str(data, "channelId");
       const channel = getChannel(channelId);
       const perms = channel ? channelPermissions(channel, userId) : 0;
@@ -252,14 +248,7 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       // One voice session per user: a newer device takes over.
       for (const other of [...peersByConn.values()]) if (other.userId === userId) kick(other, "Conectado em outro dispositivo");
 
-      const media = mediaJoin(channelId, conn, protection);
-      let room: Room;
-      try {
-        room = await getRoom(channelId);
-      } catch (err) {
-        mediaLeave(channelId, conn.id);
-        throw err;
-      }
+      const room = await getRoom(channelId);
       const peer: Peer = {
         conn,
         userId,
@@ -281,11 +270,10 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         speaking: false,
         video: false,
         screen: false,
-        e2ee: protection === "sframe",
       });
       publishState(userId, channel.serverId);
       // screenAudio: this server accepts the "screen_audio" source (0.4.2+); older ones would take it for a mic.
-      return { backend: "builtin", rtpCapabilities: room.router.rtpCapabilities, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM), screenAudio: true, media };
+      return { backend: "builtin", rtpCapabilities: room.router.rtpCapabilities, canSpeak: has(perms, Permission.SPEAK), canStream: has(perms, Permission.STREAM), screenAudio: true };
     }
 
     case "createTransport": {
@@ -338,6 +326,12 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       producer.observer.on("close", () => {
         peer.producers.delete(producer.id);
         refreshMediaFlags(peer);
+        // Peers that never consumed it (a screen share nobody chose to watch) must hear about it too.
+        for (const other of room.peers.values()) {
+          if (other !== peer && ![...other.consumers.values()].some((c) => c.producerId === producer.id)) {
+            other.conn.send({ t: "VOICE_PRODUCER_CLOSED", d: { producerId: producer.id } });
+          }
+        }
       });
       if (source === "mic") {
         if (states.get(userId)?.serverMute) await producer.pause();
@@ -398,10 +392,13 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       return {};
     }
 
-    case "mediaCreate":
-    case "mediaPropose":
-    case "mediaCommit":
-      return handleMedia(conn, peerOf(conn).channelId, method, data);
+    case "closeConsumer": {
+      // Stops receiving one track, e.g. when the user stops watching a screen share.
+      const peer = peerOf(conn);
+      const consumer = peer.consumers.get(str(data, "consumerId"));
+      if (consumer) { peer.consumers.delete(consumer.id); consumer.close(); }
+      return {};
+    }
 
     case "leave":
       leaveVoice(conn);

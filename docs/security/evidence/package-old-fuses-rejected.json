@@ -1,6 +1,0 @@
-{
-  "case": "old unpacked package with default enabled Node/inspector fuses",
-  "expectedExitCode": 1,
-  "actualExitCode": 1,
-  "rejected": true
-}
