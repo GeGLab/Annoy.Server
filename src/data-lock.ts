@@ -1,29 +1,65 @@
-import {closeSync,existsSync,lstatSync,mkdirSync,openSync,readFileSync,rmdirSync,unlinkSync,writeFileSync} from 'node:fs';
-import {join} from 'node:path';
-import {randomBytes} from 'node:crypto';
-/** A shared exclusive lock for the service and offline administrative tools.
- * All processes must use the same data directory and PID namespace. */
-export function acquireDataLock(directory:string):()=>void {
- mkdirSync(directory,{recursive:true,mode:0o700});const path=join(directory,'.annoy-service.lock');
- for(let attempt=0;attempt<2;attempt++){
-  let recovery=false;
-  try{
-  if(existsSync(path)){
-   try{mkdirSync(path+".recovery",{mode:0o700});recovery=true;}catch{throw new Error("Data lock recovery is in progress; inspect stale recovery locks before retrying");}
-   if(existsSync(path)){
-   if(!lstatSync(path).isFile()||lstatSync(path).isSymbolicLink())throw new Error('Invalid data lock');
-   let owner:{pid:number;token:string};try{owner=JSON.parse(readFileSync(path,'utf8'));}catch{throw new Error('Unreadable data lock; inspect it before retrying');}
-   if(!Number.isSafeInteger(owner.pid)||owner.pid<=0)throw new Error('Invalid data lock owner');
-   try{process.kill(owner.pid,0);throw new Error('Data directory is in use; stop the service before offline migration');}
-   catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')throw error;}
-   unlinkSync(path);
-   }
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+
+/**
+ * Who uses the data directory. Two kinds of holders:
+ * - "service": a running server. During a blue-green update two run for a few
+ *   seconds on the same data; services never exclude each other.
+ * - "offline": an administrative tool (account-mode migration). It excludes
+ *   everything, and services refuse to start while it runs.
+ * Each holder keeps a marker file fresh (every 5 s). A marker not refreshed for
+ * 30 s belongs to a process that is gone (crash, kill, another container's PID
+ * namespace) and is removed. Process IDs are never used: they are not
+ * comparable across containers and are reused after a restart.
+ */
+export type LockKind = "service" | "offline";
+const PREFIX = ".annoy-lock-";
+const LEGACY = ".annoy-service.lock";
+export const HEARTBEAT_MS = 5_000;
+export const STALE_MS = 30_000;
+
+interface Marker { file: string; kind: LockKind }
+function live(directory: string, now = Date.now()): Marker[] {
+  const markers: Marker[] = [];
+  for (const name of readdirSync(directory)) {
+    const match = /^\.annoy-lock-(service|offline)-[a-f0-9]{16}\.json$/.exec(name);
+    if (!match) continue;
+    const file = join(directory, name);
+    try {
+      if (now - statSync(file).mtimeMs > STALE_MS) { unlinkSync(file); continue; }
+    } catch { continue; }
+    markers.push({ file, kind: match[1] as LockKind });
   }
-  const token=randomBytes(32).toString('hex');let fd:number;
-  try{fd=openSync(path,'wx',0o600);}catch(error){if((error as NodeJS.ErrnoException).code==='EEXIST')continue;throw error;}
-  try{writeFileSync(fd,JSON.stringify({pid:process.pid,token}));}finally{closeSync(fd);}
-  return ()=>{try{const current=JSON.parse(readFileSync(path,'utf8'));if(current.pid===process.pid&&current.token===token)unlinkSync(path);}catch{/* Never remove another process's lock. */}};
-  }finally{if(recovery)rmdirSync(path+".recovery");}
- }
- throw new Error('Data directory lock contention');
+  return markers;
+}
+
+export function acquireDataLock(directory: string, kind: LockKind = "offline"): () => void {
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  // Up to 0.10.0-alpha.2 a single PID-based file was used; it is never refreshed, so it can't prove anything.
+  try { unlinkSync(join(directory, LEGACY)); } catch { /* absent */ }
+  const conflicts = (others: Marker[]) => others.some((m) => kind === "offline" || m.kind === "offline");
+  if (conflicts(live(directory))) {
+    throw new Error(kind === "offline" ? "Data directory is in use; stop the service before offline migration" : "An offline migration is using the data directory; wait for it to finish");
+  }
+  const file = join(directory, `${PREFIX}${kind}-${randomBytes(8).toString("hex")}.json`);
+  const fd = openSync(file, "wx", 0o600);
+  try { writeFileSync(fd, JSON.stringify({ kind, since: new Date().toISOString() })); } finally { closeSync(fd); }
+  // Two holders that started at the same moment both see the other now: the offline one gives way.
+  if (conflicts(live(directory).filter((m) => m.file !== file))) {
+    unlinkSync(file);
+    throw new Error(kind === "offline" ? "Data directory is in use; stop the service before offline migration" : "An offline migration is using the data directory; wait for it to finish");
+  }
+  const timer = setInterval(() => {
+    const now = new Date();
+    try { utimesSync(file, now, now); } catch { /* removed by hand */ }
+  }, HEARTBEAT_MS);
+  timer.unref();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    clearInterval(timer);
+    try { if (existsSync(file)) unlinkSync(file); } catch { /* already gone */ }
+  };
 }
