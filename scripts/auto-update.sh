@@ -48,7 +48,10 @@ pulled_image() { docker image inspect --format '{{.Id}}' "ghcr.io/geglab/annoy-s
 healthy() {
   i=0
   while [ "$i" -lt 90 ]; do
-    wget -q -T 2 -O /dev/null "http://$1:8787/api/info" && return 0
+    # Any HTTP answer below 500 means the server is up. Plain HTTP from here gets
+    # 426 (HTTPS required): that is an answer too.
+    out="$(wget -q -T 2 -O /dev/null "http://$1:8787/api/info" 2>&1)" && return 0
+    echo "$out" | grep -q 'HTTP/1\.[01] [1-4][0-9][0-9]' && return 0
     i=$((i + 1))
     sleep 1
   done
