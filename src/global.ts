@@ -37,8 +37,8 @@ export function globalLoginAvailable(): boolean {
   return !!globalServerId() && keys.length > 0 && !sanctions.some((s) => s.countries === "*");
 }
 
-async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(config.global.url + path, { ...init, signal: AbortSignal.timeout(15_000) });
+async function call<T>(path: string, init: RequestInit = {}, base = config.global.url): Promise<T> {
+  const res = await fetch(base + path, { ...init, signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`Global ${path}: HTTP ${res.status}`);
   return (await res.json()) as T;
 }
@@ -53,8 +53,8 @@ async function register(): Promise<void> {
 
 let attestX: string | null = null;
 async function refresh(): Promise<void> {
-  keys = (await call<{ keys: PublishedKey[] }>("/v1/tokens/keys")).keys;
-  attestX = (await call<{ x: string }>("/v1/attest/key").catch(() => null))?.x ?? attestX;
+  keys = (await call<{ keys: PublishedKey[] }>("/v1/tokens/keys", {}, config.global.authUrl)).keys;
+  attestX = (await call<{ x: string }>("/v1/attest/key", {}, config.global.authUrl).catch(() => null))?.x ?? attestX;
   const id = setting("global.serverId");
   const secret = setting("global.serverSecret");
   if (id && secret) sanctions = (await call<{ sanctions: Sanction[] }>("/v1/servers/self", { headers: { authorization: `Server ${id}:${secret}` } })).sanctions;
@@ -70,7 +70,7 @@ export async function ensureTokenKey(kid: string): Promise<void> {
   if (!config.global.enabled || keys.some((k) => k.kid === kid) || Date.now() - lastKeyRefresh < 30_000) return;
   lastKeyRefresh = Date.now();
   try {
-    keys = (await call<{ keys: PublishedKey[] }>("/v1/tokens/keys")).keys;
+    keys = (await call<{ keys: PublishedKey[] }>("/v1/tokens/keys", {}, config.global.authUrl)).keys;
   } catch {
     // Global unreachable: the proof is then rejected as usual.
   }

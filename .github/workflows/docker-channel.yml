@@ -1,0 +1,72 @@
+# Nightly and unstable server images (TODO item 6.2). Runs while the repository
+# variable ANNOY_CHANNELS is "on" (anything else pauses it). A server
+# follows a channel with ANNOY_VERSION=nightly or ANNOY_VERSION=unstable.
+# No GitHub release is made, so "latest" and the main line never see these.
+name: docker-channel
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # nightly from main, 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Channel
+        type: choice
+        options: [unstable, nightly]
+        default: unstable
+      ref:
+        description: Branch or commit to build
+        required: true
+        default: main
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-channel-${{ inputs.channel || 'nightly' }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    if: vars.ANNOY_CHANNELS == 'on'
+    runs-on: ubuntu-latest
+    env:
+      CHANNEL: ${{ inputs.channel || 'nightly' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+      - id: v
+        shell: bash
+        run: |
+          current="$(node -p "require('./package.json').version")"
+          core="${current%%-*}"
+          if [ "$core" = "$current" ]; then
+            IFS=. read -r major minor patch <<< "$core"; core="$major.$minor.$((patch + 1))"
+          fi
+          version="$core-$CHANNEL.$(date -u +%Y%m%d%H%M)"
+          # The server reads its version from package.json.
+          npm version "$version" --no-git-tag-version --allow-same-version
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/geglab/annoy-server
+          tags: |
+            type=raw,value=${{ steps.v.outputs.version }}
+            type=raw,value=${{ env.CHANNEL }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

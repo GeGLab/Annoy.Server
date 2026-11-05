@@ -1,6 +1,6 @@
 {
   "name": "annoy-server",
-  "version": "0.9.4",
+  "version": "0.10.0-alpha.1",
   "private": true,
   "description": "Self-hosted voice and text chat server: TeamSpeak-style hosting with Discord-style features",
   "license": "MIT",
@@ -27,9 +27,9 @@
     "test:disconnect": "node --import tsx --test tests/disconnect.test.ts tests/shutdown.test.ts",
     "account:mode": "tsx scripts/account-mode.ts",
     "test:security": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
-    "content:legacy": "tsx scripts/legacy-content.ts",
     "test:history": "node --import tsx --test tests/history.test.ts",
-    "test:privacy": "node --import tsx --test tests/profile-privacy.test.ts"
+    "test:privacy": "node --import tsx --test tests/profile-privacy.test.ts",
+    "admin": "tsx src/admin-cli.ts"
   },
   "engines": {
     "node": ">=24.7"

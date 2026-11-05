@@ -6,9 +6,8 @@ import { config } from "./config.ts";
 mkdirSync(config.dataDir, { recursive: true,mode:0o700 });
 
 export const db = new DatabaseSync(join(config.dataDir, "distopic.db"));
-// Offline recovery tools use a separate explicitly controlled connection.
-// Older binaries lack this function and fail closed on plaintext writes.
-db.function("annoy_legacy_source_write",()=>0);
+// Old databases still carry the MLS-era triggers that call this until removeServerCrypto drops them.
+db.function("annoy_legacy_source_write",()=>1);
 if(process.platform!=="win32")chmodSync(join(config.dataDir,"distopic.db"),0o600);
 
 db.exec(`
@@ -313,13 +312,6 @@ if (!(db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[]).som
   db.exec("ALTER TABLE sessions ADD COLUMN expires_at TEXT");
 }
 
-// Historical rows remain readable; all new plaintext communication is blocked.
-db.exec(`CREATE TRIGGER IF NOT EXISTS crypto_plaintext_globally_disabled_insert BEFORE INSERT ON messages
- WHEN annoy_legacy_source_write()<>1 BEGIN SELECT RAISE(ABORT,'e2ee_required'); END;
-CREATE TRIGGER IF NOT EXISTS crypto_plaintext_globally_disabled_update BEFORE UPDATE OF content,channel_id,mention_ids,mentions_everyone ON messages
- WHEN annoy_legacy_source_write()<>1 BEGIN SELECT RAISE(ABORT,'e2ee_required'); END;
-CREATE TRIGGER IF NOT EXISTS crypto_plaintext_reactions_disabled BEFORE INSERT ON message_reactions
- WHEN annoy_legacy_source_write()<>1 BEGIN SELECT RAISE(ABORT,'e2ee_required'); END;`);
 db.exec(`CREATE TABLE IF NOT EXISTS channel_read_states (
   channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

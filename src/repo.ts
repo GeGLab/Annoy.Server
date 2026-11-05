@@ -25,9 +25,10 @@ interface UserRow {
   display_name: string;
   avatar_url: string | null;
   bio: string;
+  global_public_id: string | null;
 }
 
-const USER_COLS = "id, username, display_name, avatar_url, bio";
+const USER_COLS = "id, username, display_name, avatar_url, bio, global_public_id";
 interface ServerRow {
   id: string;
   name: string;
@@ -83,7 +84,7 @@ const placeholders = (n: number) => Array.from({ length: n }, () => "?").join(",
 
 // Users ----------------------------------------------------------------------
 
-const toUser = (r: UserRow): User => ({ id: r.id, username: r.username, displayName: r.display_name, avatarUrl: r.avatar_url, bio: r.bio ?? "" });
+const toUser = (r: UserRow): User => ({ id: r.id, username: r.username, displayName: r.display_name, avatarUrl: r.avatar_url, bio: r.bio ?? "", ...(r.global_public_id && { annoyId: r.global_public_id }) });
 
 export function getUser(id: string): User | undefined {
   const row = one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, id);
@@ -168,7 +169,7 @@ export function memberRoleIds(serverId: string, userId: string): string[] {
 
 export function getMembers(serverId: string): Member[] {
   const rows = all<UserRow & { nick: string | null; joined_at: string }>(
-    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, m.nick, m.joined_at
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.global_public_id, m.nick, m.joined_at
        FROM members m JOIN users u ON u.id = m.user_id
       WHERE m.server_id = ? ORDER BY u.display_name COLLATE NOCASE`,
     serverId,
@@ -208,7 +209,7 @@ export function getMembersPage(serverId: string, limit: number, after: string | 
   const visible = "COALESCE(m.nick, u.display_name)";
   const cursor = key ? `AND (LOWER(${visible}) > LOWER(?) OR (LOWER(${visible}) = LOWER(?) AND u.id > ?))` : "";
   const rows = all<UserRow & { nick: string | null; joined_at: string }>(
-    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, m.nick, m.joined_at
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.global_public_id, m.nick, m.joined_at
        FROM members m JOIN users u ON u.id=m.user_id
       WHERE m.server_id=? ${filter} ${cursor}
       ORDER BY ${visible} COLLATE NOCASE, u.id LIMIT ?`,
@@ -235,7 +236,7 @@ export function getMembersPage(serverId: string, limit: number, after: string | 
 
 export function getMember(serverId: string, userId: string): Member | undefined {
   const row = one<UserRow & { nick: string | null; joined_at: string }>(
-    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, m.nick, m.joined_at
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.global_public_id, m.nick, m.joined_at
        FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? AND m.user_id=?`, serverId, userId,
   );
   if (!row) return undefined;
@@ -371,7 +372,6 @@ export function hydrate(rows: MessageRow[]): Message[] {
     group.userIds.push(reaction.user_id); reactions.set(reaction.message_id, groups);
   }
   return rows.map((r) => ({
-    protection:"legacy_plaintext",
     id: r.id,
     reactions: reactions.get(r.id) ?? [],
     channelId: r.channel_id,
@@ -400,14 +400,15 @@ export function getMessages(channelId: string, before: string | null, limit: num
 // Relationships --------------------------------------------------------------
 
 export function getRelationships(userId: string): Relationship[] {
-  const rows = all<{ other_id: string; status: RelationshipStatus; nickname: string; nickname_by_other: string }>(
-    "SELECT a.other_id, a.status, a.nickname, b.nickname AS nickname_by_other FROM relationships a LEFT JOIN relationships b ON b.user_id=a.other_id AND b.other_id=a.user_id WHERE a.user_id = ?",
+  // Only the nickname this user gave: a friend nickname is private to its author.
+  const rows = all<{ other_id: string; status: RelationshipStatus; nickname: string }>(
+    "SELECT other_id, status, nickname FROM relationships WHERE user_id = ?",
     userId,
   );
   const users = getUsers(rows.map((r) => r.other_id));
   return rows.flatMap((r) => {
     const user = users.get(r.other_id);
-    return user ? [{ user, status: r.status, nickname: r.nickname ?? "", nicknameByOther: r.nickname_by_other ?? "" }] : [];
+    return user ? [{ user, status: r.status, nickname: r.nickname ?? "" }] : [];
   });
 }
 

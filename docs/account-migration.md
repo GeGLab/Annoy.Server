@@ -31,14 +31,14 @@ contas nem une usuários por nome ou email. Configure o modo destino antes de re
 
 O backup desta operação contém o SQLite, NÃO os uploads. Antes de migrações de
 conteúdo, copiar e validar também uploads, avatares e outros dados sob controle
-do sistema. Este comando não executa migração de conteúdo nem ativa E2EE.
+do sistema. Este comando não migra conteúdo.
 
 ## Inscrição individual e recuperação
 
 Após a mudança para Global, contas locais comprovam posse com senha e prova Global
 válida. Após a mudança para Local, contas exclusivamente globais definem senha por
 recuperação administrativa explícita. Nenhuma conta recebe a identidade de outra
-por coincidência de nome. Fusões sem histórico/dispositivos continuam exigindo prova das duas contas. Contas com histórico ou dispositivos (inclusive revogados) não são unificadas para preservar autoria e principal MLS.
+por coincidência de nome. Fusões sem histórico/dispositivos continuam exigindo prova das duas contas. Contas com histórico não são unificadas, para preservar a autoria.
 
 Para emitir código local, após verificar independentemente o proprietário:
 
@@ -47,7 +47,7 @@ npm run account:recover -- nome_do_usuario
 ```
 
 Código é de uso único, hash no banco e validade de 30 minutos. Pode mudar acesso à
-conta; NÃO recupera conteúdo cifrado nem autoriza dispositivos MLS. Sessões antigas
+conta. Sessões antigas
 sem expiração não valem mais, inclusive como prova de migração. Senhas scrypt são
 verificadas e atualizadas para Argon2id somente após login local válido.
 
@@ -59,8 +59,6 @@ um arquivo SQLite sobre banco aberto; remover/reconciliar WAL e SHM somente com
 procedimento SQLite e todas as conexões fechadas. A restauração de backup prévio
 pode restaurar tokens existentes: revogue sessões antes de tornar a cópia acessível.
 
-Não usar esse rollback para reabrir escrita legível de conversas convertidas em
-E2EE. A migração de conteúdo possui ferramenta offline com backup validado e rollback seletivo: veja [plano de conteúdo](security/MIGRATION.md). Nunca reverter épocas/revogações junto com o legado.
 
 ## Compatibilidade e atualização
 

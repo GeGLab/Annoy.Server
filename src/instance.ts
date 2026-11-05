@@ -1,37 +1,22 @@
 // Instance-level state owned by the person hosting it: settings, admins and
 // account sign-up invites. Server (guild) level control lives in perms.ts.
-import type { InstanceSettings, RegistrationMode } from "@distopic/protocol";
+import type { InstanceSettings } from "@distopic/protocol";
 import { config } from "./config.ts";
-import { now, one, run } from "./db.ts";
+import { all, now, one, run } from "./db.ts";
 import { forbidden, HttpError } from "./errors.ts";
 
-const MODES: readonly RegistrationMode[] = ["open", "invite", "closed"];
-
-function read(key: string): string | undefined {
-  return one<{ value: string }>("SELECT value FROM instance_settings WHERE key = ?", `settings.${key}`)?.value;
-}
-
-function write(key: string, value: string): void {
-  run("INSERT INTO instance_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", `settings.${key}`, value);
-}
-
-/** Admin-chosen values win over environment defaults. */
+/**
+ * Settings come only from the Compose flags (ANNOY_REGISTRATION,
+ * ANNOY_MAX_UPLOAD_MB, ANNOY_MAX_SERVERS_PER_USER). Up to 0.9 the admin could
+ * override them in the app; those stored values are now ignored (TODO item 5).
+ */
 export function getSettings(): InstanceSettings {
-  const registration = read("registration") as RegistrationMode | undefined;
-  const maxServers = read("maxServersPerUser");
-  const maxUpload = read("maxUploadMb");
-  return {
-    registration: registration && MODES.includes(registration) ? registration : config.defaults.registration,
-    maxServersPerUser: maxServers === undefined ? config.defaults.maxServersPerUser : maxServers === "" ? null : Number(maxServers),
-    maxUploadMb: maxUpload === undefined ? config.defaults.maxUploadMb : Number(maxUpload),
-  };
+  return { ...config.defaults };
 }
 
-export function updateSettings(patch: Partial<InstanceSettings>): InstanceSettings {
-  if (patch.registration !== undefined) write("registration", patch.registration);
-  if (patch.maxServersPerUser !== undefined) write("maxServersPerUser", patch.maxServersPerUser === null ? "" : String(patch.maxServersPerUser));
-  if (patch.maxUploadMb !== undefined) write("maxUploadMb", String(patch.maxUploadMb));
-  return getSettings();
+/** Stored overrides from the old in-app admin panel that the flags now replace. */
+export function ignoredStoredSettings(): string[] {
+  return all<{ key: string }>("SELECT key FROM instance_settings WHERE key LIKE 'settings.%'").map((r) => r.key.slice("settings.".length));
 }
 
 export const maxUploadBytes = () => Math.min(getSettings().maxUploadMb * 1024 * 1024, config.uploadCeilingBytes);

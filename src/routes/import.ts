@@ -17,9 +17,6 @@ const importBody = z.object({
   ]),
   roleIds: z.array(snowflake).max(500),
   channelIds: z.array(snowflake).max(1000),
-  messageChannelIds: z.array(snowflake).max(1000),
-  messageLimit: z.number().int().min(1).max(10_000_000).nullable(),
-  attachments: z.boolean(),
   overwrites: z.boolean(),
 });
 

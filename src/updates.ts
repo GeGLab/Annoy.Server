@@ -1,7 +1,8 @@
 // Server updates from the app. The server never touches Docker itself: the
 // "updater" Compose service does, and the two talk through files in a shared
 // folder. The server writes "auto" (on/off) and "request" (update now); the
-// updater answers with status.json every few seconds.
+// updater answers with status.json every few seconds. Automatic updates follow
+// only ANNOY_AUTO_UPDATE (TODO item 5).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { UpdateStatus } from "@distopic/protocol";
@@ -49,9 +50,11 @@ async function updater(): Promise<UpdaterStatus | null> {
 
 export async function updateStatus(): Promise<UpdateStatus> {
   const [release, status] = await Promise.all([latestRelease(), updater()]);
+  // Nightly and unstable images have no GitHub release; "latest" is the main line.
+  const channelBuild = status?.channel === "nightly" || status?.channel === "unstable";
   return {
     current: VERSION,
-    latest: release,
+    latest: channelBuild ? null : release,
     available: status !== null,
     auto: status?.auto ?? false,
     channel: status?.channel ?? null,
@@ -69,5 +72,4 @@ async function control(file: string, value: string): Promise<boolean> {
   return true;
 }
 
-export const setAutoUpdate = (on: boolean) => control("auto", on ? "on" : "off");
 export const requestUpdate = () => control("request", new Date().toISOString());

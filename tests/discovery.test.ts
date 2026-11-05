@@ -24,7 +24,6 @@ const { db, run } = await import("../src/db.ts"),
   { HttpError } = await import("../src/errors.ts"),
   { Permission } = await import("@distopic/protocol");
 // Historical fixture connection, never enabled by the live server.
-db.function("annoy_legacy_source_write",()=>1);
 const app = Fastify();
 await app.register(websocket);
 app.setErrorHandler((e, _req, reply) => reply.status(e instanceof HttpError ? e.status : 500).send({ message: (e as Error).message }));
@@ -274,15 +273,17 @@ test("manual presence is shared with self and friends, keeps idle overrides and 
   observer.close();
 });
 
-test("biographies and friend nicknames persist, validate and expose both directions", async () => {
+test("biographies and friend nicknames persist and validate; a friend nickname stays private to its author", async () => {
   assert.equal((await app.inject({ method: "PATCH", url: "/users/@me", headers: auth("alice"), payload: { bio: "A".repeat(1000) } })).statusCode, 200);
   assert.equal((await app.inject({ method: "PATCH", url: "/users/@me", headers: auth("alice"), payload: { bio: "A".repeat(1001) } })).statusCode, 400);
   const me = await app.inject({ method: "GET", url: "/users/@me", headers: auth("alice") });
   assert.equal(me.json().bio.length, 1000);
   const nickname = await app.inject({ method: "PATCH", url: "/relationships/bob/nickname", headers: auth("alice"), payload: { nickname: "Bobby" } });
   assert.equal(nickname.statusCode, 200);
+  const alice = (await app.inject({ method: "GET", url: "/relationships", headers: auth("alice") })).json();
+  assert.equal(alice.find((r: any) => r.user.id === "bob").nickname, "Bobby");
   const bob = (await app.inject({ method: "GET", url: "/relationships", headers: auth("bob") })).json();
-  assert.equal(bob.find((r: any) => r.user.id === "alice").nicknameByOther, "Bobby");
+  assert.equal(JSON.stringify(bob).includes("Bobby"), false);
   assert.equal((await app.inject({ method: "PATCH", url: "/relationships/stranger/nickname", headers: auth("alice"), payload: { nickname: "No" } })).statusCode, 403);
 });
 

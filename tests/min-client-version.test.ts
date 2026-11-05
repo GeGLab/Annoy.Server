@@ -22,7 +22,13 @@ test("servers announce the oldest client they accept; newer clients always pass"
   assert.ok(compareVersions("0.10.0", "0.9.0") > 0, "numeric, not text, comparison");
   assert.equal(compareVersions("1.0.0", "1.0.0"), 0);
   assert.equal(isVersion("0.9.0"), true);
-  for (const bad of ["0.9", "latest", "0.9.0-beta", 9]) assert.equal(isVersion(bad), false, String(bad));
+  for (const bad of ["0.9", "latest", "0.9.0-", "0.9.0-beta..1", 9]) assert.equal(isVersion(bad), false, String(bad));
+  // Channel builds (TODO item 6): alpha, beta, nightly, unstable.
+  for (const good of ["0.10.0-alpha.1", "0.10.0-beta", "0.10.1-nightly.202611040300"]) assert.equal(isVersion(good), true, good);
+  assert.ok(compareVersions("0.10.0-alpha.1", "0.9.0") > 0, "an alpha of a newer version passes");
+  assert.ok(compareVersions("0.10.0-alpha.1", "0.10.0") < 0, "an alpha is older than its release");
+  assert.ok(compareVersions("0.10.0-alpha.10", "0.10.0-alpha.9") > 0);
+  assert.ok(compareVersions("0.10.0-beta.1", "0.10.0-alpha.2") > 0);
   const info = (await app.inject({ url: "/api/info" })).json();
   assert.equal(info.minClientVersion, "0.9.0");
   // A malformed minimum stops the server at startup instead of locking clients out.

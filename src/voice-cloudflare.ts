@@ -1,5 +1,3 @@
-import {requireMediaConsent} from './media-security.ts';
-import { handleMedia, mediaJoin, mediaLeave } from "./media-e2ee.ts";
 // Voice through Cloudflare's Realtime SFU, for hosts without a reachable
 // public address (CGNAT). Media flows between each client and Cloudflare; this
 // server keeps every decision: who may publish, who may receive which track,
@@ -157,7 +155,11 @@ function refreshMediaFlags(peer: Peer): void {
 async function unsubscribeAll(publisher: Peer, trackName: string): Promise<void> {
   for (const other of roomPeers(publisher.channelId)) {
     const mid = other.pulled.get(trackName);
-    if (mid === undefined) continue;
+    if (mid === undefined) {
+      // Peers that never pulled it (a screen share nobody chose to watch) must hear about it too.
+      if (other !== publisher) other.conn.send({ t: "VOICE_PRODUCER_CLOSED", d: { producerId: trackName } });
+      continue;
+    }
     other.pulled.delete(trackName);
     other.conn.send({ t: "VOICE_PRODUCER_CLOSED", d: { producerId: trackName } });
     await cf("PUT", `/sessions/${other.sessionId}/tracks/close`, { tracks: [{ mid }], force: true }).catch(() => undefined);
@@ -186,15 +188,14 @@ export function leaveVoice(conn: Connection): void {
   const peer = peersByConn.get(conn.id);
   if (!peer) return;
   peersByConn.delete(conn.id);
-  mediaLeave(peer.channelId, conn.id);
   // Revoke this session too: legacy clients may keep their peer connection open.
   closeTracks(peer.sessionId, [...peer.published.values()].map((track) => track.mid).concat([...peer.pulled.values()]));
   for (const track of peer.published.values()) {
     for (const other of roomPeers(peer.channelId)) {
       const mid = other.pulled.get(track.trackName);
+      other.conn.send({ t: "VOICE_PRODUCER_CLOSED", d: { producerId: track.trackName } });
       if (mid === undefined) continue;
       other.pulled.delete(track.trackName);
-      other.conn.send({ t: "VOICE_PRODUCER_CLOSED", d: { producerId: track.trackName } });
       closeTracks(other.sessionId, [mid]);
     }
   }
@@ -289,7 +290,6 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
 
   switch (method) {
     case "join": {
-      const protection = requireMediaConsent(data);
       const channelId = str(data, "channelId");
       const channel = getChannel(channelId);
       const perms = channel ? channelPermissions(channel, userId) : 0;
@@ -298,14 +298,12 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       if (budget.level() === "off") throw forbidden(VOICE_PAUSED);
       leaveVoice(conn);
       for (const other of [...peersByConn.values()]) if (other.userId === userId) kick(other, "Conectado em outro dispositivo");
-      const media = mediaJoin(channelId, conn, protection);
       let session: { sessionId?: string };
       try {
         session = await cf("POST", "/sessions/new");
         if (stopping || conn.socket.readyState !== conn.socket.OPEN) throw badRequest("Conexão encerrada");
         if (!session.sessionId) throw new HttpError(502, "sfu_error", "Cloudflare SFU não criou a sessão");
       } catch (err) {
-        mediaLeave(channelId, conn.id);
         throw err;
       }
       const peer: Peer = { conn, userId, serverId: channel.serverId, channelId, sessionId: session.sessionId, published: new Map(), pulled: new Map() };
@@ -320,11 +318,9 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         speaking: false,
         video: false,
         screen: false,
-        e2ee: protection === "sframe",
       });
       publishState(userId, channel.serverId);
       return {
-        media,
         backend: "cloudflare",
         iceServers: ICE_SERVERS,
         canSpeak: has(perms, Permission.SPEAK),
@@ -333,11 +329,6 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
         sessionId: session.sessionId,
       };
     }
-
-    case "mediaCreate":
-    case "mediaPropose":
-    case "mediaCommit":
-      return handleMedia(conn, peerOf(conn).channelId, method, data);
 
     case "resume":
       throw badRequest("A sessão de voz foi encerrada. Entre no canal novamente.");
@@ -421,6 +412,23 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       const sdp = typeof data.sdp === "string" ? data.sdp : null;
       const res = await cf("PUT", `/sessions/${peer.sessionId}/tracks/close`, {
         tracks: [{ mid: track.mid }],
+        force: sdp === null,
+        ...(sdp && { sessionDescription: { type: "offer", sdp } }),
+      });
+      return { sdp: res.sessionDescription?.sdp };
+    }
+
+    case "unsubscribe": {
+      // Stops pulling one track, e.g. when the user stops watching a screen share.
+      const peer = peerOf(conn);
+      const trackName = str(data, "producerId");
+      const mid = peer.pulled.get(trackName);
+      if (mid === undefined) return {};
+      peer.pulled.delete(trackName);
+      // A negotiated close keeps the client's SDP in step with Cloudflare.
+      const sdp = typeof data.sdp === "string" ? data.sdp : null;
+      const res = await cf("PUT", `/sessions/${peer.sessionId}/tracks/close`, {
+        tracks: [{ mid }],
         force: sdp === null,
         ...(sdp && { sessionDescription: { type: "offer", sdp } }),
       });

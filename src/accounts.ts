@@ -27,7 +27,7 @@ export function ownedServerNames(userId: string): string[] {
 
 /**
  * Deletes an account and everything linked to it: messages, files, reactions, direct
- * conversations, invites, devices and encrypted deliveries, then the user row itself.
+ * conversations and invites, then the user row itself.
  * Nothing is left behind as a "deleted user". The person must hand over owned servers first.
  */
 export async function deleteAccount(userId: string): Promise<void> {
@@ -42,7 +42,6 @@ export async function deleteAccount(userId: string): Promise<void> {
     userId, ...dms,
   ).map((r) => r.id);
   const has = (table: string) => !!one("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?", table);
-  const devices = has("crypto_devices") ? all<{ id: string }>("SELECT id FROM crypto_devices WHERE user_id = ?", userId).map((r) => r.id) : [];
   disconnectEverywhere(userId, "Conta excluída");
   const each = (ids: string[], sql: (marks: string) => string) => { if (ids.length) run(sql(ids.map(() => "?").join(",")), ...ids); };
   tx(() => {
@@ -52,19 +51,6 @@ export async function deleteAccount(userId: string): Promise<void> {
     run("DELETE FROM overwrites WHERE target_type = 'member' AND target_id = ?", userId);
     run("UPDATE channels SET created_by = NULL WHERE created_by = ?", userId);
     if (has("code_repos")) run("UPDATE code_repos SET linked_by = NULL WHERE linked_by = ?", userId);
-    if (has("crypto_blobs")) run("DELETE FROM crypto_blobs WHERE owner_id = ?", userId);
-    if (has("crypto_cancelled_envelopes")) run("DELETE FROM crypto_cancelled_envelopes WHERE user_id = ?", userId);
-    if (has("legacy_archive_receipts")) run("DELETE FROM legacy_archive_receipts WHERE user_id = ?", userId);
-    if (has("crypto_envelopes")) each(devices, (marks) => `DELETE FROM crypto_envelopes WHERE device_id IN (${marks})`);
-    if (has("device_key_packages")) {
-      each(devices, (marks) => `DELETE FROM device_key_packages WHERE device_id IN (${marks})`);
-      run("UPDATE device_key_packages SET claimed_by = NULL WHERE claimed_by = ?", userId);
-    }
-    if (has("crypto_devices")) {
-      each(devices, (marks) => `UPDATE crypto_devices SET approved_by = NULL WHERE approved_by IN (${marks})`);
-      run("DELETE FROM crypto_devices WHERE user_id = ?", userId);
-    }
-    if (has("device_challenges")) run("DELETE FROM device_challenges WHERE user_id = ?", userId);
     // Sessions, memberships, roles, bans, relationships, reactions, Steam and recovery cascade.
     run("DELETE FROM users WHERE id = ?", userId);
   });
@@ -80,11 +66,7 @@ export async function deleteAccount(userId: string): Promise<void> {
  * all moves or nothing does.
  */
 export function mergeUsers(keep: string, drop: string): void {
-  // MLS credentials and historical authorship bind immutable instance user IDs.
-  // A credential merge must never turn one principal into another.
-  if (one("SELECT 1 FROM sqlite_master WHERE name = 'crypto_devices'") &&
-      one("SELECT 1 FROM crypto_devices WHERE user_id IN (?,?) LIMIT 1",keep,drop))
-    throw conflict("Contas com dispositivos criptográficos não podem ser unificadas. Preserve os IDs e use a migração explícita de modo de autenticação.");
+  // Historical authorship binds immutable instance user IDs.
   if (one("SELECT 1 FROM messages WHERE author_id IN (?,?) OR mention_ids LIKE ? OR mention_ids LIKE ? LIMIT 1",keep,drop,`%"${keep}"%`,`%"${drop}"%`))
     throw conflict("Contas com histórico não podem ser unificadas sem alterar sua autoria. Preserve ambas as contas e migre o modo explicitamente.");
   const copy = (table: string, column: string, where = "") => {

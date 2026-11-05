@@ -4,7 +4,6 @@ import type { FastifyRequest } from "fastify";
 import {sessionChanged} from "./session-events.ts";
 import { now, one, run, all } from "./db.ts";
 import { requireAccountMode } from "./account-policy.ts";
-import {boundDevice,hasVerifiedProof} from "./dpop.ts";
 import { config } from "./config.ts";
 import { HttpError, unauthorized } from "./errors.ts";
 
@@ -88,7 +87,7 @@ export function deleteSessionsOf(userId: string): void {
 
 export function bearerToken(req: FastifyRequest): string | null {
   const header = req.headers.authorization;
-  const match=header?.match(/^(?:Bearer|DPoP) (.+)$/);
+  const match=header?.match(/^Bearer (.+)$/);
   return match?.[1]?.trim() || null;
 }
 
@@ -96,6 +95,6 @@ export function bearerToken(req: FastifyRequest): string | null {
 export function requireUser(req: FastifyRequest): string {
   const token = bearerToken(req);
   const userId = token ? userIdForToken(token) : null;
-  if (!userId || (token && boundDevice(token) && !hasVerifiedProof(req))) throw unauthorized();
+  if (!userId) throw unauthorized();
   return userId;
 }
