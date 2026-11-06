@@ -8,7 +8,7 @@
 // It talks to the running server over 127.0.0.1 with the token in the data
 // folder, so bans and deletions take effect for connected people at once.
 import { readFileSync } from "node:fs";
-import type { AdminOverview, AdminServer, AdminUser, SignupInvite, UpdateStatus } from "@distopic/protocol";
+import type { AdminOverview, AdminServer, AdminUser, SignupInvite, UpdateStatus } from "@annoy/protocol";
 import { ADMIN_TOKEN_HEADER, adminTokenPath } from "./admin-control.ts";
 import { config } from "./config.ts";
 

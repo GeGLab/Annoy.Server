@@ -1,4 +1,4 @@
-import { ALL_PERMISSIONS, has, hasMessages, LIMITS, MESSAGE_TTLS, parseMentions, Permission, type Channel, type ChannelFilePage, type Message } from "@distopic/protocol";
+import { ALL_PERMISSIONS, has, hasMessages, LIMITS, MESSAGE_TTLS, parseMentions, Permission, type Channel, type ChannelFilePage, type Message } from "@annoy/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../auth.ts";

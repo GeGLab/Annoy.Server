@@ -12,7 +12,7 @@ import sharp from "sharp";
 const root=resolve(tmpdir()), directory=await mkdtemp(join(root,"annoy-social-test-"));
 process.env.ANNOY_ACCOUNT_MODE="local";
 process.env.ANNOY_DATA_DIR=directory;
-const {db,run,one}=await import("../src/db.ts"), {authRoutes}=await import("../src/routes/auth.ts"), {channelRoutes}=await import("../src/routes/channels.ts"), {serverRoutes}=await import("../src/routes/servers.ts"), {createSession}=await import("../src/auth.ts"), {HttpError}=await import("../src/errors.ts"), {Permission}=await import("@distopic/protocol");
+const {db,run,one}=await import("../src/db.ts"), {authRoutes}=await import("../src/routes/auth.ts"), {channelRoutes}=await import("../src/routes/channels.ts"), {serverRoutes}=await import("../src/routes/servers.ts"), {createSession}=await import("../src/auth.ts"), {HttpError}=await import("../src/errors.ts"), {Permission}=await import("@annoy/protocol");
 // Historical fixture connection, never enabled by the live server.
 const app=Fastify(); await app.register(multipart); await app.register(websocket);
 app.setErrorHandler((error,_request,reply)=>reply.status(error instanceof HttpError?error.status:500).send({message:(error as Error).message}));

@@ -1,4 +1,4 @@
-import { has, LIMITS, Permission, TEMP_ROOM_IDLE_MS, type Channel } from "@distopic/protocol";
+import { has, LIMITS, Permission, TEMP_ROOM_IDLE_MS, type Channel } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "./auth.ts";

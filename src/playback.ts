@@ -1,4 +1,4 @@
-import { has, Permission, playbackPosition, type Channel, type PlaybackItem, type PlaybackKind, type PlaybackState } from "@distopic/protocol";
+import { has, Permission, playbackPosition, type Channel, type PlaybackItem, type PlaybackKind, type PlaybackState } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "./auth.ts";

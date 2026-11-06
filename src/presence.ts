@@ -1,4 +1,4 @@
-import type { Presence } from "@distopic/protocol";
+import type { Presence } from "@annoy/protocol";
 
 // Owned by the gateway: counts live connections per user.
 const connections = new Map<string, number>();

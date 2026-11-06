@@ -1,4 +1,4 @@
-import { LIMITS, PROTOCOL_VERSION, type AuthResponse, type InstanceInfo, type User } from "@distopic/protocol";
+import { LIMITS, PROTOCOL_VERSION, type AuthResponse, type InstanceInfo, type User } from "@annoy/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { bearerToken, createSession, deleteSession, hashPassword, hashToken, deleteSessionsOf, requireUser, verifyPassword, spendPasswordTime, userIdForToken } from "../auth.ts";

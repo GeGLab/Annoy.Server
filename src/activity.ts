@@ -1,4 +1,4 @@
-import type { UserActivity } from "@distopic/protocol";
+import type { UserActivity } from "@annoy/protocol";
 import { z } from "zod";
 import { all, one } from "./db.ts";
 import { sendToUser, onServerChanged, type Connection } from "./events.ts";

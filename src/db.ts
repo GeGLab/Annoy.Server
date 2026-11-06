@@ -1,14 +1,15 @@
 import { mkdirSync,chmodSync } from "node:fs";
-import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { config } from "./config.ts";
+import { databaseFile } from "./db-file.ts";
 
 mkdirSync(config.dataDir, { recursive: true,mode:0o700 });
 
-export const db = new DatabaseSync(join(config.dataDir, "distopic.db"));
+const file = databaseFile(config.dataDir);
+export const db = new DatabaseSync(file);
 // Old databases still carry the MLS-era triggers that call this until removeServerCrypto drops them.
 db.function("annoy_legacy_source_write",()=>1);
-if(process.platform!=="win32")chmodSync(join(config.dataDir,"distopic.db"),0o600);
+if(process.platform!=="win32")chmodSync(file,0o600);
 
 db.exec(`
 PRAGMA journal_mode = WAL;

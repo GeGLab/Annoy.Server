@@ -13,7 +13,7 @@ const { createSession } = await import("../src/auth.ts");
 const { serverRoutes, deleteServer } = await import("../src/routes/servers.ts");
 const { HttpError } = await import("../src/errors.ts");
 const { adminRoutes } = await import("../src/routes/admin.ts");
-const { ALL_PERMISSIONS } = await import("@distopic/protocol");
+const { ALL_PERMISSIONS } = await import("@annoy/protocol");
 const app = Fastify();
 app.setErrorHandler((e, _req, reply) => reply.status(e instanceof HttpError ? e.status : 500).send({ message: (e as Error).message }));
 serverRoutes(app);

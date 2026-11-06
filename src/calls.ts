@@ -1,4 +1,4 @@
-import type { DirectCall, ClientOp } from "@distopic/protocol";
+import type { DirectCall, ClientOp } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "./auth.ts";

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ActivityHistoryEntry, UserActivity } from "@distopic/protocol";
+import type { ActivityHistoryEntry, UserActivity } from "@annoy/protocol";
 import { all, now, one, run, tx } from "./db.ts";
 import { sendToAudience, sendToUser } from "./events.ts";
 

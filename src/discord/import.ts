@@ -9,7 +9,7 @@ import {
   type ImportJob,
   type ImportRequest,
   type ImportStructure,
-} from "@distopic/protocol";
+} from "@annoy/protocol";
 import { requireServerQuota } from "../instance.ts";
 import { now, one, run, tx } from "../db.ts";
 import { badRequest, conflict, forbidden } from "../errors.ts";

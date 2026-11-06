@@ -1,4 +1,4 @@
-import { has, Permission, type Channel, type GatewayEvent } from "@distopic/protocol";
+import { has, Permission, type Channel, type GatewayEvent } from "@annoy/protocol";
 import type { WebSocket } from "ws";
 import { channelPermissions } from "./perms.ts";
 import { audienceOf, dmRecipientIds, memberIds } from "./repo.ts";
@@ -26,7 +26,7 @@ export class Connection {
       else if (event.t === "READY") event = { ...event, d: { ...event.d, activities: Object.fromEntries(Object.entries(event.d.activities ?? {}).map(([id, activities]) => [id, activities.filter((activity) => activity.kind !== "development")])) } };
     }
     if(!this.features.has("extendedActivity")) {
-      const legacy=(activities:import("@distopic/protocol").UserActivity[])=>activities.filter(activity=>activity.kind!=="video"&&activity.kind!=="generic").slice(0,3);
+      const legacy=(activities:import("@annoy/protocol").UserActivity[])=>activities.filter(activity=>activity.kind!=="video"&&activity.kind!=="generic").slice(0,3);
       if(event.t==="ACTIVITY_UPDATE")event={...event,d:{...event.d,activities:legacy(event.d.activities)}};
       else if(event.t==="READY")event={...event,d:{...event.d,activities:Object.fromEntries(Object.entries(event.d.activities??{}).map(([id,activities])=>[id,legacy(activities)]))}};
     }

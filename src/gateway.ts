@@ -2,7 +2,7 @@ import {observeSessions} from "./session-events.ts";
 import { compareVersions, isVersion } from "./version.ts";
 import {config} from "./config.ts";
 import { clearCalls, handleCall, endAllCalls } from "./calls.ts";
-import { Permission, type ClientOp } from "@distopic/protocol";
+import { Permission, type ClientOp } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { hashToken, userIdForSessionHash, userIdForToken } from "./auth.ts";
 import { HttpError } from "./errors.ts";

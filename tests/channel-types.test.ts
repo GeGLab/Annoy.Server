@@ -12,7 +12,7 @@ process.env.ANNOY_DATA_DIR = directory;
 
 // A database from 0.6: the channel type is limited by a CHECK that 0.7 has to drop.
 {
-  const old = new DatabaseSync(join(directory, "distopic.db"));
+  const old = new DatabaseSync(join(directory, "annoy.db"));
   old.exec(`CREATE TABLE channels (
     id TEXT PRIMARY KEY, server_id TEXT, type TEXT NOT NULL CHECK (type IN ('category', 'text', 'voice', 'dm')),
     name TEXT NOT NULL, topic TEXT NOT NULL DEFAULT '', parent_id TEXT REFERENCES channels(id) ON DELETE SET NULL,
@@ -29,7 +29,7 @@ const { playbackRoutes } = await import("../src/playback.ts");
 const { codeRoutes } = await import("../src/code.ts");
 const { tempRoomRoutes, roomsOccupied } = await import("../src/rooms.ts");
 const { HttpError } = await import("../src/errors.ts");
-const { DEFAULT_EVERYONE_PERMISSIONS, TEMP_ROOM_IDLE_MS } = await import("@distopic/protocol");
+const { DEFAULT_EVERYONE_PERMISSIONS, TEMP_ROOM_IDLE_MS } = await import("@annoy/protocol");
 
 const app = Fastify();
 await app.register((await import("@fastify/multipart")).default);

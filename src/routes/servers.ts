@@ -15,7 +15,7 @@ import {
   type ServerState,
   type PublicSticker,
   type ServerStickerList,
-} from "@distopic/protocol";
+} from "@annoy/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../auth.ts";

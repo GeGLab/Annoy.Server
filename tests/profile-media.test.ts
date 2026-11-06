@@ -9,7 +9,7 @@ import multipart from "@fastify/multipart";
 import sharp from "sharp";
 
 const tempRoot = resolve(tmpdir());
-const directory = await mkdtemp(join(tempRoot, "distopic-profile-test-"));
+const directory = await mkdtemp(join(tempRoot, "annoy-profile-test-"));
 process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
 const { authRoutes } = await import("../src/routes/auth.ts");
@@ -33,7 +33,7 @@ const authorization = `Bearer ${createSession("person")}`;
 const photo = await sharp({ create: { width: 800, height: 600, channels: 3, background: "#de9862" } })
   .png()
   .toBuffer();
-const boundary = "distopic-avatar-test";
+const boundary = "annoy-avatar-test";
 const upload = (bytes: Buffer) =>
   Buffer.concat([
     Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="avatar"; filename="photo.png"\r\nContent-Type: image/png\r\n\r\n`),
@@ -43,7 +43,7 @@ const upload = (bytes: Buffer) =>
 after(async () => {
   await app.close();
   db.close();
-  if (dirname(resolve(directory)) !== tempRoot || !basename(directory).startsWith("distopic-profile-test-"))
+  if (dirname(resolve(directory)) !== tempRoot || !basename(directory).startsWith("annoy-profile-test-"))
     throw new Error("Unsafe test path");
   await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });

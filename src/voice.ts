@@ -1,4 +1,4 @@
-import { has, isVoiceChannel, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
+import { has, isVoiceChannel, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@annoy/protocol";
 import * as mediasoup from "mediasoup";
 import type { types as ms } from "mediasoup";
 import { config, detectRouteAddress } from "./config.ts";

@@ -7,7 +7,7 @@
 // sends the client's offer; subscribing asks Cloudflare for an offer that the
 // client answers through `renegotiate`.
 import { randomUUID } from "node:crypto";
-import { has, isVoiceChannel, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@distopic/protocol";
+import { has, isVoiceChannel, Permission, type MediaSource, type VoiceMethod, type VoiceState } from "@annoy/protocol";
 import { config } from "./config.ts";
 import { sourceFor } from "./media-source.ts";
 import { badRequest, forbidden, HttpError, notFound } from "./errors.ts";
