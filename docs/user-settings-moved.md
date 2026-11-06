@@ -15,3 +15,17 @@ contacts, privacy choices, activity history and Discord links it held
 `instance_settings.profile.movedToAnnoy`). Sessions are not touched.
 
 READY announces `steamConnection` and `profileDetails` only in local mode.
+
+## Members and account deletion
+
+- `src/annoy-members.ts` sends the Global every server here with its owner,
+  member count and members by Annoy ID (`PUT /v1/servers/self/members`), 10 s
+  after a change and with the hourly Global check. The Annoy account uses it for
+  "friends and communities in common" contacts and to require a transfer before
+  deleting an account that owns servers with other members.
+- Each hourly check reads `GET /v1/servers/self/deletions`: for a deleted Annoy
+  account, servers where it is the only member are deleted, it leaves every
+  other server, its messages stay with the author "Usuário desconhecido"
+  (`unknown-user`), and its user row goes.
+- "Sair do servidor" keeps the person's messages in that server, with the author
+  "Usuário desconhecido".

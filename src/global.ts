@@ -7,6 +7,8 @@ import { config } from "./config.ts";
 import { now, one, run } from "./db.ts";
 import { requireAccountMode } from "./account-policy.ts";
 import { HttpError } from "./errors.ts";
+import { applyAnnoyDeletions, reportMembers, startAnnoyMembers } from "./annoy-members.ts";
+import { deleteServer } from "./routes/servers.ts";
 
 /** A blind-signing public key from /v1/tokens/keys (RSA JWK). */
 interface PublishedKey {
@@ -83,10 +85,13 @@ export function startGlobal(log: (msg: string) => void): void {
     try {
       await register();
       await refresh();
+      await reportMembers();
+      await applyAnnoyDeletions(deleteServer, log);
     } catch (err) {
       log(`Serviço de contas Annoy indisponível: ${(err as Error).message}`);
     }
   };
+  startAnnoyMembers(log);
   void tick();
   setInterval(() => void tick(), 60 * 60_000).unref();
 }

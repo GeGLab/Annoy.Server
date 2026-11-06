@@ -1,3 +1,4 @@
+import { anonymizeMessages } from "../annoy-members.ts";
 import { createAvatar, discardAvatar, MAX_AVATAR_BYTES } from "../avatars.ts";
 import { config } from "../config.ts";
 import { refreshActivityAccess } from "../activity.ts";
@@ -452,6 +453,8 @@ export function serverRoutes(app: FastifyInstance): void {
     const { server } = requireServer(serverId, actor);
     if (req.params.userId === "@me" || req.params.userId === actor) {
       if (server.ownerId === actor) throw badRequest("Transfira a propriedade para sair. Se estiver sozinho, você pode excluir o servidor.");
+      // Leaving: the messages stay, by "Usuário desconhecido".
+      anonymizeMessages(actor, serverId);
       removeMember(serverId, actor);
       return {};
     }
