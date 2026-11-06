@@ -26,6 +26,8 @@ export const Permission = {
   ADMINISTRATOR: 1 << 14,
   /** Camera and screen sharing in voice channels. */
   STREAM: 1 << 15,
+  /** Add and remove the server's own stickers. */
+  MANAGE_STICKERS: 1 << 16,
 } as const;
 
 export type PermissionName = keyof typeof Permission;
@@ -58,6 +60,7 @@ export const PERMISSION_LABELS: Record<PermissionName, string> = {
   MANAGE_SERVER: "Gerenciar servidor",
   ADMINISTRATOR: "Administrador",
   STREAM: "Transmitir câmera e tela",
+  MANAGE_STICKERS: "Gerenciar figurinhas",
 };
 
 export function has(perms: number, flag: number): boolean {
@@ -128,6 +131,24 @@ export interface ServerSummary {
   name: string;
   iconUrl: string | null;
   ownerId: string;
+}
+
+/** One of a server's own stickers. `url` is public, so it shows in DMs and other servers too. */
+export interface ServerSticker {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface ServerStickerList {
+  stickers: ServerSticker[];
+  /** How many stickers this server may have. */
+  limit: number;
+}
+
+/** GET /api/stickers/:id (no sign-in): the sticker and the server it comes from. */
+export interface PublicSticker extends ServerSticker {
+  server: { id: string; name: string; iconUrl: string | null };
 }
 
 export interface ServerSummaryPage {
@@ -632,7 +653,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; /** Servers have their own sticker packs (/servers/:id/stickers). */ serverStickers?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }

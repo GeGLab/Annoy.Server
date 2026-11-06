@@ -13,8 +13,10 @@ import {
   type MemberPage,
   type ServerSummaryPage,
   type ServerState,
+  type PublicSticker,
+  type ServerStickerList,
 } from "@distopic/protocol";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../auth.ts";
 import { all, now, one, run, tx } from "../db.ts";
@@ -24,6 +26,7 @@ import { inviteCode, newId } from "../ids.ts";
 import { channelPermissions, rank, requireOutranks, requireServer } from "../perms.ts";
 import { getChannels, getMember, getMembers, getMembersPage, getRole, getRoles, getServer, getUsers, isMember, serverSummariesPage } from "../repo.ts";
 import { requireServerQuota } from "../instance.ts";
+import { createStickerFile, DEFAULT_STICKER_LIMIT, discardStickerFile, MAX_STICKER_BYTES, readStickerFile, STICKER_ID } from "../stickers.ts";
 import { discardBlobs } from "../uploads.ts";
 import { parse, type Params } from "../validate.ts";
 import { disconnectUser, setServerMute, voiceStatesFor } from "../voice-backend.ts";
@@ -38,6 +41,15 @@ const permissions = z.number().int().min(0).max(ALL_PERMISSIONS);
 const createServer = z.object({ name });
 const patchServer = z.object({ name: name.optional(), iconUrl: z.null().optional() }).refine((body) => body.name !== undefined || body.iconUrl === null, "Nenhuma alteração informada");
 const transferOwnership = z.object({ userId: z.string().min(1).max(128) }).strict();
+const stickerName = z.string().trim().min(1).max(32);
+
+const stickerUrl = (req: FastifyRequest, id: string) => new URL(`/api/stickers/${id}.webp`, config.publicUrl || `${req.protocol}://${req.host}`).toString();
+const stickerLimit = (serverId: string) => one<{ sticker_limit: number | null }>("SELECT sticker_limit FROM servers WHERE id = ?", serverId)?.sticker_limit ?? DEFAULT_STICKER_LIMIT;
+const stickerCount = (serverId: string) => one<{ n: number }>("SELECT count(*) AS n FROM server_stickers WHERE server_id = ?", serverId)!.n;
+function stickerList(req: FastifyRequest, serverId: string): ServerStickerList {
+  const rows = all<{ id: string; name: string }>("SELECT id, name FROM server_stickers WHERE server_id = ? ORDER BY created_at, id", serverId);
+  return { stickers: rows.map((r) => ({ id: r.id, name: r.name, url: stickerUrl(req, r.id) })), limit: stickerLimit(serverId) };
+}
 const createChannel = z.object({
   name,
   type: z.enum(["category", "text", "voice", "files", "code", "theater", "song"]),
@@ -73,6 +85,7 @@ const slug = (s: string) =>
 
 /** Removes a server with its channels, messages and attachment files. */
 export async function deleteServer(serverId: string, actorId: string): Promise<void> {
+  const stickers = all<{ id: string }>("SELECT id FROM server_stickers WHERE server_id = ?", serverId).map((r) => r.id);
   const { members, blobs, icon } = tx(() => {
     const server = getServer(serverId);
     if (!server) throw notFound("Servidor");
@@ -89,6 +102,7 @@ export async function deleteServer(serverId: string, actorId: string): Promise<v
   for (const m of members) disconnectUser(serverId, m.user_id);
   refreshActivityAccess();
   await discardAvatar(icon);
+  for (const id of stickers) await discardStickerFile(id);
   await discardBlobs(blobs);
   for (const m of members) sendToUser(m.user_id, { t: "SERVER_REMOVE", d: { serverId } });
 }
@@ -212,6 +226,65 @@ export function serverRoutes(app: FastifyInstance): void {
     serverChanged(req.params.id);
     await discardAvatar(previous).catch((error) => app.log.warn(error));
     return getServer(req.params.id);
+  });
+
+  // --- The server's own stickers -------------------------------------------
+
+  app.get<Params<"id">>("/servers/:id/stickers", async (req) => {
+    requireServer(req.params.id, requireUser(req));
+    return stickerList(req, req.params.id);
+  });
+
+  // Multipart: the "name" field first, then the image.
+  app.post<Params<"id">>("/servers/:id/stickers", async (req) => {
+    const userId = requireUser(req);
+    const serverId = req.params.id;
+    requireServer(serverId, userId, Permission.MANAGE_STICKERS);
+    if (stickerCount(serverId) >= stickerLimit(serverId)) throw new HttpError(409, "stickers_full", `Este servidor já tem ${stickerLimit(serverId)} figurinhas.`);
+    const file = await req.file({ limits: { fileSize: MAX_STICKER_BYTES, files: 1, fields: 1 } });
+    if (!file) throw badRequest("Selecione uma imagem");
+    const field = file.fields.name;
+    const label = parse(stickerName, field && !Array.isArray(field) && "value" in field ? field.value : undefined);
+    const bytes = await file.toBuffer();
+    if (file.file.truncated) throw new HttpError(413, "too_large", "A figurinha deve ter no máximo 8 MB");
+    const id = await createStickerFile(bytes);
+    try {
+      tx(() => {
+        requireServer(serverId, userId, Permission.MANAGE_STICKERS);
+        if (stickerCount(serverId) >= stickerLimit(serverId)) throw new HttpError(409, "stickers_full", `Este servidor já tem ${stickerLimit(serverId)} figurinhas.`);
+        run("INSERT INTO server_stickers (id, server_id, name, created_by, created_at) VALUES (?, ?, ?, ?, ?)", id, serverId, label, userId, now());
+      });
+    } catch (error) { await discardStickerFile(id); throw error; }
+    return stickerList(req, serverId);
+  });
+
+  app.delete<{ Params: { id: string; stickerId: string } }>("/servers/:id/stickers/:stickerId", async (req) => {
+    requireServer(req.params.id, requireUser(req), Permission.MANAGE_STICKERS);
+    if (!run("DELETE FROM server_stickers WHERE id = ? AND server_id = ?", req.params.stickerId, req.params.id)) throw notFound("Figurinha");
+    await discardStickerFile(req.params.stickerId);
+    return stickerList(req, req.params.id);
+  });
+
+  // Public, so a sticker sent in a DM or another server still shows, with the server it comes from.
+  app.get<{ Params: { id: string } }>("/stickers/:id.webp", async (req, reply) => {
+    if (!STICKER_ID.test(req.params.id) || !one("SELECT 1 FROM server_stickers WHERE id = ?", req.params.id)) throw notFound("Figurinha");
+    const bytes = await readStickerFile(req.params.id);
+    return reply
+      .type("image/webp")
+      .header("X-Content-Type-Options", "nosniff")
+      .header("Cache-Control", "public, max-age=31536000, immutable")
+      .header("Content-Security-Policy", "sandbox; default-src 'none'")
+      .send(bytes);
+  });
+
+  app.get<{ Params: { id: string } }>("/sticker-info/:id", async (req, reply): Promise<PublicSticker> => {
+    const row = STICKER_ID.test(req.params.id)
+      ? one<{ id: string; name: string; server_id: string }>("SELECT id, name, server_id FROM server_stickers WHERE id = ?", req.params.id)
+      : undefined;
+    const server = row && getServer(row.server_id);
+    if (!row || !server) throw notFound("Figurinha");
+    reply.header("Cache-Control", "public, max-age=300");
+    return { id: row.id, name: row.name, url: stickerUrl(req, row.id), server: { id: server.id, name: server.name, iconUrl: server.iconUrl } };
   });
 
   app.delete<Params<"id">>("/servers/:id", async (req) => {
