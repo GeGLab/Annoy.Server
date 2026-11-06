@@ -16,6 +16,16 @@ import { uploadsRemoved } from "../playback.ts";
 import { removeChannel } from "../rooms.ts";
 import { parse, type Params } from "../validate.ts";
 
+/** Longest sticker link accepted as a reaction. */
+const STICKER_REACTION_MAX = 300;
+// Annoy set stickers (cdnannoy /i/<sha1>) and server pack stickers (/api/stickers/<id>.webp).
+const STICKER_REACTION = /^(?:https:\/\/[^/\s?#@]+|http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?)\/(?:i\/[a-f0-9]{40}\.(?:png|jpg|webp|gif)|api\/stickers\/[a-f0-9]{32}\.webp)$/;
+function isReactionKey(key: string): boolean {
+  if (key.length <= STICKER_REACTION_MAX && STICKER_REACTION.test(key)) return true;
+  const segments = [...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(key)];
+  return key.length <= 32 && segments.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3/u.test(key);
+}
+
 const INLINE_TYPES = /^(image\/(png|jpeg|gif|webp)|audio\/|video\/)/;
 
 const patchChannel = z.object({
@@ -34,6 +44,7 @@ const messageBody = z.object({
   content: z.string().max(LIMITS.messageMax),
   replyToId: z.string().nullable().optional(),
 });
+const reactionBody = z.object({ reaction: z.string().min(1).max(STICKER_REACTION_MAX), add: z.boolean() });
 const editBody = z.object({ content: z.string().min(1).max(LIMITS.messageMax) });
 const listQuery = z.object({
   around: z.string().max(100).optional(),
@@ -332,14 +343,14 @@ export function channelRoutes(app: FastifyInstance): void {
   });
 
   // Idempotent reactions: one vote per user/emoji; channel access is always rechecked.
-  const reaction = async (req: FastifyRequest<{ Params: { id: string; messageId: string; emoji: string } }>, add: boolean) => {
+  // A reaction is a single emoji or the public link of a sticker (Annoy set or a server's pack).
+  const reaction = async (req: FastifyRequest<{ Params: { id: string; messageId: string } }>, key: string, add: boolean) => {
     const userId = requireUser(req);
     const { channel } = requireChannel(req.params.id, userId, Permission.SEND_MESSAGES);
     const message = getMessage(req.params.messageId);
     if (!message || message.channelId !== channel.id) throw notFound("Mensagem");
-    const emoji = req.params.emoji.normalize("NFC");
-    const segments = [...new Intl.Segmenter("und", { granularity: "grapheme" }).segment(emoji)];
-    if (emoji.length > 32 || segments.length !== 1 || !/\p{Extended_Pictographic}|\p{Regional_Indicator}|[0-9#*]\uFE0F?\u20E3/u.test(emoji)) throw badRequest("Escolha um emoji válido");
+    const emoji = key.normalize("NFC");
+    if (!isReactionKey(emoji)) throw badRequest("Escolha um emoji ou uma figurinha válida");
     if (add) {
       if ((message.reactions?.length ?? 0) >= 20 && !message.reactions?.some((item) => item.emoji === emoji)) throw badRequest("Esta mensagem já tem 20 reações diferentes");
       run("INSERT OR IGNORE INTO message_reactions(message_id,user_id,emoji) VALUES(?,?,?)", message.id, userId, emoji);
@@ -348,8 +359,13 @@ export function channelRoutes(app: FastifyInstance): void {
     sendToChannel(channel, { t: "MESSAGE_UPDATE", d: updated });
     return updated;
   };
-  app.put<Params<"id" | "messageId" | "emoji">>("/channels/:id/messages/:messageId/reactions/:emoji", async (req) => reaction(req, true));
-  app.delete<Params<"id" | "messageId" | "emoji">>("/channels/:id/messages/:messageId/reactions/:emoji", async (req) => reaction(req, false));
+  app.put<Params<"id" | "messageId" | "emoji">>("/channels/:id/messages/:messageId/reactions/:emoji", async (req) => reaction(req, req.params.emoji, true));
+  app.delete<Params<"id" | "messageId" | "emoji">>("/channels/:id/messages/:messageId/reactions/:emoji", async (req) => reaction(req, req.params.emoji, false));
+  // Sticker links are too long for a path segment, so they come in the body (emoji work here too).
+  app.post<Params<"id" | "messageId">>("/channels/:id/messages/:messageId/reactions", async (req) => {
+    const body = parse(reactionBody, req.body);
+    return reaction(req, body.reaction, body.add);
+  });
 
   // Possession of an attachment URL is not authorization.
   app.get<Params<"id" | "name">>("/uploads/:id/:name", async (req, reply) => {
