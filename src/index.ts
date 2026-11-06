@@ -1,5 +1,5 @@
 import { removeServerCrypto } from "./crypto-removed.ts";
-import { annoySocial, retireServerSocial, socialMovedRoutes } from "./social-moved.ts";
+import { annoySocial, retireServerSocial, retireServerUserSettings, socialMovedRoutes, userSettingsMovedRoutes } from "./social-moved.ts";
 import './service-lock.ts';
 import {transportSecurity} from './transport-security.ts';
 import { resourceLimits } from "./resource-limits.ts";
@@ -77,6 +77,8 @@ const decrypted = await removeServerCrypto();
 if (decrypted) app.log.info(`Criptografia MLS removida: ${decrypted.tables} tabelas e ${decrypted.files} arquivos cifrados apagados; mensagens dos canais voltam a ser em texto.`);
 const retired = await retireServerSocial();
 if (retired) app.log.info(`Conta Annoy: ${retired.dms} DMs e ${retired.relationships} amizades saíram deste servidor (agora ficam na nuvem Annoy).`);
+const retiredSettings = retireServerUserSettings();
+if (retiredSettings) app.log.info(`Conta Annoy: ${retiredSettings.steam} conexões Steam, ${retiredSettings.fields} contatos de perfil e ${retiredSettings.history} itens de histórico saíram deste servidor (agora ficam na conta Annoy).`);
 ensureAdminToken();
 const ignored = ignoredStoredSettings();
 if (ignored.length) app.log.warn(`Configurações salvas pelo app ignoradas (${ignored.join(", ")}): agora valem só as flags do .env (ANNOY_REGISTRATION, ANNOY_MAX_UPLOAD_MB, ANNOY_MAX_SERVERS_PER_USER).`);
@@ -85,8 +87,12 @@ startTempRooms();
 await app.register(
   async (api) => {
     authRoutes(api);
-    discordAuthRoutes(api);
-    steamRoutes(api);
+    if (annoySocial) userSettingsMovedRoutes(api);
+    else {
+      discordAuthRoutes(api);
+      steamRoutes(api);
+      profileRoutes(api);
+    }
     serverRoutes(api);
     channelRoutes(api);
     if (annoySocial) socialMovedRoutes(api);
@@ -95,7 +101,6 @@ await app.register(
       callRoutes(api);
     }
     searchRoutes(api);
-    profileRoutes(api);
     importRoutes(api);
     playbackRoutes(api);
     codeRoutes(api);
