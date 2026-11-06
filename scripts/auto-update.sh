@@ -1,7 +1,9 @@
 #!/bin/sh
 # Runs inside the "updater" Compose service. Automatic updates follow only
 # ANNOY_AUTO_UPDATE in .env; `annoy-admin update apply` asks for one now by
-# writing /control/request. It answers with /control/status.json. Pinning
+# writing /control/request. `annoy-admin.sh restart` writes /control/restart:
+# the same switch with the current image, to apply .env changes. It answers
+# with /control/status.json. Pinning
 # ANNOY_VERSION=0.7 keeps updates within 0.7.x.
 #
 # Updates never stop the server first: the new version starts in the idle
@@ -81,38 +83,60 @@ fail() {
   last_error="\"$1 Veja: docker compose logs updater\""
 }
 
+# Starts the idle slot (with the current .env), points the proxy at it once it
+# answers, then stops the active one. Returns 1 when the old slot keeps serving.
+swap() {
+  old="$(active)"
+  new="$(idle)"
+  if ! compose up --detach --no-deps --no-build --force-recreate "$new"; then
+    fail "Não deu para iniciar a nova versão."
+    return 1
+  fi
+  if ! healthy "$new"; then
+    compose stop "$new"
+    fail "A nova versão não respondeu; o servidor continua na anterior."
+    return 1
+  fi
+  echo "$new" > "$control/active.tmp" && mv "$control/active.tmp" "$control/active"
+  # The proxy rereads the file every half second; then the old process
+  # tells its clients to reconnect, and they land on the new one.
+  sleep 2
+  compose stop "$old"
+  echo "$(date -u '+%F %T') now serving from $new"
+  last_error=null
+}
+
 update() {
   updating=true
   write_status
   echo "$(date -u '+%F %T') checking for a new server image"
   old="$(active)"
-  new="$(idle)"
   if ! compose pull --quiet annoy; then
     fail "Não deu para baixar a nova versão."
   elif [ "$(current_image "$old")" = "$(pulled_image)" ] && running "$old"; then
     last_error=null
-  elif ! compose up --detach --no-deps --no-build --force-recreate "$new"; then
-    fail "Não deu para iniciar a nova versão."
-  elif ! healthy "$new"; then
-    compose stop "$new"
-    fail "A nova versão não respondeu; o servidor continua na anterior."
-  else
-    echo "$new" > "$control/active.tmp" && mv "$control/active.tmp" "$control/active"
-    # The proxy rereads the file every half second; then the old process
-    # tells its clients to reconnect, and they land on the new one.
-    sleep 2
-    compose stop "$old"
+  elif swap; then
     docker image prune --force --filter "label=org.opencontainers.image.source=https://github.com/GeGLab/annoy-server" >/dev/null
-    echo "$(date -u '+%F %T') now serving from $new"
-    last_error=null
   fi
   last_check="\"$(date -u '+%FT%TZ')\""
   updating=false
 }
 
+# Same version, fresh process: picks up .env changes without stopping the server first.
+restart() {
+  updating=true
+  write_status
+  echo "$(date -u '+%F %T') restarting to apply the settings"
+  swap || true
+  updating=false
+}
+
 next=0
 while :; do
-  if [ -e "$control/request" ]; then
+  if [ -e "$control/restart" ]; then
+    rm -f "$control/restart"
+    restart
+  elif [ -e "$control/request" ]; then
     rm -f "$control/request"
     update
   elif auto && [ "$(date +%s)" -ge "$next" ]; then
