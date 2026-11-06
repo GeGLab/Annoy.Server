@@ -18,7 +18,7 @@ const { Connection, register, unregister } = await import("../src/events.ts");
 const voice = await import("../src/voice-cloudflare.ts");
 const { createSession } = await import("../src/auth.ts");
 const { callRoutes, handleCall, handleDirectCallMedia, endAllCalls } = await import("../src/calls.ts");
-const { DEFAULT_EVERYONE_PERMISSIONS } = await import("@distopic/protocol");
+const { DEFAULT_EVERYONE_PERMISSIONS } = await import("@annoy/protocol");
 for (const id of ["a", "b"]) {
   run("INSERT INTO users(id,username,display_name,password_hash,created_at) VALUES(?,?,?,'!','2026-01-01')", id, id, id);
 }

@@ -1,14 +1,15 @@
 import { mkdirSync,chmodSync } from "node:fs";
-import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { config } from "./config.ts";
+import { databaseFile } from "./db-file.ts";
 
 mkdirSync(config.dataDir, { recursive: true,mode:0o700 });
 
-export const db = new DatabaseSync(join(config.dataDir, "distopic.db"));
+const file = databaseFile(config.dataDir);
+export const db = new DatabaseSync(file);
 // Old databases still carry the MLS-era triggers that call this until removeServerCrypto drops them.
 db.function("annoy_legacy_source_write",()=>1);
-if(process.platform!=="win32")chmodSync(join(config.dataDir,"distopic.db"),0o600);
+if(process.platform!=="win32")chmodSync(file,0o600);
 
 db.exec(`
 PRAGMA journal_mode = WAL;
@@ -175,6 +176,18 @@ db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_global_id ON users(global_id) W
 // Annoy Global public ID (decided 2026-11-01): links an account to an existing user here.
 if (!userColumns.includes("global_public_id")) db.exec("ALTER TABLE users ADD COLUMN global_public_id TEXT");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_global_public_id ON users(global_public_id) WHERE global_public_id IS NOT NULL");
+// Each server's own stickers (files in stickers/, see stickers.ts).
+db.exec(`CREATE TABLE IF NOT EXISTS server_stickers (
+  id         TEXT PRIMARY KEY,
+  server_id  TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+)`);
+db.exec("CREATE INDEX IF NOT EXISTS server_stickers_server ON server_stickers(server_id, created_at)");
+// NULL: the default limit (stickers.ts). A per-server value allows larger packs later.
+const serverColumns = (db.prepare("PRAGMA table_info(servers)").all() as { name: string }[]).map((c) => c.name);
+if (!serverColumns.includes("sticker_limit")) db.exec("ALTER TABLE servers ADD COLUMN sticker_limit INTEGER");
 db.exec(`CREATE TABLE IF NOT EXISTS global_spent_tokens (
   hash     TEXT PRIMARY KEY,
   kid      TEXT NOT NULL,

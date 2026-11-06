@@ -9,7 +9,7 @@ import { WebSocket } from "ws";
 import { once } from "node:events";
 import sharp from "sharp";
 const root = resolve(tmpdir()),
-  directory = await mkdtemp(join(root, "distopic-discovery-"));
+  directory = await mkdtemp(join(root, "annoy-discovery-"));
 process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
 const { db, run } = await import("../src/db.ts"),
@@ -22,7 +22,7 @@ const { db, run } = await import("../src/db.ts"),
   { serverRoutes } = await import("../src/routes/servers.ts"),
   { channelRoutes } = await import("../src/routes/channels.ts"),
   { HttpError } = await import("../src/errors.ts"),
-  { Permission } = await import("@distopic/protocol");
+  { Permission } = await import("@annoy/protocol");
 // Historical fixture connection, never enabled by the live server.
 const app = Fastify();
 await app.register(websocket);
@@ -131,7 +131,7 @@ after(async () => {
   // Gateway sockets emit "close" after app.close resolves; their handlers still read the database.
   await new Promise((resolve) => setTimeout(resolve, 100));
   db.close();
-  if (dirname(directory) !== root || !basename(directory).startsWith("distopic-discovery-")) throw new Error("Unsafe temp path");
+  if (dirname(directory) !== root || !basename(directory).startsWith("annoy-discovery-")) throw new Error("Unsafe temp path");
   await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 test("search enforces channel membership, hidden channels, filters and index updates", async () => {

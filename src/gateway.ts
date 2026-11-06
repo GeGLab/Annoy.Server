@@ -2,7 +2,7 @@ import {observeSessions} from "./session-events.ts";
 import { compareVersions, isVersion } from "./version.ts";
 import {config} from "./config.ts";
 import { clearCalls, handleCall, endAllCalls } from "./calls.ts";
-import { Permission, type ClientOp } from "@distopic/protocol";
+import { Permission, type ClientOp } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { hashToken, userIdForSessionHash, userIdForToken } from "./auth.ts";
 import { HttpError } from "./errors.ts";
@@ -123,7 +123,7 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         relationships: annoySocial ? [] : getRelationships(userId),
         presences,
         activities: annoySocial ? {} : activitiesFor(userId),
-        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: true, serverOwnership: true, developmentActivity: true, directCalls: !annoySocial, annoySocial, socialProfiles: true, groupActivity: true, reactions: true, serverIcons: true, gifSearch: !!process.env.GIPHY_CLIENT_API_KEY, presenceStatus: true, manualPresence: true, channelTypes: true, codeChannels: true, historyWindow: true, messagePins: true, profileDetails: true, extendedActivity: true },
+        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: !annoySocial, serverOwnership: true, developmentActivity: true, directCalls: !annoySocial, annoySocial, socialProfiles: true, groupActivity: true, reactions: true, stickerReactions: true, serverIcons: true, gifSearch: !!process.env.GIPHY_CLIENT_API_KEY, serverStickers: true, presenceStatus: true, manualPresence: true, channelTypes: true, codeChannels: true, historyWindow: true, messagePins: true, profileDetails: !annoySocial, extendedActivity: true },
       },
     });
     if (!annoySocial && (cameOnline || previousPresence !== presenceOf(userId))) {

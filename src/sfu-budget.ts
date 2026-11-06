@@ -5,7 +5,7 @@
 // The estimate assumes every received track runs at its full bitrate, so real
 // usage stays below it. Months are UTC calendar months, which may not match
 // the Cloudflare billing cycle exactly.
-import type { MediaSource, VoiceUsage } from "@distopic/protocol";
+import type { MediaSource, VoiceUsage } from "@annoy/protocol";
 import { config } from "./config.ts";
 import { one, run } from "./db.ts";
 

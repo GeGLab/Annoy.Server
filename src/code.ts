@@ -1,4 +1,4 @@
-import { Permission, type Channel, type CodeEntry, type CodeFile, type CodeRepo, type CodeStatus } from "@distopic/protocol";
+import { Permission, type Channel, type CodeEntry, type CodeFile, type CodeRepo, type CodeStatus } from "@annoy/protocol";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";

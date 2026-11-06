@@ -1,4 +1,4 @@
-import { computePermissions, has, Permission, type Channel, type ServerSummary } from "@distopic/protocol";
+import { computePermissions, has, Permission, type Channel, type ServerSummary } from "@annoy/protocol";
 import { forbidden, notFound } from "./errors.ts";
 import { dmRecipientIds, getChannel, getRoles, getServer, isMember, memberRoleIds } from "./repo.ts";
 

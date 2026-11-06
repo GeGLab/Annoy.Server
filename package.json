@@ -1,6 +1,6 @@
 {
   "name": "annoy-server",
-  "version": "0.10.0-alpha.3",
+  "version": "0.10.0-alpha.5",
   "private": true,
   "description": "Self-hosted voice and text chat server: TeamSpeak-style hosting with Discord-style features",
   "license": "MIT",
@@ -35,7 +35,7 @@
     "node": ">=24.7"
   },
   "dependencies": {
-    "@distopic/protocol": "*",
+    "@annoy/protocol": "*",
     "@fastify/cors": "^11.3.1",
     "@fastify/multipart": "^10.1.6",
     "@fastify/websocket": "^11.3.4",

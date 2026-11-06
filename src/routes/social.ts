@@ -1,4 +1,4 @@
-import type { DmChannel, Relationship } from "@distopic/protocol";
+import type { DmChannel, Relationship } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../auth.ts";

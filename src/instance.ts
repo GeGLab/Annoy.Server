@@ -1,6 +1,6 @@
 // Instance-level state owned by the person hosting it: settings, admins and
 // account sign-up invites. Server (guild) level control lives in perms.ts.
-import type { InstanceSettings } from "@distopic/protocol";
+import type { InstanceSettings } from "@annoy/protocol";
 import { config } from "./config.ts";
 import { all, now, one, run } from "./db.ts";
 import { forbidden, HttpError } from "./errors.ts";

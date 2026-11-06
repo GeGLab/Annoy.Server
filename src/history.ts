@@ -1,4 +1,4 @@
-import type { ChannelReadState, MessageWindow } from "@distopic/protocol";
+import type { ChannelReadState, MessageWindow } from "@annoy/protocol";
 import { all, now, one, run } from "./db.ts";
 import { getMessage, getMessages } from "./repo.ts";
 import { badRequest, notFound } from "./errors.ts";

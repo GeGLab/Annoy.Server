@@ -14,6 +14,51 @@ export const annoySocial = config.accountMode === "global";
 
 const MOVED = "Amigos, DMs, status e chamadas privadas agora ficam na conta Annoy, fora dos servidores. Atualize o Annoy.";
 
+const PROFILE_MOVED = "Perfil, contatos, histórico de atividade e Steam agora ficam na conta Annoy, fora dos servidores. Atualize o Annoy.";
+
+/**
+ * User settings belong to the Annoy account, not to a server: profile contacts,
+ * activity history, the Steam link and extra sign-in methods (Discord). The
+ * server keeps only a copy of name, bio and photo, written by the app from the
+ * Annoy profile, so members can see them.
+ */
+export function userSettingsMovedRoutes(app: FastifyInstance): void {
+  const gone = async () => {
+    throw new HttpError(410, "moved_to_annoy", PROFILE_MOVED);
+  };
+  for (const [method, url] of [
+    ["GET", "/users/:id/profile"],
+    ["PATCH", "/users/@me/profile"],
+    ["DELETE", "/users/@me/activity-history"],
+    ["GET", "/users/@me/steam"],
+    ["DELETE", "/users/@me/steam"],
+    ["GET", "/users/@me/steam/activity"],
+    ["POST", "/auth/steam/begin"],
+    ["POST", "/auth/steam/poll"],
+    ["GET", "/auth/steam/callback"],
+    ["POST", "/auth/discord/begin"],
+    ["POST", "/auth/discord/poll"],
+    ["GET", "/auth/discord/callback"],
+  ] as const)
+    app.route({ method, url, handler: gone });
+}
+
+/** Once per server: the user settings it held go away; they live in the Annoy account now. */
+export function retireServerUserSettings(): { steam: number; fields: number; history: number } | null {
+  if (!annoySocial || one("SELECT 1 AS x FROM instance_settings WHERE key = 'profile.movedToAnnoy'")) return null;
+  const count = (table: string) => one<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)!.n;
+  const result = { steam: count("steam_connections"), fields: count("profile_fields"), history: count("activity_history") };
+  tx(() => {
+    run("DELETE FROM steam_connections");
+    run("DELETE FROM profile_fields");
+    run("DELETE FROM profile_privacy");
+    run("DELETE FROM activity_history");
+    run("UPDATE users SET discord_id = NULL WHERE discord_id IS NOT NULL");
+    run("INSERT INTO instance_settings (key, value) VALUES ('profile.movedToAnnoy', ?)", new Date().toISOString());
+  });
+  return result;
+}
+
 /** Old routes answer 410 so an outdated app says why instead of failing silently. */
 export function socialMovedRoutes(app: FastifyInstance): void {
   const gone = async () => {

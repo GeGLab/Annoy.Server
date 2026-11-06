@@ -3,7 +3,7 @@ import {
   normalizeProfileField,
   type ProfileDetails,
   type ProfileField,
-} from "@distopic/protocol";
+} from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "../auth.ts";

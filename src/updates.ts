@@ -5,7 +5,7 @@
 // only ANNOY_AUTO_UPDATE (TODO item 5).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { UpdateStatus } from "@distopic/protocol";
+import type { UpdateStatus } from "@annoy/protocol";
 import { config } from "./config.ts";
 import { VERSION } from "./version.ts";
 

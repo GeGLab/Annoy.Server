@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { has, Permission, type MessageSearchPage } from "@distopic/protocol";
+import { has, Permission, type MessageSearchPage } from "@annoy/protocol";
 import type { SQLInputValue } from "node:sqlite";
 import { z } from "zod";
 import { requireUser } from "../auth.ts";

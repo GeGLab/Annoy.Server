@@ -35,7 +35,7 @@ services:
       ANNOY_PORT: "8787"
     volumes:
       # Named before the rename to Annoy; keeps existing data.
-      - distopic-data:/data
+      - annoy-data:/data
       - annoy-control:/control
 
   # The second slot, started only by the updater during an update. Its voice
@@ -51,7 +51,7 @@ services:
       ANNOY_PORT: "8787"
       ANNOY_VOICE_PORT: "40002"
     volumes:
-      - distopic-data:/data
+      - annoy-data:/data
       - annoy-control:/control
 
   # Updates the server when asked (./scripts/annoy-admin.sh update apply), and
@@ -73,5 +73,5 @@ services:
       - annoy-control:/control
 
 volumes:
-  distopic-data:
+  annoy-data:
   annoy-control:

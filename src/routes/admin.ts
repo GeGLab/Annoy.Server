@@ -4,7 +4,7 @@
 // token in the data folder (see admin-control.ts).
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { AdminOverview, AdminServer, AdminUser, SignupInvite, UpdateStatus } from "@distopic/protocol";
+import type { AdminOverview, AdminServer, AdminUser, SignupInvite, UpdateStatus } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { deleteAccount, disconnectEverywhere, ownedServerNames } from "../accounts.ts";

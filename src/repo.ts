@@ -13,7 +13,7 @@ import type {
   ServerSummary,
   ServerSummaryPage,
   User,
-} from "@distopic/protocol";
+} from "@annoy/protocol";
 import { all, one } from "./db.ts";
 import { presenceOf } from "./presence.ts";
 

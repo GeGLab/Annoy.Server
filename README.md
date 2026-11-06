@@ -96,12 +96,23 @@ LAN IP for home use, or the public IP on the internet. Open these ports:
 | `40000-40003` | **UDP and TCP** | Voice media (two slots, for updates without downtime) |
 
 **Upgrading older installations:** use `ANNOY_*` environment variables in
-`.env`. Data stays in the same volume. Point the remote at the current
-repository and remove the old container:
+`.env`. Point the remote at the current repository and remove the old container:
 
 ```bash
 git remote set-url origin https://github.com/GeGLab/annoy-server.git
 git pull && docker compose pull && docker compose up -d --remove-orphans
+```
+
+Since 0.10 the data volume is `annoy-data` (it was `distopic-data`) and the
+database file is `annoy.db` (the server renames `distopic.db` on start). Copy the
+old volume before the first start with the new compose file; `<project>` is the
+compose project name (`docker volume ls`):
+
+```bash
+docker compose down
+docker volume create <project>_annoy-data
+docker run --rm -v <project>_distopic-data:/from:ro -v <project>_annoy-data:/to alpine cp -a /from/. /to/
+docker compose up -d
 ```
 
 ### From source
@@ -153,7 +164,7 @@ loopback development permits HTTP. Configure trusted proxy addresses explicitly
 and connect to the final `https://your.domain` origin: credential requests reject
 redirects. DTLS-SRTP protects transport; voice through an SFU is not end-to-end encrypted.
 
-**Backups:** copy `ANNOY_DATA_DIR`. It holds `distopic.db` (SQLite, WAL mode) and
+**Backups:** copy `ANNOY_DATA_DIR`. It holds `annoy.db` (SQLite, WAL mode) and
 `uploads/`.
 
 ## annoy-server administration

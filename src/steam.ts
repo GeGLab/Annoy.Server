@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { SteamConnectionStatus, SteamLinkBegin, SteamLinkPoll, UserActivity } from "@distopic/protocol";
+import type { SteamConnectionStatus, SteamLinkBegin, SteamLinkPoll, UserActivity } from "@annoy/protocol";
 import { userIdForToken } from "./auth.ts";
 import { config } from "./config.ts";
 import { now, one, run } from "./db.ts";

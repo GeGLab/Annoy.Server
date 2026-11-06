@@ -5,7 +5,7 @@
 // Discord redirects back here, and the client collects the result by polling
 // with a secret handoff code only it knows.
 import { randomBytes } from "node:crypto";
-import { LIMITS, type DiscordLoginBegin, type DiscordLoginPoll } from "@distopic/protocol";
+import { LIMITS, type DiscordLoginBegin, type DiscordLoginPoll } from "@annoy/protocol";
 import { createSession } from "../auth.ts";
 import { checkRegistration, consumeSignupInvite, grantBootstrapAdmin } from "../instance.ts";
 import { config } from "../config.ts";
