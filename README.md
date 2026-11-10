@@ -143,7 +143,7 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_ACCOUNT_MODE` | `global` | Exclusive login policy: `global` or `local`. Restart to migrate; see [account migration](docs/account-migration.md). With `global`, friends, DMs, status and direct calls live in the Annoy cloud, not on this server: the old routes answer 410 and, on the first start, the DMs and friend lists this server held are deleted once. `local` keeps them on the server. |
 | `ANNOY_GLOBAL` | removed | Remove this legacy flag and configure `ANNOY_ACCOUNT_MODE` explicitly. |
 | `ANNOY_GLOBAL_URL` | `https://global.geg.dev.br` | Annoy Accounts API |
-| `ANNOY_MIN_CLIENT_VERSION` | `0.9.0` | Oldest client version accepted. Older clients are asked to update; newer ones keep working |
+| `ANNOY_MIN_CLIENT_VERSION` | `0.11.0-alpha.1` | Oldest client version accepted. Older clients are asked to update; newer ones keep working |
 | `ANNOY_TRUSTED_PROXIES` | (empty) | Comma-separated IPs/CIDRs of your TLS proxies, trusted for the real client IP |
 | `ANNOY_ANNOUNCED_IP` | default-route IP | Voice addresses for clients, comma-separated: **public IP first, LAN IP second** (each gets its own port: 40000, 40001…). Required in Docker |
 | `ANNOY_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
