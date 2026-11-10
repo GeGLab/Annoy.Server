@@ -1,3 +1,4 @@
+import { VERSION } from "../src/version.ts";
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -24,7 +25,7 @@ test('a real gateway stops processing an expired session and still cleans presen
     const base=await app.listen({host:'127.0.0.1',port:0});
     ws=new WebSocket(base.replace('http','ws')+'/gateway');
     await once(ws,'open');
-    const ready=once(ws,'message');ws.send(JSON.stringify({op:'identify',token}));
+    const ready=once(ws,'message');ws.send(JSON.stringify({op:'identify', clientVersion: VERSION,token}));
     assert.equal(JSON.parse(String((await ready)[0])).t,'READY');
     run("UPDATE sessions SET expires_at='2020-01-01' WHERE token_hash=?",hashToken(token));
     const serverClosed=once([...app.websocketServer.clients][0]!, 'close');

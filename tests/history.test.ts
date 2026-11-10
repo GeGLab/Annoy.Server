@@ -1,3 +1,4 @@
+import { VERSION } from "../src/version.ts";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -241,7 +242,7 @@ test("two sessions receive their own persisted read state and participants conve
     await once(socket, "open");
     socket.send(
       JSON.stringify({
-        op: "identify",
+        op: "identify", clientVersion: VERSION,
         token: tokens[id],
         features: ["manualPresence"],
       }),

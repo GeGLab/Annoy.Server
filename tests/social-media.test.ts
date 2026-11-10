@@ -1,3 +1,4 @@
+import { VERSION } from "../src/version.ts";
 import websocket from "@fastify/websocket";
 import { WebSocket } from "ws";
 import { once } from "node:events";
@@ -89,7 +90,7 @@ test("reaction counters broadcast live and survive disconnects", async (t) => {
     const socket = new WebSocket(origin.replace("http:", "ws:") + "/gateway"); sockets.push(socket);
     socket.on("message", (raw) => events[id]!.push(JSON.parse(raw.toString())));
     await once(socket, "open");
-    socket.send(JSON.stringify({ op: "identify", token: tokens[id], deviceId: id, features: ["developmentActivity", "idlePresence", "manualPresence"] }));
+    socket.send(JSON.stringify({ op: "identify", clientVersion: VERSION, token: tokens[id], deviceId: id, features: ["developmentActivity", "idlePresence", "manualPresence"] }));
     await waitFor(() => events[id]!.some((event) => event.t === "READY"));
   }
   const path = `/channels/general/messages/message/reactions/${encodeURIComponent("😂")}`;

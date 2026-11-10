@@ -9,8 +9,8 @@ import Fastify from "fastify";
 const directory = await mkdtemp(join(tmpdir(), "annoy-min-version-"));
 process.env.ANNOY_ACCOUNT_MODE = "local";
 process.env.ANNOY_DATA_DIR = directory;
-process.env.ANNOY_MIN_CLIENT_VERSION = "0.9.0";
-const { compareVersions, isVersion } = await import("../src/version.ts");
+delete process.env.ANNOY_MIN_CLIENT_VERSION;
+const { compareVersions, isVersion, MIN_CLIENT_VERSION } = await import("../src/version.ts");
 const { db } = await import("../src/db.ts");
 const { authRoutes } = await import("../src/routes/auth.ts");
 const app = Fastify();
@@ -30,7 +30,8 @@ test("servers announce the oldest client they accept; newer clients always pass"
   assert.ok(compareVersions("0.10.0-alpha.10", "0.10.0-alpha.9") > 0);
   assert.ok(compareVersions("0.10.0-beta.1", "0.10.0-alpha.2") > 0);
   const info = (await app.inject({ url: "/api/info" })).json();
-  assert.equal(info.minClientVersion, "0.9.0");
+  assert.equal(info.minClientVersion, MIN_CLIENT_VERSION);
+  assert.equal(info.minClientVersion, "0.11.0-alpha.1");
   // A malformed minimum stops the server at startup instead of locking clients out.
   const started = spawnSync(process.execPath, ["--import", "tsx", "-e", "await import('./src/config.ts')"], { env: { ...process.env, ANNOY_MIN_CLIENT_VERSION: "latest" }, encoding: "utf8" });
   assert.notEqual(started.status, 0);

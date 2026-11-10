@@ -1,3 +1,4 @@
+import { VERSION } from "../src/version.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -41,7 +42,7 @@ test('SIGTERM in the real server ends private calls before closing gateways and 
       const events: any[] = [];
       ws.on('message', raw => events.push(JSON.parse(String(raw))));
       await once(ws, 'open');
-      ws.send(JSON.stringify({ op: 'identify', token: auth.token, deviceId, features: ['directCalls'] }));
+      ws.send(JSON.stringify({ op: 'identify', clientVersion: VERSION, token: auth.token, deviceId, features: ['directCalls'] }));
       while (!events.some(event => event.t === 'READY')) await once(ws, 'message');
       return { ws, events };
     };

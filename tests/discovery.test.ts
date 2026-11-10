@@ -1,3 +1,4 @@
+import { VERSION } from "../src/version.ts";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -182,7 +183,7 @@ test("real gateway shares activity with friends and server peers, revokes on las
     sockets[id] = socket;
     socket.on("message", (raw: Buffer) => streams[id]!.push(JSON.parse(raw.toString())));
     await once(socket, "open");
-    socket.send(JSON.stringify({ op: "identify", token: tokens[id] }));
+    socket.send(JSON.stringify({ op: "identify", clientVersion: VERSION, token: tokens[id] }));
     await waitFor(() => streams[id]!.some((e) => e.t === "READY"));
   }
   assert.equal(streams.alice!.find((event) => event.t === "READY").d.instance.activityArtwork, true);
@@ -246,7 +247,7 @@ test("manual presence is shared with self and friends, keeps idle overrides and 
   const connect = async (id: string, user: string, presence = "online") => {
     const socket = new WebSocket(`ws://127.0.0.1:${address.port}/gateway`); sockets.push(socket); events[id] = [];
     socket.on("message", (raw) => events[id]!.push(JSON.parse(raw.toString())));
-    await once(socket, "open"); socket.send(JSON.stringify({ op: "identify", token: tokens[user], presence, features: ["manualPresence", "idlePresence", "developmentActivity"] }));
+    await once(socket, "open"); socket.send(JSON.stringify({ op: "identify", clientVersion: VERSION, token: tokens[user], presence, features: ["manualPresence", "idlePresence", "developmentActivity"] }));
     await waitFor(() => events[id]!.some((event) => event.t === "READY")); return socket;
   };
   const alice = await connect("alice", "alice");
@@ -297,7 +298,7 @@ test("private calls authorize friends, isolate signaling and end on disconnect; 
     streams[id] = [];
     const socket = new WebSocket(`ws://127.0.0.1:${address.port}/gateway`); sockets[id] = socket;
     socket.on("message", (raw) => streams[id]!.push(JSON.parse(raw.toString())));
-    await once(socket, "open"); socket.send(JSON.stringify({ op: "identify", features: ["developmentActivity", "idlePresence", "directCalls"], deviceId: id === "alice" ? "a" : id === "bob" ? "b" : id, token: tokens[id === "alice2" ? "alice" : id] }));
+    await once(socket, "open"); socket.send(JSON.stringify({ op: "identify", clientVersion: VERSION, features: ["developmentActivity", "idlePresence", "directCalls"], deviceId: id === "alice" ? "a" : id === "bob" ? "b" : id, token: tokens[id === "alice2" ? "alice" : id] }));
     await waitFor(() => streams[id]!.some((event) => event.t === "READY"));
   }
   const { presenceOf } = await import("../src/presence.ts");
