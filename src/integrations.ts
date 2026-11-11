@@ -37,14 +37,17 @@ const CALLS_PER_MINUTE = 20;
 
 // --- Transport: public HTTPS only -------------------------------------------------------
 
-const blocked = new BlockList();
-for (const [net, bits] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3]] as const) blocked.addSubnet(net, bits, "ipv4");
-for (const [net, bits] of [["::", 127], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8], ["64:ff9b::", 96], ["::ffff:0:0", 96]] as const) blocked.addSubnet(net, bits, "ipv6");
+// Keep address families separate: an IPv4-mapped IPv6 subnet also matches
+// native IPv4 addresses in Node BlockList.
+const blockedIPv4 = new BlockList();
+const blockedIPv6 = new BlockList();
+for (const [net, bits] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3]] as const) blockedIPv4.addSubnet(net, bits, "ipv4");
+for (const [net, bits] of [["::", 127], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8], ["64:ff9b::", 96], ["::ffff:0:0", 96]] as const) blockedIPv6.addSubnet(net, bits, "ipv6");
 
 async function assertPublicHost(hostname: string): Promise<void> {
   if (isIP(hostname)) throw new Error("ip literal");
   const addresses = await lookup(hostname, { all: true });
-  if (!addresses.length || addresses.some((a) => blocked.check(a.address, a.family === 6 ? "ipv6" : "ipv4"))) throw new Error("not a public address");
+  if (!addresses.length || addresses.some((a) => (a.family === 6 ? blockedIPv6.check(a.address, "ipv6") : blockedIPv4.check(a.address, "ipv4")))) throw new Error("not a public address");
 }
 
 /** Tests replace it; production calls go through `publicHttp`. */
