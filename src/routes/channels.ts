@@ -6,6 +6,7 @@ import { all, now, one, run, tx } from "../db.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../errors.ts";
 import { sendToChannel, sendToUser, serverChanged } from "../events.ts";
 import { advanceRead, messageWindow, readState } from "../history.ts";
+import { runMessageIntegration } from "../integrations.ts";
 import { newId, secretId } from "../ids.ts";
 import { maxUploadBytes } from "../instance.ts";
 import { requireChannel, requireServer } from "../perms.ts";
@@ -300,6 +301,8 @@ export function channelRoutes(app: FastifyInstance): void {
       });
       const message = getMessage(id)!;
       sendToChannel(channel, { t: "MESSAGE_CREATE", d: message });
+      // An installed integration answers in the channel when the message calls it.
+      void runMessageIntegration(channel, message, perms);
       return message;
     } catch (err) {
       await discard(files);
@@ -313,6 +316,7 @@ export function channelRoutes(app: FastifyInstance): void {
     const message = getMessage(req.params.messageId);
     if (!message || message.channelId !== channel.id) throw notFound("Mensagem");
     if (message.author.id !== userId) throw forbidden("Você só pode editar suas mensagens");
+    if (message.integration) throw forbidden("A resposta de uma integração não pode ser editada");
     const body = parse(editBody, req.body);
     const mentions = resolveMentions(channel, body.content, perms);
     run(

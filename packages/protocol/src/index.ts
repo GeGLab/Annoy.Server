@@ -28,6 +28,8 @@ export const Permission = {
   STREAM: 1 << 15,
   /** Add and remove the server's own stickers. */
   MANAGE_STICKERS: 1 << 16,
+  /** Call the integrations installed on the server. */
+  USE_INTEGRATIONS: 1 << 17,
 } as const;
 
 export type PermissionName = keyof typeof Permission;
@@ -61,6 +63,7 @@ export const PERMISSION_LABELS: Record<PermissionName, string> = {
   ADMINISTRATOR: "Administrador",
   STREAM: "Transmitir câmera e tela",
   MANAGE_STICKERS: "Gerenciar figurinhas",
+  USE_INTEGRATIONS: "Usar integrações",
 };
 
 export function has(perms: number, flag: number): boolean {
@@ -250,6 +253,16 @@ export interface Message {
   mentionsEveryone: boolean;
   /** `emoji` is a single emoji or the public link of a sticker. */
   reactions?: { emoji: string; userIds: string[] }[];
+  /** Written by an integration installed on the server; shown as the author. `author` is who called it. */
+  integration?: MessageIntegration | null;
+}
+export interface MessageIntegration { id: string; name: string; iconUrl: string | null }
+/** An integration installed on a server (GET /servers/:id/integrations). The API key never leaves the server. */
+export interface ServerIntegration {
+  integration: import("./integrations.ts").StoreIntegration;
+  settings: import("./integrations.ts").IntegrationSettings;
+  hasKey: boolean;
+  installedAt: string;
 }
 
 export interface MessageWindow {
@@ -654,12 +667,14 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; /** A reaction can be a sticker link (POST /channels/:id/messages/:messageId/reactions). */ stickerReactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; /** Servers have their own sticker packs (/servers/:id/stickers). */ serverStickers?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; /** A reaction can be a sticker link (POST /channels/:id/messages/:messageId/reactions). */ stickerReactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; /** Servers have their own sticker packs (/servers/:id/stickers). */ serverStickers?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; /** Store integrations installed per server (/servers/:id/integrations). */ integrations?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
   | { t: "SERVER_CREATE"; d: ServerSummary }
   | { t: "SERVER_UPDATE"; d: ServerSummary }
+  /** Integrations of a server were installed, changed or removed: read /servers/:id/integrations again. */
+  | { t: "SERVER_INTEGRATIONS_UPDATE"; d: { serverId: string } }
   | { t: "SERVER_REMOVE"; d: { serverId: string } }
   /** Structure, roles or permissions changed: refetch GET /servers/:id. */
   | { t: "SERVER_REFRESH"; d: { serverId: string } }
@@ -800,3 +815,5 @@ export const LIMITS = {
   topicMax: 1024,
   attachmentsPerMessage: 10,
 } as const;
+
+export * from "./integrations.ts";

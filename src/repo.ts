@@ -71,6 +71,7 @@ export interface MessageRow {
   reply_to_id: string | null;
   mention_ids: string;
   mentions_everyone: number;
+  integration?: string | null;
 }
 interface AttachmentRow {
   id: string;
@@ -383,6 +384,7 @@ export function hydrate(rows: MessageRow[]): Message[] {
     attachments: atts.get(r.id) ?? [],
     mentionIds: JSON.parse(r.mention_ids) as string[],
     mentionsEveryone: r.mentions_everyone === 1,
+    ...(r.integration && { integration: JSON.parse(r.integration) as Message["integration"] }),
   }));
 }
 

@@ -22,6 +22,7 @@ import { channelRoutes } from "./routes/channels.ts";
 import { discordAuthRoutes } from "./routes/discord-auth.ts";
 import { steamRoutes } from "./routes/steam.ts";
 import { importRoutes } from "./routes/import.ts";
+import { integrationRoutes } from "./routes/integrations.ts";
 import { serverRoutes } from "./routes/servers.ts";
 import { socialRoutes } from "./routes/social.ts";
 import { searchRoutes } from "./routes/search.ts";
@@ -102,6 +103,7 @@ await app.register(
     }
     searchRoutes(api);
     importRoutes(api);
+    integrationRoutes(api);
     playbackRoutes(api);
     codeRoutes(api);
     tempRoomRoutes(api);

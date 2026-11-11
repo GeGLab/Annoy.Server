@@ -79,6 +79,8 @@ export const config = {
   uploadCeilingBytes: 500 * 1024 * 1024,
   /** Public origin clients and browsers use to reach this server (OAuth redirects). */
   publicUrl: process.env.ANNOY_PUBLIC_URL?secureServiceUrl(process.env.ANNOY_PUBLIC_URL):'',
+  /** devannoy: the store catalog of integrations. Read only in Annoy-account mode. */
+  storeUrl: env("ANNOY_STORE_URL", "https://devannoy.geg.dev.br").replace(/\/+$/, ""),
   /** Optional: OpenID linking works without a key; online game lookup needs one. */
   steamApiKey: env("ANNOY_STEAM_API_KEY", ""),
   /** "Entrar com Discord" is offered only when both are set. */

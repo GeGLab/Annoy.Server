@@ -22,7 +22,15 @@ const app = Fastify();
 await app.register(websocket);
 registerGateway(app);
 const origin = await app.listen({ host: "127.0.0.1", port: 0 });
-after(async () => { await app.close(); db.close(); await rm(directory, { recursive: true, force: true }); });
+after(async () => {
+  // The client can finish closing before the server's close handler releases
+  // its presence and activity state. Keep the database open until both finish.
+  const closed = [...app.websocketServer.clients].map((socket) => once(socket, "close"));
+  await app.close();
+  await Promise.all(closed);
+  db.close();
+  await rm(directory, { recursive: true, force: true });
+});
 
 test("the gateway rejects old, malformed and missing client versions", { timeout: 10_000 }, async () => {
   for (const clientVersion of [undefined, null, "latest", "0.10.0-alpha.7", "0.10.0-nightly.202611070927"]) {
