@@ -1,6 +1,6 @@
 import {
   cleanSettings, findTrigger, has, imageKind, INTEGRATION_LIMITS, IntegrationError, isCallable, missingSettings, parseStoreIntegration, Permission, runIntegration,
-  type Channel, type IntegrationFile, type IntegrationHistoryItem, type IntegrationHttp, type IntegrationSettings, type Message, type ServerIntegration, type StoreIntegration,
+  type Channel, type IntegrationFile, type IntegrationHistoryItem, type IntegrationHttp, type IntegrationSettings, type IntegrationSignature, type Message, type ServerIntegration, type StoreIntegration,
 } from "@annoy/protocol";
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
@@ -67,6 +67,40 @@ export const transport: { http: IntegrationHttp } = {
   },
 };
 
+// --- devannoy: signing, results and registered installs -------------------------------------
+
+/** This server's Global credential, which devannoy checks on the Global. */
+function serverAuth(): string | null {
+  const setting = (key: string) => one<{ value: string }>("SELECT value FROM instance_settings WHERE key = ?", key)?.value ?? null;
+  const id = setting("global.serverId"), secret = setting("global.serverSecret");
+  return id && secret ? `Server ${id}:${secret}` : null;
+}
+
+async function devannoy(method: string, path: string, body?: unknown): Promise<Response | null> {
+  const auth = serverAuth();
+  if (!auth) return null;
+  return fetch(`${config.storeUrl}${path}`, {
+    method, redirect: "error", signal: AbortSignal.timeout(10_000),
+    headers: { authorization: auth, ...(body !== undefined && { "content-type": "application/json" }) },
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+  }).catch(() => null);
+}
+
+export const devannoyCalls = {
+  async sign(integration: string, bodySha256: string): Promise<IntegrationSignature | null> {
+    const res = await devannoy("POST", "/v1/calls/sign", { integration, scope: "server", bodySha256 });
+    if (!res?.ok) return null;
+    const data = (await res.json()) as Partial<IntegrationSignature>;
+    return typeof data.timestamp === "number" && typeof data.signature === "string" && typeof data.keyId === "string" ? { timestamp: data.timestamp, signature: data.signature, keyId: data.keyId } : null;
+  },
+  report(integration: string, ok: boolean): void {
+    void devannoy("POST", "/v1/calls/result", { integration, scope: "server", ok }).then((res) => res?.body?.cancel());
+  },
+  installed(integration: string, on: boolean): void {
+    void devannoy(on ? "PUT" : "DELETE", `/v1/servers/connections/${integration}`).then((res) => res?.body?.cancel());
+  },
+};
+
 // --- Store ---------------------------------------------------------------------------------
 
 export const integrationsEnabled = () => config.global.enabled;
@@ -112,12 +146,15 @@ export async function saveServerIntegration(serverId: string, id: string, userId
      ON CONFLICT (server_id, integration_id) DO UPDATE SET manifest = excluded.manifest, api_key = excluded.api_key, settings = excluded.settings, refreshed_at = excluded.refreshed_at`,
     serverId, id, JSON.stringify(integration), apiKey, JSON.stringify(settings), userId, now(), Date.now(),
   );
+  if (!current) devannoyCalls.installed(id, true);
   announce(serverId);
   return listServerIntegrations(serverId);
 }
 
 export function removeServerIntegration(serverId: string, id: string): ServerIntegration[] {
   if (!run("DELETE FROM server_integrations WHERE server_id = ? AND integration_id = ?", serverId, id)) throw notFound("Integração");
+  // devannoy counts this annoy-server once per integration: it is still installed if another server here has it.
+  if (!one("SELECT 1 AS x FROM server_integrations WHERE integration_id = ?", id)) devannoyCalls.installed(id, false);
   announce(serverId);
   return listServerIntegrations(serverId);
 }
@@ -231,6 +268,7 @@ export async function runMessageIntegration(channel: Channel, message: Message, 
     try {
       const output = await runIntegration(transport.http, {
         trigger, scope: "server", locale: "pt-BR", invoker: getUser(message.author.id)?.displayName ?? message.author.displayName, history, attachments, settings, apiKey: fresh.api_key,
+        sign: devannoyCalls.sign, report: devannoyCalls.report,
       });
       await post(channel, message, integration, output.text, output.images);
     } catch (err) {

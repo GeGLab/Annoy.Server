@@ -21,7 +21,15 @@ const catalog: Record<string, unknown> = {
     profile: { connection: "steam", image: "https://eco.example/card.png?id={id}" }, updatedAt: "2026-11-11T00:00:00.000Z",
   },
 };
-const store = createServer((req, res) => {
+const devCalls: { url: string; auth: string | undefined; body: any }[] = [];
+const store = createServer(async (req, res) => {
+  if (req.url?.startsWith("/v1/calls/") || req.url?.startsWith("/v1/servers/connections/")) {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    devCalls.push({ url: `${req.method} ${req.url}`, auth: req.headers.authorization, body: raw ? JSON.parse(raw) : null });
+    const signed = req.url === "/v1/calls/sign" && req.headers.authorization === "Server S1:segredo";
+    return void res.writeHead(signed || req.url !== "/v1/calls/sign" ? 200 : 401, { "content-type": "application/json" }).end(JSON.stringify(signed ? { timestamp: 1700000000, signature: "c2lnbg==", keyId: "k1" } : {}));
+  }
   const entry = catalog[/^\/v1\/store\/integrations\/([a-z-]+)$/.exec(req.url ?? "")?.[1] ?? ""];
   res.writeHead(entry ? 200 : 404, { "content-type": "application/json" }).end(JSON.stringify(entry ?? { error: "not_found" }));
 });
@@ -162,6 +170,27 @@ test("images come as attachments, checked by their bytes", async () => {
   await say("member", "/eco ruim");
   await settle();
   assert.equal(replies().at(-1)!.content, "A integração respondeu algo que o Annoy não entende.");
+});
+
+test("with the Global credential, calls go signed by devannoy and failures are reported", async () => {
+  run("INSERT INTO instance_settings (key, value) VALUES ('global.serverId', 'S1'), ('global.serverSecret', 'segredo')");
+  const calls0 = calls.length;
+  transport.http = async (request) => {
+    calls.push({ url: request.url, headers: request.headers, body: request.body ? JSON.parse(request.body) : null });
+    return { status: 500, type: "application/json", body: Buffer.from(JSON.stringify({ error: "falhou" })) };
+  };
+  await say("member", "/eco assinado");
+  await settle();
+  const call = calls[calls0]!;
+  assert.equal(call.headers["x-annoy-signature"], "c2lnbg==");
+  assert.equal(call.headers["x-annoy-timestamp"], "1700000000");
+  assert.equal(call.headers["x-annoy-key-id"], "k1");
+  const { createHash } = await import("node:crypto");
+  const sign = devCalls.find((c) => c.url === "POST /v1/calls/sign")!;
+  assert.equal(sign.auth, "Server S1:segredo");
+  assert.deepEqual(sign.body, { integration: "eco", scope: "server", bodySha256: createHash("sha256").update(JSON.stringify(call.body)).digest("hex") });
+  await settle();
+  assert.deepEqual(devCalls.find((c) => c.url === "POST /v1/calls/result")?.body, { integration: "eco", scope: "server", ok: false });
 });
 
 test("removing: owner only; calls stop", async () => {

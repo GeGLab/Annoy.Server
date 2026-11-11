@@ -72,6 +72,17 @@ export interface IntegrationInput {
   attachments: IntegrationFile[];
   settings: IntegrationSettings;
   apiKey: string | null;
+  /** devannoy's signature over the body hash (POST /v1/calls/sign); null when it could not sign. */
+  sign?: (integrationId: string, bodySha256: string) => Promise<IntegrationSignature | null>;
+  /** Tells devannoy whether an HTTP call worked (POST /v1/calls/result), for the developer's statistics. */
+  report?: (integrationId: string, ok: boolean) => void;
+}
+export interface IntegrationSignature { timestamp: number; signature: string; keyId: string }
+
+/** SHA-256 of a UTF-8 string, in hex (WebCrypto: the app and Node alike). */
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+  return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 export interface IntegrationOutput {
   text: string;
@@ -298,11 +309,18 @@ async function runHttp(http: IntegrationHttp, input: IntegrationInput, endpoint:
     ...(trigger.integration.access.history && { history: input.history.map((h) => ({ author: { name: h.author, ...(h.self && { self: true }) }, text: h.text, at: h.at })) }),
     ...(trigger.integration.access.attachments && { attachments: input.attachments.map((a) => ({ name: a.name, type: a.type, size: a.data.length, data: toBase64(a.data) })) }),
   };
+  const payload = JSON.stringify(body);
+  // Unsigned calls still go: the developer decides whether to accept them.
+  const signed = input.sign ? await input.sign(trigger.integration.id, await sha256Hex(payload)).catch(() => null) : null;
   const res = await send(http, {
     url: endpoint,
     method: "POST",
-    headers: { "content-type": "application/json", "user-agent": "Annoy-Integrations/1", "x-annoy-integration": trigger.integration.id, ...(input.apiKey && { authorization: `Bearer ${input.apiKey}` }) },
-    body: JSON.stringify(body),
+    headers: {
+      "content-type": "application/json", "user-agent": "Annoy-Integrations/1", "x-annoy-integration": trigger.integration.id,
+      ...(input.apiKey && { authorization: `Bearer ${input.apiKey}` }),
+      ...(signed && { "x-annoy-timestamp": String(signed.timestamp), "x-annoy-signature": signed.signature, "x-annoy-key-id": signed.keyId }),
+    },
+    body: payload,
     maxBytes: INTEGRATION_LIMITS.responseBytes,
     timeoutMs: INTEGRATION_LIMITS.timeoutMs,
   });
@@ -391,7 +409,16 @@ export async function runIntegration(http: IntegrationHttp, input: IntegrationIn
     attachments: integration.access.attachments ? input.attachments.filter((a) => imageKind(a.data) && a.data.length <= INTEGRATION_LIMITS.attachmentBytes).slice(0, INTEGRATION_LIMITS.attachments) : [],
   };
   try {
-    if (integration.runtime.type === "http") return await runHttp(http, bounded, integration.runtime.endpoint);
+    if (integration.runtime.type === "http") {
+      try {
+        const output = await runHttp(http, bounded, integration.runtime.endpoint);
+        input.report?.(integration.id, true);
+        return output;
+      } catch (err) {
+        input.report?.(integration.id, false);
+        throw err;
+      }
+    }
     if (integration.runtime.type === "builtin" && integration.runtime.name === "openai") return await runOpenai(http, bounded);
     throw new IntegrationError("unsupported");
   } catch (err) {
