@@ -370,3 +370,17 @@ CREATE TABLE IF NOT EXISTS activity_history (
 CREATE INDEX IF NOT EXISTS activity_history_by_user ON activity_history(user_id,completed,last_seen_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS activity_history_active ON activity_history(user_id,connection_key,activity_key) WHERE completed=0;
 `);
+
+// Store integrations installed per server; the API key stays in this database only.
+db.exec(`CREATE TABLE IF NOT EXISTS server_integrations (
+  server_id      TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  integration_id TEXT NOT NULL,
+  manifest       TEXT NOT NULL,
+  api_key        TEXT,
+  settings       TEXT NOT NULL DEFAULT '{}',
+  installed_by   TEXT NOT NULL,
+  installed_at   TEXT NOT NULL,
+  refreshed_at   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (server_id, integration_id)
+)`);
+if (!(db.prepare("PRAGMA table_info(messages)").all() as { name: string }[]).some((c) => c.name === "integration")) db.exec("ALTER TABLE messages ADD COLUMN integration TEXT");
