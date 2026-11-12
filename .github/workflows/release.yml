@@ -1,0 +1,81 @@
+name: release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/prepare-main-release.mjs
+  validation:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    uses: ./.github/workflows/validation.yml
+    with:
+      release_version: ${{ needs.prepare.outputs.version }}
+  publish:
+    needs: [prepare, validation]
+    if: needs.prepare.outputs.publish == 'true' && needs.validation.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: read
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/require-merged-main.mjs
+      - shell: bash
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/geglab/annoy-server:${{ needs.prepare.outputs.version }}
+            ghcr.io/geglab/annoy-server:latest
+            ghcr.io/geglab/annoy-server:alpha
+      - name: Publish the already merged and validated source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/require-merged-main.mjs
+          gh release create "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Annoy Server $RELEASE_VERSION" --generate-notes --latest --prerelease=false

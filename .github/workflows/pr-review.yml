@@ -1,0 +1,12 @@
+name: pr-review
+on:
+  pull_request_review:
+    types: [submitted]
+permissions:
+  contents: read
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify trusted automation of the review
+        run: echo 'A review was submitted; approval and CI will be read independently by the trusted workflow.'

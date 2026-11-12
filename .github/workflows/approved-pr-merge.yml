@@ -1,0 +1,32 @@
+name: approved-pr-merge
+on:
+  workflow_run:
+    workflows: [pr-review, server-validation]
+    types: [completed]
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  checks: read
+concurrency:
+  group: approved-pr-merge
+  cancel-in-progress: false
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      # Privileged workflow: execute only the trusted default branch, never PR code.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Merge only approved PRs with all required checks green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/merge-approved-pr.mjs

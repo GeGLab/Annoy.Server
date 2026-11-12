@@ -97,6 +97,20 @@ export function readState(channelId: string, userId: string): ReadState {
   };
 }
 
+/** Moves the cursor to the newest message without sending any message to the client. */
+export function markLatestRead(channelId: string, userId: string): ReadState {
+  const latest = one<{ id: string }>("SELECT id FROM messages WHERE channel_id=? ORDER BY id DESC LIMIT 1", channelId)?.id;
+  if (latest)
+    run(
+      "INSERT INTO channel_read_states(channel_id,user_id,message_id,updated_at) VALUES(?,?,?,?) ON CONFLICT(channel_id,user_id) DO UPDATE SET message_id=excluded.message_id,updated_at=excluded.updated_at WHERE channel_read_states.message_id IS NULL OR channel_read_states.message_id < excluded.message_id",
+      channelId,
+      userId,
+      latest,
+      now(),
+    );
+  return readState(channelId, userId);
+}
+
 export function advanceRead(
   channelId: string,
   userId: string,

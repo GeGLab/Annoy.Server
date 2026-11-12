@@ -5,12 +5,12 @@ import { requireUser } from "../auth.ts";
 import { all, now, one, run, tx } from "../db.ts";
 import { badRequest, forbidden, HttpError, notFound } from "../errors.ts";
 import { sendToChannel, sendToUser, serverChanged } from "../events.ts";
-import { advanceRead, messageWindow, readState } from "../history.ts";
+import { advanceRead, markLatestRead, messageWindow, readState } from "../history.ts";
 import { runMessageIntegration } from "../integrations.ts";
 import { newId, secretId } from "../ids.ts";
 import { maxUploadBytes } from "../instance.ts";
 import { requireChannel, requireServer } from "../perms.ts";
-import { dmRecipientIds, getChannel, getMessage, getMessages, getUser, isMember } from "../repo.ts";
+import { dmRecipientIds, getChannel, getChannels, getMessage, getMessages, getUser, isMember } from "../repo.ts";
 import { discardBlobs, readBlob, writeBlob } from "../uploads.ts";
 import { byteRange } from "../ranges.ts";
 import { uploadsRemoved } from "../playback.ts";
@@ -236,6 +236,18 @@ export function channelRoutes(app: FastifyInstance): void {
     const state=advanceRead(channel.id,userId,body.messageId);
     sendToUser(userId,{t:"CHANNEL_READ_STATE",d:{userId,state}});
     return state;
+  });
+
+  // Marks every visible channel of a server as read in one request, so the client never fetches messages for it.
+  app.put<Params<"id">>("/servers/:id/read-state", async (req) => {
+    const userId=requireUser(req); const {server}=requireServer(req.params.id,userId);
+    const states=getChannels(server.id).flatMap(channel=>{
+      if(!hasMessages(channel.type))return [];
+      try { requireChannel(channel.id,userId); } catch { return []; }
+      return [markLatestRead(channel.id,userId)];
+    });
+    for(const state of states)sendToUser(userId,{t:"CHANNEL_READ_STATE",d:{userId,state}});
+    return states;
   });
 
   app.get<Params<"id">>("/channels/:id/pins", async (req) => {
