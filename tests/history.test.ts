@@ -169,6 +169,18 @@ test("read cursor is monotonic, private, survives message deletion and counts on
   assert.equal(state.unread.mention, true);
 });
 
+test("marking a server read moves every visible channel to its newest message without returning messages", async () => {
+  run("INSERT INTO messages(id,channel_id,author_id,content,created_at) VALUES('000001000009','large','alice','server read','2026-01-01')");
+  const before = (await app.inject({ url: "/channels/large/read-state", headers: auth("bob") })).json();
+  assert.ok(before.unread.count > 0);
+  const response = await app.inject({ method: "PUT", url: "/servers/s/read-state", headers: auth("bob") });
+  assert.equal(response.statusCode, 200);
+  const states = response.json() as Array<Record<string, unknown>>;
+  assert.deepEqual(states.map((state) => [state.channelId, state.messageId, (state.unread as { count: number }).count]), [["large", "000001000009", 0]]);
+  assert.equal(response.body.includes("server read"), false);
+  assert.equal((await app.inject({ method: "PUT", url: "/servers/s/read-state", headers: auth("outsider") })).statusCode, 404);
+});
+
 test("pins require moderation in servers and either DM participant, are idempotent and cascade on deletion", async () => {
   const pin = (
     who: string,

@@ -130,7 +130,7 @@ async function onMessage(conn: Connection, msg: ClientOp): Promise<void> {
         relationships: annoySocial ? [] : getRelationships(userId),
         presences,
         activities: annoySocial ? {} : activitiesFor(userId),
-        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: !annoySocial, serverOwnership: true, developmentActivity: true, directCalls: !annoySocial, annoySocial, socialProfiles: true, groupActivity: true, reactions: true, stickerReactions: true, serverIcons: true, gifSearch: !!process.env.GIPHY_CLIENT_API_KEY, serverStickers: true, presenceStatus: true, manualPresence: true, channelTypes: true, codeChannels: true, historyWindow: true, messagePins: true, integrations: integrationsEnabled(), profileDetails: !annoySocial, extendedActivity: true },
+        instance: { isAdmin: isAdmin(userId), registration: getSettings().registration, voiceBackend, activityArtwork: true, steamConnection: !annoySocial, serverOwnership: true, developmentActivity: true, directCalls: !annoySocial, annoySocial, socialProfiles: true, groupActivity: true, reactions: true, stickerReactions: true, serverIcons: true, gifSearch: !!process.env.GIPHY_CLIENT_API_KEY, serverStickers: true, presenceStatus: true, manualPresence: true, channelTypes: true, codeChannels: true, historyWindow: true, messagePins: true, serverReadState: true, integrations: integrationsEnabled(), profileDetails: !annoySocial, extendedActivity: true },
       },
     });
     if (!annoySocial && (cameOnline || previousPresence !== presenceOf(userId))) {
