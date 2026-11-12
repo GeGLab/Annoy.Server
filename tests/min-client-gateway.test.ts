@@ -28,12 +28,18 @@ test("the gateway rejects old, malformed and missing client versions", { timeout
   for (const clientVersion of [undefined, null, "latest", "0.10.0-alpha.7", "0.10.0-nightly.202611070927"]) {
     const socket = new WebSocket(origin.replace("http", "ws") + "/gateway");
     await once(socket, "open");
+    // Client close can arrive before the server's gateway cleanup on Windows.
+    // Keep the database open until that close handler has run on both peers.
+    const serverSocket = [...app.websocketServer.clients][0];
+    assert.ok(serverSocket);
+    const serverClosed = once(serverSocket, "close");
     const message = once(socket, "message"), closed = once(socket, "close");
     socket.send(JSON.stringify({ op: "identify", token, clientVersion }));
     const event = JSON.parse(String((await message)[0]));
     assert.equal(event.t, "INVALID_SESSION");
     assert.ok(event.d.reason.includes(MIN_CLIENT_VERSION));
     assert.equal((await closed)[0], 4011);
+    await serverClosed;
   }
 });
 
@@ -41,9 +47,14 @@ test("the gateway accepts the new minimum and newer clients", { timeout: 10_000 
   for (const clientVersion of [MIN_CLIENT_VERSION, "0.11.0-alpha.2", "0.11.0"]) {
     const socket = new WebSocket(origin.replace("http", "ws") + "/gateway");
     await once(socket, "open");
+    // Client close can arrive before the server's gateway cleanup on Windows.
+    // Keep the database open until that close handler has run on both peers.
+    const serverSocket = [...app.websocketServer.clients][0];
+    assert.ok(serverSocket);
+    const serverClosed = once(serverSocket, "close");
     const ready = once(socket, "message");
     socket.send(JSON.stringify({ op: "identify", token, clientVersion }));
     assert.equal(JSON.parse(String((await ready)[0])).t, "READY");
-    const closed = once(socket, "close"); socket.close(); await closed;
+    const closed = once(socket, "close"); socket.close(); await Promise.all([closed, serverClosed]);
   }
 });
