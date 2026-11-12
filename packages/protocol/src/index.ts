@@ -735,7 +735,16 @@ export interface PlaybackState {
   serverTime: number;
   /** Advance to the next item when the current one ends. */
   autoplay: boolean;
+  /** Song rooms: lower the music while people in the listener's call talk. Absent on servers that predate it. */
+  ducking?: boolean;
+  /** Song rooms: mix each track into the next like a DJ. Absent on servers that predate it. */
+  dj?: boolean;
+  /** The transition DJ mode uses; "auto" picks a different one per track. */
+  djStyle?: DjStyle;
 }
+
+export type DjStyle = "auto" | "smooth" | "filter" | "echo" | "brake" | "bassswap" | "riser";
+export const DJ_STYLES: readonly DjStyle[] = ["auto", "smooth", "filter", "echo", "brake", "bassswap", "riser"];
 
 export type PlaybackAction =
   | { op: "add"; url: string; title?: string; uploadId?: string }
@@ -746,7 +755,9 @@ export type PlaybackAction =
   | { op: "next" }
   | { op: "ended"; itemId: string }
   | { op: "move"; itemId: string; index: number }
-  | { op: "autoplay"; value: boolean };
+  | { op: "autoplay"; value: boolean }
+  | { op: "ducking"; value: boolean }
+  | { op: "dj"; value: boolean; style?: DjStyle };
 
 /** Where the current item should be right now, in seconds. */
 export function playbackPosition(state: PlaybackState, clockOffsetMs = 0): number {
