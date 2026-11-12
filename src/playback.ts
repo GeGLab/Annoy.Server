@@ -1,4 +1,4 @@
-import { has, Permission, playbackPosition, type Channel, type PlaybackItem, type PlaybackKind, type PlaybackState } from "@annoy/protocol";
+import { DJ_STYLES, has, Permission, playbackPosition, type Channel, type PlaybackItem, type PlaybackKind, type PlaybackState } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "./auth.ts";
@@ -23,7 +23,11 @@ function load(channelId: string): Omit<PlaybackState, "serverTime"> {
     const row = one<{ state: string }>("SELECT state FROM playback WHERE channel_id = ?", channelId);
     state = row
       ? (JSON.parse(row.state) as Omit<PlaybackState, "serverTime">)
-      : { channelId, queue: [], currentId: null, paused: true, position: 0, updatedAt: Date.now(), autoplay: true };
+      : { channelId, queue: [], currentId: null, paused: true, position: 0, updatedAt: Date.now(), autoplay: true, ducking: true };
+    // Rooms saved before ducking and DJ mode existed get their defaults, like new ones.
+    state.ducking ??= true;
+    state.dj ??= false;
+    state.djStyle ??= "auto";
     states.set(channelId, state);
   }
   return state;
@@ -94,6 +98,8 @@ const action = z.discriminatedUnion("op", [
   z.object({ op: z.literal("ended"), itemId: z.string() }),
   z.object({ op: z.literal("move"), itemId: z.string(), index: z.number().int().min(0) }),
   z.object({ op: z.literal("autoplay"), value: z.boolean() }),
+  z.object({ op: z.literal("ducking"), value: z.boolean() }),
+  z.object({ op: z.literal("dj"), value: z.boolean(), style: z.enum(DJ_STYLES as [string, ...string[]]).optional() }),
 ]);
 
 export function playbackRoutes(app: FastifyInstance): void {
@@ -188,6 +194,18 @@ export function playbackRoutes(app: FastifyInstance): void {
       }
       case "autoplay":
         state.autoplay = body.value;
+        break;
+      case "ducking":
+        if (channel.type !== "song") throw badRequest("Só salas de música abaixam o volume quando alguém fala");
+        state.ducking = body.value;
+        break;
+      case "dj":
+        if (channel.type !== "song") throw badRequest("Só salas de música têm modo DJ");
+        state.dj = body.value;
+        if (body.style) state.djStyle = body.style as NonNullable<PlaybackState["djStyle"]>;
+        state.djStyle ??= "auto";
+        // A DJ always moves on to the next track.
+        if (body.value) state.autoplay = true;
         break;
     }
     return save(channel, state);
