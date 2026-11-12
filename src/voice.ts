@@ -389,6 +389,17 @@ export async function handleVoice(conn: Connection, method: VoiceMethod, data: R
       const consumer = peerOf(conn).consumers.get(str(data, "consumerId"));
       if (!consumer) throw notFound("Consumidor");
       await consumer.resume();
+      // A resumed picture must not wait for the sender's next periodic key frame (black screen).
+      if (consumer.kind === "video") await consumer.requestKeyFrame().catch(() => undefined);
+      return {};
+    }
+
+    case "pauseConsumer": {
+      // Stops forwarding one track while keeping it ready, e.g. when the user stops watching
+      // a screen share; "resumeConsumer" brings it back without a new negotiation.
+      const consumer = peerOf(conn).consumers.get(str(data, "consumerId"));
+      if (!consumer) throw notFound("Consumidor");
+      await consumer.pause();
       return {};
     }
 
