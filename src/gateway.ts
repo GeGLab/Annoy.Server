@@ -41,7 +41,13 @@ export function registerGateway(app: FastifyInstance): void {
     for (const conn of live) {
       const hash = sessionHashes.get(conn);
       if (conn.userId && (!hash || userIdForSessionHash(hash) !== conn.userId)) conn.socket.close(4004, "session expired");
-      else if (conn.lastHeartbeat < cutoff) conn.socket.close(4009, "heartbeat timeout");
+      else if (conn.lastHeartbeat < cutoff) {
+        conn.socket.close(4009, "heartbeat timeout");
+        // A dead link never answers the close handshake: without this its voice session would stay
+        // in the room (others hearing silence, the user's next join racing it) until ws gives up.
+        const socket = conn.socket;
+        setTimeout(() => { if (socket.readyState !== socket.CLOSED) socket.terminate(); }, 2_000).unref();
+      }
     }
   }, 30_000);
   app.addHook("onClose", async () => clearInterval(sweep));
