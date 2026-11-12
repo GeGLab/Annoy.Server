@@ -627,6 +627,8 @@ export type VoiceMethod =
   | "produce"
   | "consume"
   | "resumeConsumer"
+  /** Pauses one received track while keeping it available for resumeConsumer. */
+  | "pauseConsumer"
   | "getProducers"
   | "closeProducer"
   /** Stops receiving one track (mediasoup); "unsubscribe" is the Cloudflare one. */
