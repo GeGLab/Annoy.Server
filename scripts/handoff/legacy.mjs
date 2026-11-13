@@ -87,7 +87,7 @@ export async function install({ slot, target, attempt: suppliedAttempt }) {
   tunnel.on('error',()=>{});
   cleanups.push(()=>{try{tunnel.close();}catch{}try{fs.unlinkSync(socketPath);}catch{}});
   try { fs.unlinkSync(socketPath); } catch {}
-  await new Promise((resolve, reject) => { tunnel.once('error', reject); tunnel.listen(socketPath, () => { fs.chmodSync(socketPath, 0o600); resolve(); }); });
+  await new Promise((resolve, reject) => { tunnel.once('error', reject); tunnel.listen(socketPath, () => { try { fs.chmodSync(socketPath, 0o600); resolve(); } catch(error) { reject(error); } }); });
   checkAttempt();
   cleanups.push(()=>{try{if(JSON.parse(fs.readFileSync(descriptor,'utf8')).generation===generation)fs.unlinkSync(descriptor);}catch{}});
   function currentConnections() {
@@ -104,7 +104,16 @@ export async function install({ slot, target, attempt: suppliedAttempt }) {
       connectionCounts: Object.fromEntries([...new Set(live.map(c => c.userId))].map(id => [id, live.filter(c => c.userId === id).length])), presences:Object.fromEntries([...new Set(live.map(c=>c.userId))].map(id=>[id,presence.presenceOf(id)])), voiceStates, forwarded, pendingRequests: pendingRequests.size };
   }
   function saveStatus() { if (closed) return; fs.writeFileSync(descriptor + '.tmp', JSON.stringify(status()), { mode: 0o600 }); fs.renameSync(descriptor + '.tmp', descriptor); }
+  function unavailable(res) {
+    try {
+      if (!res.headersSent) { res.writeHead(503, { 'content-type': 'application/json' }); res.end('{"error":"handoff_unavailable","message":"A API está temporariamente indisponível."}'); }
+      else res.destroy();
+    } catch { res.destroy(); }
+  }
   function forward(req, res) {
+    try { forwardRequest(req, res); } catch { unavailable(res); }
+  }
+  function forwardRequest(req, res) {
     const headers = { ...req.headers };
     for (const key of Object.keys(headers)) if (key.startsWith('x-annoy-handoff-')) delete headers[key];
     const remote = req.socket.remoteAddress || '';
@@ -118,11 +127,14 @@ export async function install({ slot, target, attempt: suppliedAttempt }) {
     delete headers.connection; delete headers['proxy-connection'];
     const upstream = http.request({ socketPath: targetPath, method: req.method, path: req.url, headers, agent: false }, response => {
       const outgoing = { ...response.headers, connection: 'close' };
-      res.writeHead(response.statusCode || 502, outgoing); response.pipe(res);
+      response.on('error', () => res.destroy());
+      try { res.writeHead(response.statusCode || 502, outgoing); response.pipe(res); } catch { response.destroy(); res.destroy(); }
     });
     pendingRequests.add(res);
     res.once('close', () => { pendingRequests.delete(res); upstream.destroy(); });
-    upstream.on('error', () => { if (!res.headersSent) { res.writeHead(503, { 'content-type': 'application/json' }); res.end('{"error":"handoff_unavailable","message":"A API está temporariamente indisponível."}'); } else res.destroy(); });
+    upstream.on('error', () => unavailable(res));
+    req.on('error', () => upstream.destroy());
+    res.on('error', () => upstream.destroy());
     req.on('aborted', () => upstream.destroy()); req.pipe(upstream);
   }
   async function activate(expires) {

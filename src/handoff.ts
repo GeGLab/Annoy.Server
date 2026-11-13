@@ -118,7 +118,7 @@ export async function startApiTunnel(port: number): Promise<void> {
     client.on('close', () => upstream.destroy()); upstream.on('close', () => client.destroy()); client.pipe(upstream).pipe(client);
   });
   server.on('error',()=>{});
-  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(filename, () => { chmodSync(filename, 0o600); resolve(); }); });
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(filename, () => { try { chmodSync(filename, 0o600); resolve(); } catch(error) { reject(error); } }); });
   const timer = setInterval(() => {
     try {
     const state = legacyState(); if (!state) return;
