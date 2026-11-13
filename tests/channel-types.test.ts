@@ -99,6 +99,30 @@ test("theater rooms keep one synced queue", async () => {
   assert.equal(get.json().queue.length, 2);
 });
 
+test("song room options keep the clock running and the room knows who listens", async () => {
+  const song = await create("song", "Rock");
+  const act = (payload: object, who = "owner") => app.inject({ method: "POST", url: `/channels/${song.id}/playback`, headers: auth(who), payload });
+  let state = (await act({ op: "add", url: "https://example.com/track.mp3" })).json();
+  state = (await act({ op: "seek", position: 30 })).json();
+  // Some time passes in the song, then someone flips an option: the song must not go back.
+  const started = state.updatedAt as number;
+  await new Promise((r) => setTimeout(r, 120));
+  for (const option of [{ op: "dj", value: true }, { op: "dj", value: true, style: "echo" }, { op: "ducking", value: false }, { op: "autoplay", value: true }, { op: "add", url: "https://example.com/next.mp3" }]) {
+    state = (await act(option, "member")).json();
+    assert.ok(state.position >= 30 + (state.updatedAt - started) / 1000 - 0.05, `${JSON.stringify(option)} kept the clock (${state.position})`);
+  }
+  assert.deepEqual([state.dj, state.djStyle, state.ducking], [true, "echo", false], "anyone who can send can set the room's options");
+  assert.deepEqual(state.listeners, []);
+
+  const listen = (value: boolean, who = "owner") => app.inject({ method: "POST", url: `/channels/${song.id}/playback/listen`, headers: auth(who), payload: { value } });
+  assert.deepEqual((await listen(true)).json().listeners, ["owner"]);
+  assert.deepEqual((await listen(true, "member")).json().listeners, ["owner", "member"]);
+  assert.deepEqual((await listen(true)).json().listeners, ["owner", "member"], "a heartbeat keeps the place");
+  assert.deepEqual((await listen(false)).json().listeners, ["member"]);
+  const theater = await create("theater", "Telão");
+  assert.equal((await app.inject({ method: "POST", url: `/channels/${theater.id}/playback/listen`, headers: auth(), payload: { value: true } })).statusCode, 404);
+});
+
 test("temporary rooms vanish after 10 idle minutes, or when the last person leaves", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
