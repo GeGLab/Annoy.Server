@@ -144,13 +144,13 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/admin/users", async (req): Promise<AdminUser[]> => {
     const q = parse(listQuery, req.query);
-    const like = `%${(q.q ?? "").replace(/[%_]/g, "")}%`;
+    const like = `%${(q.q ?? "").replace(/[!%_]/g, "!$&")}%`;
     return toAdminUsers(
       all<UserRow>(
         `SELECT u.id, u.created_at, u.is_admin, u.banned_at, u.ban_reason, u.discord_id, u.imported_from,
                 (SELECT COUNT(*) FROM servers s WHERE s.owner_id = u.id) AS servers
            FROM users u
-          WHERE u.username NOT LIKE 'deleted.%' AND (u.username LIKE ? OR u.display_name LIKE ?)
+          WHERE u.username NOT LIKE 'deleted.%' AND (u.username LIKE ? ESCAPE '!' OR u.display_name LIKE ? ESCAPE '!')
           ORDER BY u.imported_from IS NOT NULL, u.created_at DESC
           LIMIT ? OFFSET ?`,
         like,

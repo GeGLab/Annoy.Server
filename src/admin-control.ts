@@ -35,3 +35,16 @@ export function requireHostAdmin(req: FastifyRequest): void {
     && timingSafeEqual(Buffer.from(given), Buffer.from(expected));
   if (!ok) throw forbidden("A administração do annoy-server é feita pelo comando annoy-admin no host.");
 }
+
+/** Nested Fastify injection does not inherit AsyncLocalStorage. Each delegated
+ * request must prove host authority itself; browsers never receive this token.
+ */
+export function delegatedHostActor(req: FastifyRequest): string | null {
+  const actor = req.headers['x-annoy-host-actor'];
+  if (actor === undefined) return null;
+  requireHostAdmin(req);
+  if (typeof actor !== 'string' || !actor || actor.length > 128 || !/^\/(?:api\/)?(servers|channels|invites|stickers|sticker-info|uploads|import)(\/|$)/.test(req.url)) {
+    throw forbidden('Delegação administrativa fora do escopo da instância.');
+  }
+  return actor;
+}
