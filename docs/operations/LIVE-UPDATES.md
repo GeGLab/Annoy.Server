@@ -1,3 +1,17 @@
+# Live session migration
+
+For managed Global-account deployments using Cloudflare Realtime, protocol 3 transfers an established gateway connection and its Cloudflare session ownership to the other slot. The TCP proxy holds the client transport open while changing its private backend. The client receives neither a close frame nor another READY, and the existing media session is retained.
+
+Updates, restart, and applying configuration use the same rolling operation: consolidate an existing split gateway if necessary, start the free slot with the configured published image, transfer sessions, then replace the now-empty original slot. Completion requires both slots healthy at the target version. A process that still owns sessions is never recreated.
+
+The proxy is a stable transport service and is not restarted during a server rollout. Its private migration controller is protected by filesystem permissions and a one-time control nonce; session imports additionally require the shared host token and an authorized session hash. Tokens and Cloudflare credentials do not reach the browser or the migration journal.
+
+The first activation supports only the exact deployed alpha.2 and alpha.6 server image digests and the exact alpha.2 TCP proxy image. Its private Inspector bootstrap verifies the serving PID and closes the inspector afterward. Native protocol-3 releases expose migration state directly and require no Inspector bootstrap.
+
+Embedded mediasoup media, local social/direct-call state, and changing the Cloudflare app credentials require additional media/state migration support. They fail closed rather than disconnect users or report a partial API activation as a completed rollout.
+
+The private migration journal records the transaction phase and slot ownership. A lost controller response never authorizes recreation of a live slot. Session ownership must be recovered before further maintenance.
+
 # Updating with live sessions
 
 The updater activates the candidate **HTTP API** after HTTP 200 and an exact

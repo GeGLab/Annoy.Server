@@ -23,6 +23,7 @@ const MAX_FRAME_BYTES = 64 * 1024;
 
 const live = new Set<Connection>();
 const sessionHashes = new WeakMap<Connection, string>();
+export const migrationState = { live, sessionHashes, onMessage };
 let restarting = false;
 
 /** End server-owned sessions before closing gateways, including on an update. */

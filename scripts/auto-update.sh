@@ -22,12 +22,14 @@ active() {
 }
 channel=unknown; phase=idle; updating=false; last_check=null; last_error=null
 target_version=null; current_version=null; waiting_connections=0; operation_id=null
+slot_versions=null
+. /project/scripts/live/rollout.sh
 default_auto="${ANNOY_AUTO_UPDATE:-off}"
 write_status() {
   [ "$default_auto" = on ] && auto=true || auto=false
   legacy_json="$(cat "$control/legacy.json" 2>/dev/null || printf null)"
-  printf '{"heartbeat":"%s","auto":%s,"channel":"%s","intervalHours":%s,"lastCheck":%s,"lastError":%s,"updating":%s,"protocol":2,"phase":"%s","currentVersion":%s,"targetVersion":%s,"waitingConnections":%s,"operationId":%s,"legacyGateway":%s}\n' \
-    "$(date -u '+%FT%TZ')" "$auto" "$channel" "$hours" "$last_check" "$last_error" "$updating" "$phase" "$current_version" "$target_version" "$waiting_connections" "$operation_id" "$legacy_json" > "$control/status.json.tmp" && mv "$control/status.json.tmp" "$control/status.json"
+  printf '{"heartbeat":"%s","auto":%s,"channel":"%s","intervalHours":%s,"lastCheck":%s,"lastError":%s,"updating":%s,"protocol":3,"phase":"%s","currentVersion":%s,"targetVersion":%s,"waitingConnections":%s,"operationId":%s,"legacyGateway":%s,"slotVersions":%s}\n' \
+    "$(date -u '+%FT%TZ')" "$auto" "$channel" "$hours" "$last_check" "$last_error" "$updating" "$phase" "$current_version" "$target_version" "$waiting_connections" "$operation_id" "$legacy_json" "$slot_versions" > "$control/status.json.tmp" && mv "$control/status.json.tmp" "$control/status.json"
 }
 fail() { last_error="\"$1\""; phase=failed; echo "update failed: $1" >&2; write_status; }
 cancelled() { [ -e "$control/cancel" ]; }
@@ -124,7 +126,6 @@ maybe_retire() {
 }
 
 update() {
-  [ ! -e "$control/legacy.json" ] || return 0
   updating=true; last_error=null; target_version=null; waiting_connections=0
   operation_id="\"$(date +%s)-$$\""; phase=downloading; write_status
   old="$(active)" || { fail 'Nenhum servidor ativo.'; updating=false; return; }
@@ -142,7 +143,10 @@ update() {
     case "$expected" in ''|*[!0-9A-Za-z.+-]*) fail 'A imagem não informou uma versão válida.' ;;
       *) target_version="\"$expected\""
          comparison="$(probe "$old" compare "$current" "$expected")" || comparison=unknown
-         if [ "$comparison" = 0 ]; then phase=no_change; echo "Already running $current; no container restarted"
+         live_backend="$(docker exec "$(compose ps --quiet "$old")" node -p 'process.env.ANNOY_VOICE_BACKEND||"builtin"')"
+         if [ "$live_backend" = cloudflare ] && [ "$comparison" != 1 ] && [ "$comparison" != unknown ]; then
+           if ! rolling_live; then fail 'A migração das sessões não foi confirmada. Nenhum slot com usuários será reiniciado; consulte a transação de migração.'; fi
+         elif [ "$comparison" = 0 ]; then phase=no_change; echo "Already running $current; no container restarted"
          elif [ "$comparison" = 1 ]; then fail 'O canal aponta para uma versão mais antiga. Downgrade bloqueado; revise ANNOY_VERSION.'
          elif [ "$comparison" = -1 ]; then swap || true
          else fail 'Não foi possível comparar as versões; nada foi reiniciado.'; fi ;;
@@ -152,7 +156,6 @@ update() {
   last_check="\"$(date -u '+%FT%TZ')\""; updating=false; write_status
 }
 restart() {
-  [ ! -e "$control/legacy.json" ] || return 0
   updating=true; last_error=null; waiting_connections=0; operation_id="\"$(date +%s)-$$\""
   old="$(active)" || { fail 'Nenhum servidor ativo.'; updating=false; return; }
   expected="$(probe "$old" health)" || { fail 'O servidor não respondeu.'; updating=false; return; }
@@ -160,7 +163,20 @@ restart() {
   image_id="$(docker inspect --format '{{.Image}}' "$(compose ps --quiet "$old")")" || { updating=false; return; }
   configured="$(compose config --images | grep '^ghcr.io/geglab/annoy-server:' | head -n 1)"
   configured_id="$(docker image inspect --format '{{.Id}}' "$configured" 2>/dev/null || true)"
-  if [ "$image_id" != "$configured_id" ]; then fail 'A imagem configurada difere da ativa. Use Atualizar para trocar de versão.'; else swap || true; fi
+  live_backend="$(docker exec "$(compose ps --quiet "$old")" node -p 'process.env.ANNOY_VOICE_BACKEND||"builtin"')"
+  if [ "$live_backend" = cloudflare ]; then
+    # Keep the published corrective runtime available to both slots. Restart
+    # follows the configured image, just like applying the saved configuration.
+    image="$configured"
+    if ! compose pull --quiet annoy; then fail 'Não foi possível obter a imagem configurada; processos preservados.'
+    else
+      expected="$(docker run --rm --network none --read-only --entrypoint node "$image" -p 'require("./package.json").version')" || expected=''
+      case "$expected" in ''|*[!0-9A-Za-z.+-]*) fail 'Imagem configurada inválida.' ;; *)
+        target_version="\"$expected\""
+        if ! rolling_live; then fail 'A migração das sessões não foi confirmada; slots com usuários foram preservados.'; fi ;;
+      esac
+    fi
+  elif [ "$image_id" != "$configured_id" ]; then fail 'A imagem configurada difere da ativa. Use Atualizar para trocar de versão.'; else swap || true; fi
   updating=false; write_status
 }
 next=0

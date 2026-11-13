@@ -3,6 +3,7 @@
   "version": "0.12.0-alpha.3",
   "private": true,
   "annoyHandoff": 1,
+  "annoyLiveMigration": 1,
   "description": "Self-hosted voice and text chat server: TeamSpeak-style hosting with Discord-style features",
   "license": "MIT",
   "type": "module",
