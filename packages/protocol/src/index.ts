@@ -741,6 +741,8 @@ export interface PlaybackState {
   dj?: boolean;
   /** The transition DJ mode uses; "auto" picks a different one per track. */
   djStyle?: DjStyle;
+  /** Song rooms: who is listening right now (POST /channels/:id/playback/listen). Absent on servers that predate it. */
+  listeners?: string[];
 }
 
 export type DjStyle = "auto" | "smooth" | "filter" | "echo" | "brake" | "bassswap" | "riser";

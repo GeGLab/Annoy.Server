@@ -7,6 +7,7 @@ import { badRequest, forbidden, notFound } from "./errors.ts";
 import { sendToChannel } from "./events.ts";
 import { secretId } from "./ids.ts";
 import { requireChannel } from "./perms.ts";
+import { getChannel } from "./repo.ts";
 import { parse, type Params } from "./validate.ts";
 
 // Theater and song rooms share one playback per channel: a queue and where the current
@@ -33,7 +34,54 @@ function load(channelId: string): Omit<PlaybackState, "serverTime"> {
   return state;
 }
 
-const snapshot = (state: Omit<PlaybackState, "serverTime">): PlaybackState => ({ ...state, serverTime: Date.now() });
+// Who is listening in each song room right now. Kept in memory only: listeners say so when
+// they join, again every LISTEN_BEAT_MS while they stay, and when they leave; a listener
+// that goes quiet (closed the app, lost the connection) drops out after LISTEN_TTL_MS.
+const LISTEN_TTL_MS = 75_000;
+const listening = new Map<string, Map<string, number>>();
+
+function listenersOf(channelId: string): string[] {
+  const room = listening.get(channelId);
+  return room ? [...room.keys()] : [];
+}
+
+const snapshot = (state: Omit<PlaybackState, "serverTime">): PlaybackState => ({ ...state, listeners: listenersOf(state.channelId), serverTime: Date.now() });
+
+/**
+ * Brings `position` up to now before anything else changes. Every save restarts the clock
+ * at `updatedAt`, so an option toggled mid-song (DJ, ducking, autoplay, a new queue item)
+ * must not send everyone back to where the last play or seek left the song.
+ */
+function settle(state: Omit<PlaybackState, "serverTime">): void {
+  if (!state.paused && state.currentId) state.position = playbackPosition(snapshot(state));
+  state.updatedAt = Date.now();
+}
+
+/** Tells the room who is listening, without touching its clock. */
+function announce(channelId: string): void {
+  const channel = getChannel(channelId);
+  if (!channel || !isPlaybackChannel(channel)) {
+    listening.delete(channelId);
+    return;
+  }
+  sendToChannel(channel, { t: "PLAYBACK_UPDATE", d: snapshot(load(channel.id)) });
+}
+
+const sweep = setInterval(() => {
+  const now = Date.now();
+  for (const [channelId, room] of listening) {
+    let changed = false;
+    for (const [userId, seen] of room) {
+      if (now - seen > LISTEN_TTL_MS) {
+        room.delete(userId);
+        changed = true;
+      }
+    }
+    if (room.size === 0) listening.delete(channelId);
+    if (changed) announce(channelId);
+  }
+}, 15_000);
+sweep.unref?.();
 
 function save(channel: Channel, state: Omit<PlaybackState, "serverTime">): PlaybackState {
   state.updatedAt = Date.now();
@@ -45,6 +93,7 @@ function save(channel: Channel, state: Omit<PlaybackState, "serverTime">): Playb
 
 export function forgetPlayback(channelId: string): void {
   states.delete(channelId);
+  listening.delete(channelId);
 }
 
 /** Drops queue items that pointed at an upload that no longer exists. */
@@ -53,6 +102,7 @@ export function uploadsRemoved(channel: Channel, attachmentIds: readonly string[
   const state = load(channel.id);
   const gone = (item: PlaybackItem) => item.kind === "file" && attachmentIds.some((id) => item.url.startsWith(`/api/uploads/${id}/`));
   if (!state.queue.some(gone)) return;
+  settle(state);
   if (state.queue.find((i) => i.id === state.currentId && gone(i))) advance(state);
   state.queue = state.queue.filter((i) => !gone(i));
   save(channel, state);
@@ -88,6 +138,8 @@ function advance(state: Omit<PlaybackState, "serverTime">): void {
   state.paused = !next;
 }
 
+const listen = z.object({ value: z.boolean() });
+
 const action = z.discriminatedUnion("op", [
   z.object({ op: z.literal("add"), url: z.string().max(2048).default(""), title: z.string().max(200).optional(), uploadId: z.string().regex(/^[0-9a-f]{32}$/).optional() }),
   z.object({ op: z.literal("remove"), itemId: z.string() }),
@@ -109,6 +161,27 @@ export function playbackRoutes(app: FastifyInstance): void {
     return snapshot(load(channel.id));
   });
 
+  // Joining, staying in (a heartbeat) or leaving a song room's audience. Anyone who can see
+  // the room may listen, so this needs no more than seeing it.
+  app.post<Params<"id">>("/channels/:id/playback/listen", async (req) => {
+    const userId = requireUser(req);
+    const { channel } = requireChannel(req.params.id, userId);
+    if (channel.type !== "song") throw notFound("Sala");
+    const { value } = parse(listen, req.body);
+    let room = listening.get(channel.id);
+    const before = room?.has(userId) ?? false;
+    if (value) {
+      if (!room) listening.set(channel.id, (room = new Map()));
+      room.set(userId, Date.now());
+    } else if (room) {
+      room.delete(userId);
+      if (room.size === 0) listening.delete(channel.id);
+    }
+    const state = snapshot(load(channel.id));
+    if (before !== value) sendToChannel(channel, { t: "PLAYBACK_UPDATE", d: state });
+    return state;
+  });
+
   app.post<Params<"id">>("/channels/:id/playback", async (req) => {
     const userId = requireUser(req);
     const { channel, perms } = requireChannel(req.params.id, userId, Permission.SEND_MESSAGES);
@@ -117,6 +190,9 @@ export function playbackRoutes(app: FastifyInstance): void {
     const state = load(channel.id);
     const moderator = has(perms, Permission.MANAGE_MESSAGES);
     const owns = (itemId: string | null) => state.queue.find((i) => i.id === itemId)?.addedBy === userId;
+    // A stale end report changes nothing, not even the clock.
+    if (body.op === "ended" && body.itemId !== state.currentId) return snapshot(state);
+    settle(state);
 
     switch (body.op) {
       case "add": {
@@ -162,7 +238,7 @@ export function playbackRoutes(app: FastifyInstance): void {
           if (!state.queue.some((i) => i.id === body.itemId)) throw notFound("Item");
           state.currentId = body.itemId;
           state.position = 0;
-        } else state.position = playbackPosition(snapshot(state));
+        }
         if (!state.currentId) throw badRequest("A fila está vazia");
         state.paused = false;
         break;
@@ -179,8 +255,7 @@ export function playbackRoutes(app: FastifyInstance): void {
         advance(state);
         break;
       case "ended":
-        // Every viewer reports the end; only the first one for the current item counts.
-        if (body.itemId !== state.currentId) return snapshot(state);
+        // Every viewer reports the end; only the first one for the current item counts (above).
         if (state.autoplay) advance(state);
         else state.paused = true;
         break;
