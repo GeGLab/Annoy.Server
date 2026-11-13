@@ -20,13 +20,14 @@ import { usage as voiceUsage } from "../sfu-budget.ts";
 import { requestUpdate, updateStatus } from "../updates.ts";
 import { parse, type Params } from "../validate.ts";
 import { deleteServer } from "./servers.ts";
+import { hostDashboardRoutes } from "./host-dashboard.ts";
 
 const inviteBody = z.object({
   maxUses: z.number().int().min(1).max(10_000).nullable().optional(),
   expiresInHours: z.number().min(0.5).max(24 * 365).nullable().optional(),
 });
 const banBody = z.object({ reason: z.string().max(512).optional() });
-const listQuery = z.object({ q: z.string().max(64).optional(), limit: z.coerce.number().int().min(1).max(200).default(100) });
+const listQuery = z.object({ q: z.string().max(64).optional(), limit: z.coerce.number().int().min(1).max(200).default(100), offset: z.coerce.number().int().min(0).default(0) });
 
 async function dirSize(dir: string): Promise<number> {
   let total = 0;
@@ -151,10 +152,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
            FROM users u
           WHERE u.username NOT LIKE 'deleted.%' AND (u.username LIKE ? OR u.display_name LIKE ?)
           ORDER BY u.imported_from IS NOT NULL, u.created_at DESC
-          LIMIT ?`,
+          LIMIT ? OFFSET ?`,
         like,
         like,
         q.limit,
+        q.offset,
       ),
     );
   });
@@ -211,4 +213,5 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     await deleteServer(req.params.id, "");
     return {};
   });
+  await app.register(hostDashboardRoutes);
 }

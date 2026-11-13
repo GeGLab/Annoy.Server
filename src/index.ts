@@ -15,6 +15,7 @@ import { closeForRestart, registerGateway } from "./gateway.ts";
 import { syncConfiguredAdmin } from "./instance.ts";
 import { startGlobal } from "./global.ts";
 import { adminRoutes } from "./routes/admin.ts";
+import { captureControlRoutes } from "./routes/host-dashboard.ts";
 import { ensureAdminToken } from "./admin-control.ts";
 import { ignoredStoredSettings } from "./instance.ts";
 import { authRoutes } from "./routes/auth.ts";
@@ -46,6 +47,7 @@ const app = Fastify({
 });
 
 // Bearer authentication and an explicit origin allowlist.
+captureControlRoutes(app);
 transportSecurity(app);
 resourceLimits(app);
 const allowedOrigins=new Set((process.env.ANNOY_ALLOWED_ORIGINS??"null,https://annoy.localhost,http://127.0.0.1:5173,http://localhost:5173").split(",").map(s=>s.trim()));
