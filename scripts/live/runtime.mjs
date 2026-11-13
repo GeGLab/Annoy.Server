@@ -36,7 +36,10 @@ export async function install({ compatibility = false } = {}) {
     conn.socket.prependListener('message', raw => {
       try {
         const msg = JSON.parse(raw.toString());
-        if (msg.op === 'heartbeat' && typeof msg.migrationProbe === 'string') probes.set(msg.migrationProbe, conn.id);
+        if (msg.op === 'heartbeat' && typeof msg.migrationProbe === 'string') {
+          for (const [nonce, id] of probes) if (id === conn.id) probes.delete(nonce);
+          probes.set(msg.migrationProbe, conn.id);
+        }
         if (msg.op === 'voice') pendingVoice.add(`${conn.id}:${msg.id}`);
       } catch {}
     });

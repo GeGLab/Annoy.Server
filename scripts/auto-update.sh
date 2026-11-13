@@ -145,7 +145,8 @@ update() {
          comparison="$(probe "$old" compare "$current" "$expected")" || comparison=unknown
          live_backend="$(docker exec "$(compose ps --quiet "$old")" node -p 'process.env.ANNOY_VOICE_BACKEND||"builtin"')"
          if [ "$live_backend" = cloudflare ] && [ "$comparison" != 1 ] && [ "$comparison" != unknown ]; then
-           if ! rolling_live; then fail 'A migração das sessões não foi confirmada. Nenhum slot com usuários será reiniciado; consulte a transação de migração.'; fi
+           if [ "$comparison" = 0 ] && live_both_current; then phase=no_change
+           elif ! rolling_live; then fail 'A migração das sessões não foi confirmada. Nenhum slot com usuários será reiniciado; consulte a transação de migração.'; fi
          elif [ "$comparison" = 0 ]; then phase=no_change; echo "Already running $current; no container restarted"
          elif [ "$comparison" = 1 ]; then fail 'O canal aponta para uma versão mais antiga. Downgrade bloqueado; revise ANNOY_VERSION.'
          elif [ "$comparison" = -1 ]; then swap || true

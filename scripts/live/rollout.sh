@@ -39,6 +39,17 @@ live_empty() {
   live_http="$(live_probe "$1" idle-http)" || return 1
   printf '%s' "$live_http" | grep -q '"pending":0'
 }
+live_both_current() {
+  [ ! -e "$control/legacy.json" ] || return 1
+  expected_digest="$(docker image inspect --format '{{.Id}}' "$image")" || return 1
+  for checked_slot in annoy annoy-b; do
+    running "$checked_slot" || return 1
+    checked_id="$(compose ps --quiet "$checked_slot")" || return 1
+    [ "$(docker inspect --format '{{.Image}}' "$checked_id")" = "$expected_digest" ] || return 1
+    probe "$checked_slot" health "$expected" >/dev/null || return 1
+  done
+  slot_versions="{\"annoy\":\"$expected\",\"annoy-b\":\"$expected\"}"
+}
 live_move() {
   live_source="$1"; live_target="$2"; live_relay="${3:-}"
   live_install "$live_source" && live_install "$live_target" || return 1
