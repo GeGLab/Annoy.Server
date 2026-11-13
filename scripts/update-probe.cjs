@@ -40,6 +40,11 @@ function compare(a, b) {
   if (action === 'connections') output = connections();
   else if(action==='handoff-phase'){const dir=process.env.ANNOY_CONTROL_DIR||'/control';const state=JSON.parse(fs.readFileSync(dir+'/legacy.json','utf8'));output=state.enabled&&state.forwarded&&fs.readFileSync(dir+'/active','utf8').trim()===state.target?'active_draining':'handoff_recovery';}
   else if (action === 'prepare' || action === 'retire-ready') {
+    // The existing proxy reloads its route every 500 ms. Keep the old listener
+    // available through convergence, even when there are currently no users.
+    if(action==='retire-ready'&&Date.now()-fs.statSync((process.env.ANNOY_CONTROL_DIR||'/control')+'/active').mtimeMs<2000){
+      process.stdout.write('0\n',()=>process.exit(0));return;
+    }
     const token=fs.readFileSync((process.env.ANNOY_DATA_DIR||'/data')+'/admin.token','utf8').trim();
     const response=await fetch(`http://127.0.0.1:${port}/api/admin/host/handoff/${action==='prepare'?'prepare':'retire'}`,{
       method:'POST',headers:{'x-annoy-admin-token':token,'content-type':'application/json',connection:'close'},

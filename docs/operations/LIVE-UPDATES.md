@@ -51,3 +51,21 @@ Retirement was refused while sessions existed and acknowledged after both
 clients closed normally. External host-admin access remained forbidden and the
 private Inspector was closed afterward. This checks voice session continuity;
 it does not measure live microphone/audio quality.
+
+All managed maintenance entrypoints follow this handoff policy. The dashboard's
+instance restart, API service restart, update and configuration activation use
+the same verified updater. The host CLI validates fresh protocol-2 status and
+refuses busy, queued or occupied-gateway requests before sending a command.
+Starting a missing updater must not recreate the API or proxy. Direct traffic
+service stops and unsupported proxy replacement are blocked, never used as a
+fallback. Intentional full shutdown has a separate explicit confirmation and is
+not a maintenance step.
+
+Retirement waits at least two seconds after the active route changes so the
+existing proxy has time to reload its destination. A failed connection probe
+preserves the old gateway and reports uncertainty instead of reporting zero.
+
+Data restoration is offline only. All instance services must already be stopped;
+the dashboard does not stop them as part of restoration. A pre-restore offline
+backup and exclusive data lock protect the operation. Services remain offline
+until explicitly started after successful integrity verification.

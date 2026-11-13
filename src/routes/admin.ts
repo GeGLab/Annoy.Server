@@ -94,7 +94,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // Server updates ------------------------------------------------------------
 
-  const NO_UPDATER = "O atualizador não está rodando. No host, rode: git pull && docker compose up -d";
+  const NO_UPDATER = "O atualizador não está rodando. No host, inicie somente esse serviço: docker compose up -d --no-deps --no-recreate updater";
 
   app.get("/admin/updates", async (): Promise<UpdateStatus> => updateStatus());
 
