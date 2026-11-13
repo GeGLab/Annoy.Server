@@ -13,7 +13,7 @@ try {
   const dir=process.env.ANNOY_CONTROL_DIR||'/control';
   const state=JSON.parse(fs.readFileSync(dir+'/status.json','utf8'));
   const age=Date.now()-Date.parse(state.heartbeat);
-  if(state.protocol!==2||!Number.isFinite(age)||age< -5000||age>60_000||state.updating||state.phase==='handoff_recovery'||fs.existsSync(dir+'/legacy.json')||fs.existsSync(dir+'/request')||fs.existsSync(dir+'/restart'))throw Error();
+  if(![2,3].includes(state.protocol)||!Number.isFinite(age)||age< -5000||age>60_000||state.updating||['handoff_recovery','migrating_sessions'].includes(state.phase)||(state.protocol===2&&fs.existsSync(dir+'/legacy.json'))||fs.existsSync(dir+'/request')||fs.existsSync(dir+'/restart'))throw Error();
 }catch{
   process.stderr.write('Troca suave indisponível: há sessões preservadas, uma operação pendente ou estado não confirmado. Nenhum serviço foi reiniciado.\n');
   process.exitCode=1;

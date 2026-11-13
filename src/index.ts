@@ -129,6 +129,10 @@ process.on("SIGTERM", shutdown);
 
 await app.listen({ host: config.host, port: config.port });
 await startApiTunnel(config.port);
+if (config.updateControlDir && process.env.ANNOY_SLOT) {
+  const { createRequire } = await import('node:module');
+  await createRequire(import.meta.url)('../scripts/live/runtime.mjs').install();
+}
 // Voice media goes straight to the announced address; a container or loopback address reaches nobody.
 if (config.voice.backend === "builtin" && config.voice.announcedAddresses.length === 0 && voiceAddresses().every((a) => /^(127\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a))) {
   app.log.warn(

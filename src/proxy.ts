@@ -6,6 +6,7 @@
 // and WebSocket pass through untouched; this proxy itself stays running.
 import { readFileSync } from "node:fs";
 import { createServer, connect, type Socket } from "node:net";
+import { createRequire } from 'node:module';
 
 const port = Number(process.env.ANNOY_PROXY_PORT ?? 8787);
 const backendPort = Number(process.env.ANNOY_PROXY_BACKEND_PORT ?? 8787);
@@ -42,9 +43,10 @@ function open(client: Socket, order: string[]) {
   });
 }
 
-createServer({ pauseOnConnect: true, noDelay: true }, (client) => {
+const proxy = createServer({ pauseOnConnect: true, noDelay: true }, (client) => {
   client.on("error", () => client.destroy());
   open(client, [active, ...backends.filter((b) => b !== active)]);
-}).listen(port, () =>
-  console.log(`annoy proxy: :${port} → ${backends.join(" | ")} (active: ${active})`),
-);
+}).listen(port, () => {
+  console.log(`annoy proxy: :${port} → ${backends.join(" | ")} (active: ${active})`);
+  createRequire(import.meta.url)('../scripts/live/proxy.mjs').install();
+});

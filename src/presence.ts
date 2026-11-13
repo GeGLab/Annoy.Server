@@ -5,6 +5,7 @@ import { legacyPresence } from './handoff.ts';
 const connections = new Map<string, number>();
 const idle = new Map<string, Set<number>>();
 const manual = new Map<string, Presence>();
+export const migrationState = { connections, idle, manual };
 export function setManualPresence(userId: string, status: unknown): void {
   if (["online", "idle", "dnd", "offline"].includes(status as string)) manual.set(userId, status as Presence);
 }

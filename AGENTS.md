@@ -8,3 +8,4 @@
 - User requirement: every managed restart, update, configuration application or replacement must preserve active sessions through the verified handoff. Never fall back to stopping/recreating a live traffic container or proxy.
 - If a safe handoff cannot be confirmed, reject the maintenance request and preserve the running processes. Restore/migration requires an already offline instance and an exclusive data lock; never take users offline implicitly.
 - Keep intentional full shutdown separate from maintenance, with an explicit shutdown confirmation. Direct per-service traffic stops are not a maintenance API.
+- Waiting for users to leave is not session migration. For supported external-media deployments, move the established gateway transport and Cloudflare session ownership, then update both slots. Never declare completion while either slot remains on the old release.

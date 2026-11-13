@@ -88,6 +88,7 @@ interface Peer {
 
 const peersByConn = new Map<number, Peer>();
 const states = new Map<string, VoiceState>();
+export const migrationState = { peersByConn, states };
 let stopping = false;
 const closing = new Set<Promise<void>>();
 
