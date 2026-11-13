@@ -105,7 +105,13 @@ maybe_retire() {
   [ "$phase" = active_draining ] || return 0
   serving="$(active)" || return 0
   previous="$(cat "$control/legacy-slot" 2>/dev/null || true)"
-  case "$previous" in annoy|annoy-b) waiting_connections="$(connections "$previous" 2>/dev/null || printf 0)" ;; *) return 0 ;; esac
+  case "$previous" in
+    annoy|annoy-b)
+      if ! waiting_connections="$(connections "$previous" 2>/dev/null)"; then
+        last_error='"Não foi possível confirmar as conexões do gateway anterior. Ele foi preservado."'; return 0
+      fi ;;
+    *) return 0 ;;
+  esac
   if ! probe "$serving" health "$(printf '%s' "$current_version" | tr -d '\"')" >/dev/null 2>&1; then
     last_error='"A API nova não confirmou saúde. Os dois contêineres foram preservados; nenhuma sessão será encerrada automaticamente."'
     return 0

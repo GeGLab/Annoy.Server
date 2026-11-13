@@ -1,9 +1,9 @@
 // Front door for updates without downtime (the "proxy" Compose service). Two
 // server containers take turns: the updater starts the new version next to
 // the running one, writes its name to /control/active once it answers, and
-// stops the old one. New connections follow that file; when the old process
-// closes, clients reconnect at once (gateway code 4010) and land on the new
-// one. Plain TCP, so HTTP and WebSocket pass through untouched.
+// preserves the old gateway/media while it still owns sessions. Only an
+// acknowledged empty-gateway handoff permits retiring it. Plain TCP, so HTTP
+// and WebSocket pass through untouched; this proxy itself stays running.
 import { readFileSync } from "node:fs";
 import { createServer, connect, type Socket } from "node:net";
 
