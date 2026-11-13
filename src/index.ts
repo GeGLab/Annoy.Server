@@ -9,12 +9,14 @@ import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { config } from "./config.ts";
+import { whenServing } from "./slot.ts";
 import { db } from "./db.ts";
 import { HttpError } from "./errors.ts";
 import { closeForRestart, registerGateway } from "./gateway.ts";
 import { syncConfiguredAdmin } from "./instance.ts";
 import { startGlobal } from "./global.ts";
 import { adminRoutes } from "./routes/admin.ts";
+import { captureControlRoutes } from "./routes/host-dashboard.ts";
 import { ensureAdminToken } from "./admin-control.ts";
 import { ignoredStoredSettings } from "./instance.ts";
 import { authRoutes } from "./routes/auth.ts";
@@ -46,6 +48,7 @@ const app = Fastify({
 });
 
 // Bearer authentication and an explicit origin allowlist.
+captureControlRoutes(app);
 transportSecurity(app);
 resourceLimits(app);
 const allowedOrigins=new Set((process.env.ANNOY_ALLOWED_ORIGINS??"null,https://annoy.localhost,http://127.0.0.1:5173,http://localhost:5173").split(",").map(s=>s.trim()));
@@ -72,7 +75,7 @@ app.setErrorHandler((err, _req, reply) => {
 });
 
 syncConfiguredAdmin();
-startGlobal((msg) => app.log.info(msg));
+whenServing(() => startGlobal((msg) => app.log.info(msg)));
 await startVoice();
 const decrypted = await removeServerCrypto();
 if (decrypted) app.log.info(`Criptografia MLS removida: ${decrypted.tables} tabelas e ${decrypted.files} arquivos cifrados apagados; mensagens dos canais voltam a ser em texto.`);
@@ -84,7 +87,7 @@ ensureAdminToken();
 const ignored = ignoredStoredSettings();
 if (ignored.length) app.log.warn(`Configurações salvas pelo app ignoradas (${ignored.join(", ")}): agora valem só as flags do .env (ANNOY_REGISTRATION, ANNOY_MAX_UPLOAD_MB, ANNOY_MAX_SERVERS_PER_USER).`);
 registerGateway(app);
-startTempRooms();
+whenServing(startTempRooms);
 await app.register(
   async (api) => {
     authRoutes(api);

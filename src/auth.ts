@@ -5,6 +5,7 @@ import {sessionChanged} from "./session-events.ts";
 import { now, one, run, all } from "./db.ts";
 import { requireAccountMode } from "./account-policy.ts";
 import { config } from "./config.ts";
+import { hostActor } from "./host-context.ts";
 import { HttpError, unauthorized } from "./errors.ts";
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
@@ -96,6 +97,8 @@ export function bearerToken(req: FastifyRequest): string | null {
 
 /** Resolves the authenticated user id or throws 401. */
 export function requireUser(req: FastifyRequest): string {
+  const actor = hostActor.getStore();
+  if (actor) return actor;
   const token = bearerToken(req);
   const userId = token ? userIdForToken(token) : null;
   if (!userId) throw unauthorized();

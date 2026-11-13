@@ -22,6 +22,12 @@ interface UpdaterStatus {
   lastCheck: string | null;
   lastError: string | null;
   updating: boolean;
+  protocol?: number;
+  phase?: string;
+  currentVersion?: string | null;
+  targetVersion?: string | null;
+  waitingConnections?: number;
+  operationId?: string | null;
 }
 
 let latest: { version: string | null; at: number } = { version: null, at: 0 };
@@ -62,6 +68,7 @@ export async function updateStatus(): Promise<UpdateStatus> {
     lastCheck: status?.lastCheck ?? null,
     lastError: status?.lastError ?? null,
     updating: status?.updating ?? false,
+    ...(status && { deployment: { protocol: status.protocol ?? 1, phase: status.phase ?? 'idle', currentVersion: status.currentVersion ?? VERSION, targetVersion: status.targetVersion ?? null, waitingConnections: status.waitingConnections ?? 0, operationId: status.operationId ?? null } }),
   };
 }
 

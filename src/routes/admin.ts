@@ -10,7 +10,7 @@ import { z } from "zod";
 import { deleteAccount, disconnectEverywhere, ownedServerNames } from "../accounts.ts";
 import { config } from "../config.ts";
 import { all, now, one, run } from "../db.ts";
-import { conflict, notFound } from "../errors.ts";
+import { conflict, forbidden, notFound } from "../errors.ts";
 import { sendToAudience } from "../events.ts";
 import { inviteCode } from "../ids.ts";
 import { getSettings } from "../instance.ts";
@@ -20,13 +20,14 @@ import { usage as voiceUsage } from "../sfu-budget.ts";
 import { requestUpdate, updateStatus } from "../updates.ts";
 import { parse, type Params } from "../validate.ts";
 import { deleteServer } from "./servers.ts";
+import { hostDashboardRoutes } from "./host-dashboard.ts";
 
 const inviteBody = z.object({
   maxUses: z.number().int().min(1).max(10_000).nullable().optional(),
   expiresInHours: z.number().min(0.5).max(24 * 365).nullable().optional(),
 });
 const banBody = z.object({ reason: z.string().max(512).optional() });
-const listQuery = z.object({ q: z.string().max(64).optional(), limit: z.coerce.number().int().min(1).max(200).default(100) });
+const listQuery = z.object({ q: z.string().max(64).optional(), limit: z.coerce.number().int().min(1).max(200).default(100), offset: z.coerce.number().int().min(0).default(0) });
 
 async function dirSize(dir: string): Promise<number> {
   let total = 0;
@@ -151,10 +152,11 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
            FROM users u
           WHERE u.username NOT LIKE 'deleted.%' AND (u.username LIKE ? OR u.display_name LIKE ?)
           ORDER BY u.imported_from IS NOT NULL, u.created_at DESC
-          LIMIT ?`,
+          LIMIT ? OFFSET ?`,
         like,
         like,
         q.limit,
+        q.offset,
       ),
     );
   });
@@ -179,6 +181,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete<Params<"id">>("/admin/users/:id", async (req) => {
+    if (config.accountMode !== 'local') throw forbidden('Este painel não exclui contas Global. Suspenda o acesso nesta instância ou revogue as sessões locais.');
     const id = userIdOf(req.params.id);
     requireTarget(id);
     const owned = ownedServerNames(id);
@@ -211,4 +214,5 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     await deleteServer(req.params.id, "");
     return {};
   });
+  await app.register(hostDashboardRoutes);
 }
