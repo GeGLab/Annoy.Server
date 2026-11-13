@@ -69,6 +69,7 @@ export async function move(source, target, { relaySlot, directory = process.env.
     const relays = relaySlot ? await sessionCall(relaySlot, 'routes') : [];
     await new Promise(resolve => setTimeout(resolve, 40));
     sessions = await sessionCall(source, 'freeze');
+    await new Promise(resolve => setTimeout(resolve, 20));
     const finalRelays = relaySlot ? await sessionCall(relaySlot, 'routes', { probe: false }) : [];
     for (const session of sessions) {
       const relay = relays.find(row => row.nonce === session.nonce);
@@ -125,7 +126,14 @@ if (process.argv[1]?.endsWith('/move.mjs')) {
       if (['done', 'rolled_back'].includes(state.phase)) return { recovered: false };
       return move(state.source, state.target);
     }
-    return move(process.argv[2], process.argv[3], { relaySlot: process.argv[4] });
+    for (let attempt = 0; ; attempt++) {
+      try { return await move(process.argv[2], process.argv[3], { relaySlot: process.argv[4] }); }
+      catch (error) {
+        let state; try { state = JSON.parse(fs.readFileSync(`${process.env.ANNOY_CONTROL_DIR || '/control'}/migration.json`, 'utf8')); } catch {}
+        if (attempt >= 2 || state?.phase !== 'rolled_back') throw error;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
   };
   execute().then(result => console.log(JSON.stringify(result)), error => { console.error(error.message); process.exitCode = 1; });
 }
