@@ -61,7 +61,9 @@ docker compose up -d
 
 This pulls the published image `ghcr.io/geglab/annoy-server`. Pin a
 version with `ANNOY_VERSION=0.9.0`, or build from source with
-`docker compose up -d --build`. Without Compose:
+`docker compose up -d --build` for a cold installation. For a running Compose
+instance, use the maintenance commands below instead of recreating its services.
+Without Compose:
 
 ```bash
 docker run -d --name annoy --restart unless-stopped \
@@ -70,22 +72,27 @@ docker run -d --name annoy --restart unless-stopped \
   ghcr.io/geglab/annoy-server:latest
 ```
 
-**Updates:** `./scripts/annoy-admin.sh update apply` updates the server now;
-`ANNOY_AUTO_UPDATE=on` in `.env` turns automatic updates on. A small `proxy` owns port 8787. The `updater` starts the new version
-next to the running one (`annoy` and `annoy-b` take turns), points the proxy
-at it once it answers, then stops the old process. Since 0.8, disconnecting
-from the old process ends voice, video, screen shares and private calls.
-Clients reconnect for text and presence; joining voice again is an explicit
-user action. With the built-in backend, open `40000-40003` (UDP and TCP).
+**Updates:** `./scripts/annoy-admin.sh update apply` requests a verified smooth
+swap; `./scripts/annoy-admin.sh restart` applies saved `.env` settings through the
+same flow. `ANNOY_AUTO_UPDATE=on` enables automatic checks. The proxy keeps its
+existing sockets. The updater checks the candidate's health and exact version,
+activates its HTTP API, and keeps existing gateway/voice/media sessions on the
+previous process until they end naturally. Only an acknowledged empty gateway
+can be retired. Another swap is refused while both slots are occupied; there is
+no timeout that forces users out. Unsupported transitions fail without stopping
+the running server. See [live updates](docs/operations/LIVE-UPDATES.md). With the
+built-in backend, open `40000-40003` (UDP and TCP).
 
 The updater follows the newest image of `ANNOY_VERSION` (`latest` takes every
 release of the main line, which is alpha for now, e.g. `0.10.0-alpha.1`; `0.7`
 only 0.7.x stable fixes). `nightly` and `unstable` exist for test builds but
 are not launched yet (docs/releases/CHANNELS.md). With automatic updates on, it checks every 6
 hours (`ANNOY_UPDATE_INTERVAL_HOURS`). It needs the Docker socket to start and
-stop the server containers. Update with `annoy-admin update apply` rather than
-`docker compose pull` by hand, which restarts the server. Setups from before
-0.7.2 switch over once with `git pull && docker compose up -d --remove-orphans`.
+retire unused server containers. Use the CLI or dashboard for maintenance;
+`compose down`, `compose restart` and recreating traffic services cannot preserve
+existing sockets. Install maintenance scripts only from a published, validated
+release. Older layouts without compatible handoff need a separately planned
+offline migration; the updater must not force that migration while users are connected.
 
 Replace `203.0.113.10` with the address clients use to reach the machine: your
 LAN IP for home use, or the public IP on the internet. Open these ports:
@@ -96,20 +103,19 @@ LAN IP for home use, or the public IP on the internet. Open these ports:
 | `40000-40003` | **UDP and TCP** | Voice media (two slots, for updates without downtime) |
 
 **Upgrading older installations:** use `ANNOY_*` environment variables in
-`.env`. Point the remote at the current repository and remove the old container:
-
-```bash
-git remote set-url origin https://github.com/GeGLab/annoy-server.git
-git pull && docker compose pull && docker compose up -d --remove-orphans
-```
+`.env` and the current repository remote. Updating repository files does not
+apply the running server's configuration. Compatible installations use
+`./scripts/annoy-admin.sh restart` or `update apply`; an incompatible legacy
+layout requires the services to be offline before migration.
 
 Since 0.10 the data volume is `annoy-data` (it was `distopic-data`) and the
 database file is `annoy.db` (the server renames `distopic.db` on start). Copy the
-old volume before the first start with the new compose file; `<project>` is the
-compose project name (`docker volume ls`):
+old volume only when the services are already offline, before the first start
+with the new compose file. This is an offline migration, not a live update.
+`<project>` is the compose project name (`docker volume ls`):
 
 ```bash
-docker compose down
+# Prerequisite: all instance services are already stopped.
 docker volume create <project>_annoy-data
 docker run --rm -v <project>_distopic-data:/from:ro -v <project>_annoy-data:/to alpine cp -a /from/. /to/
 docker compose up -d
@@ -164,8 +170,9 @@ loopback development permits HTTP. Configure trusted proxy addresses explicitly
 and connect to the final `https://your.domain` origin: credential requests reject
 redirects. DTLS-SRTP protects transport; voice through an SFU is not end-to-end encrypted.
 
-**Backups:** copy `ANNOY_DATA_DIR`. It holds `annoy.db` (SQLite, WAL mode) and
-`uploads/`.
+**Backups:** use the dashboard online snapshot while the server is running.
+Copy `ANNOY_DATA_DIR` directly only while the instance is already offline; it
+holds `annoy.db` (SQLite, WAL mode) and `uploads/`.
 
 ## annoy-server administration
 
@@ -174,7 +181,8 @@ app. Inside the app, "servidor" means a community on this annoy-server, and
 its settings live in that server's own settings.
 
 - **Settings** are the flags in `.env` (table above): sign-up mode, limits,
-  admin account, automatic updates. Change them and run `docker compose up -d`.
+  admin account, automatic updates. Save changes and request a smooth swap with
+  `./scripts/annoy-admin.sh restart` or Apply configuration in the host dashboard.
   Values chosen in the app panel of 0.9 and earlier are ignored (the log says so).
 - **Actions** run with `annoy-admin` on the host, in the folder with
   `docker-compose.yml` (outside Docker: `npm run admin -- <command>`):
