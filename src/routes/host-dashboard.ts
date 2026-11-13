@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db, all, one, run } from "../db.ts";
 import { badRequest, forbidden, notFound } from "../errors.ts";
 import { config } from "../config.ts";
+import { legacyConnections, legacyState, prepareLegacyRetirement } from '../handoff.ts';
 import { getChannel, getServer, getUser } from "../repo.ts";
 import { ADMIN_TOKEN_HEADER } from "../admin-control.ts";
 import { deleteAccount, disconnectEverywhere } from "../accounts.ts";
@@ -35,7 +36,14 @@ const sensitive = /password|token|secret|private|credential|authorization|recove
 
 /** Registered underneath adminRoutes: every route inherits requireHostAdmin. */
 export async function hostDashboardRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/admin/host/capabilities", async () => ({ version: 1, accountMode: config.accountMode, scope: 'instance', routes: catalogue }));
+  app.get("/admin/host/capabilities", async () => ({ version: 1, accountMode: config.accountMode, scope: 'instance', legacyGateway: legacyState(), routes: catalogue }));
+  app.post('/admin/host/handoff/prepare',async req=>{
+    const body=parse(z.object({slot:z.enum(['annoy','annoy-b']),target:z.enum(['annoy','annoy-b'])}).strict(),req.body);
+    if(body.slot!==process.env.ANNOY_SLOT)throw badRequest('Contêiner de origem incorreto');
+    const filename=new URL('../../scripts/handoff/legacy.mjs',import.meta.url).href;
+    return(await import(filename)).install(body);
+  });
+  app.post('/admin/host/handoff/retire',async()=>({ready:await prepareLegacyRetirement()}));
 
   app.post("/admin/host/request", { bodyLimit: 700 * 1024 * 1024 }, async req => {
     const body = parse(dispatch, req.body);
@@ -76,7 +84,7 @@ export async function hostDashboardRoutes(app: FastifyInstance): Promise<void> {
     const user = getUser(req.params.id);
     if (!user) throw notFound("Usuário");
     const sessions = all<{ created_at: string; expires_at: string; account_mode: string }>("SELECT created_at, expires_at, account_mode FROM sessions WHERE user_id = ? ORDER BY created_at DESC", user.id);
-    return { user, sessions, connections: connectionsOf(user.id).size, memberships: all("SELECT m.server_id, s.name, m.nick, m.joined_at FROM members m JOIN servers s ON s.id=m.server_id WHERE m.user_id=?", user.id) };
+    return { user, sessions, connections: connectionsOf(user.id).size + legacyConnections(user.id), memberships: all("SELECT m.server_id, s.name, m.nick, m.joined_at FROM members m JOIN servers s ON s.id=m.server_id WHERE m.user_id=?", user.id) };
   });
 
   app.patch<Params<"id">>("/admin/host/users/:id", async req => {

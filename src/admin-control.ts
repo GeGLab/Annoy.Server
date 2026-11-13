@@ -10,6 +10,7 @@ import { join } from "node:path";
 import type { FastifyRequest } from "fastify";
 import { config } from "./config.ts";
 import { forbidden } from "./errors.ts";
+import { handoffContext } from './handoff-context.ts';
 
 export const ADMIN_TOKEN_HEADER = "x-annoy-admin-token";
 export const adminTokenPath = () => join(config.dataDir, "admin.token");
@@ -27,7 +28,7 @@ const PROXY_HEADERS = ["x-forwarded-for", "x-real-ip", "forwarded", "cf-connecti
 
 export function requireHostAdmin(req: FastifyRequest): void {
   // The socket address, not req.ip: a trusted proxy must never stand in for loopback.
-  const direct = LOOPBACK.has(req.socket.remoteAddress ?? "") && !PROXY_HEADERS.some((h) => req.headers[h] !== undefined);
+  const direct = LOOPBACK.has(handoffContext(req)?.remote ?? req.socket.remoteAddress ?? "") && !PROXY_HEADERS.some((h) => req.headers[h] !== undefined);
   const given = req.headers[ADMIN_TOKEN_HEADER];
   let expected = "";
   try { expected = readFileSync(adminTokenPath(), "utf8").trim(); } catch { /* no token yet */ }

@@ -7,12 +7,14 @@ import { getUser } from "./repo.ts";
 import { discardBlobs } from "./uploads.ts";
 import { discardAvatar } from "./avatars.ts";
 import { clearUserActivity } from "./activity.ts";
+import { usesLegacyGateway, legacyCommand } from './handoff.ts';
 
 /** Prefixes that registration refuses, so system-made usernames can't be claimed. */
 export const RESERVED_USERNAME = /^(dc|deleted)\./i;
 
 /** Ends every live session of the user (gateway sockets close; voice is released on close). */
 export function disconnectEverywhere(userId: string, reason: string): void {
+  if(usesLegacyGateway())void legacyCommand('revoke-user',{userId,reason}).catch(()=>{});
   clearUserActivity(userId);
   deleteSessionsOf(userId);
   for (const conn of [...connectionsOf(userId)]) {

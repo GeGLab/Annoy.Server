@@ -9,6 +9,7 @@ import { secretId } from "./ids.ts";
 import { requireChannel } from "./perms.ts";
 import { getChannel } from "./repo.ts";
 import { parse, type Params } from "./validate.ts";
+import { isLegacySource } from './handoff.ts';
 
 // Theater and song rooms share one playback per channel: a queue and where the current
 // item is. The server only keeps time; every viewer plays the media on their own device.
@@ -68,6 +69,7 @@ function announce(channelId: string): void {
 }
 
 const sweep = setInterval(() => {
+  if(isLegacySource())return;
   const now = Date.now();
   for (const [channelId, room] of listening) {
     let changed = false;

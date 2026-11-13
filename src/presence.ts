@@ -1,4 +1,5 @@
 import type { Presence } from "@annoy/protocol";
+import { legacyPresence } from './handoff.ts';
 
 // Owned by the gateway: counts live connections per user.
 const connections = new Map<string, number>();
@@ -37,4 +38,4 @@ export function removeConnection(userId: string, connectionId?: number): boolean
   return false;
 }
 
-export const presenceOf = (userId: string): Presence => !connections.has(userId) ? "offline" : manual.get(userId) && manual.get(userId) !== "online" ? manual.get(userId)! : (idle.get(userId)?.size ?? 0) >= (connections.get(userId) ?? 1) ? "idle" : "online";
+export const presenceOf = (userId: string): Presence => !connections.has(userId) ? legacyPresence(userId) ?? "offline" : manual.get(userId) && manual.get(userId) !== "online" ? manual.get(userId)! : (idle.get(userId)?.size ?? 0) >= (connections.get(userId) ?? 1) ? "idle" : "online";
