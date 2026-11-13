@@ -69,9 +69,12 @@ export async function move(source, target, { relaySlot, directory = process.env.
     const relays = relaySlot ? await sessionCall(relaySlot, 'routes') : [];
     await new Promise(resolve => setTimeout(resolve, 40));
     sessions = await sessionCall(source, 'freeze');
+    const finalRelays = relaySlot ? await sessionCall(relaySlot, 'routes', { probe: false }) : [];
     for (const session of sessions) {
       const relay = relays.find(row => row.nonce === session.nonce);
-      await proxyCall('stage', { target, auth, transaction, session, linkId: session.linkId, route: relay?.route || session.route });
+      const original = relay?.route;
+      const finalRoute = original && finalRelays.find(row => row.route.port === original.port && row.route.backendPort === original.backendPort && row.route.host === original.host)?.route;
+      await proxyCall('stage', { target, auth, transaction, session, linkId: session.linkId, route: finalRoute || session.route });
     }
     save('prepared');
     await proxyCall('switch');

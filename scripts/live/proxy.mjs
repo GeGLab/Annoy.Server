@@ -67,6 +67,10 @@ export function install() {
       if (!frozen) throw Error('Proxy must be frozen first');
       const p = pairs.get(data.linkId) || [...pairs.values()].find(p => p.upstream.localPort === data.route.port && p.upstream.remotePort === data.route.backendPort && p.upstream.remoteAddress === data.route.host);
       if (!p || p.client.destroyed || p.upstream.destroyed || p.staged) throw Error('Original client connection unavailable');
+      // All bytes sent to the old backend must have reached its parser, and
+      // all complete outgoing frames must have reached this stable frontend.
+      // A partial frame or bytes still in flight require rollback, never loss.
+      if (p.upstream.writableLength || p.client.writableLength || p.upstream.bytesWritten !== data.route.bytesRead || p.upstream.bytesRead !== data.route.bytesWritten) throw Error('Original transport is still draining bytes; retry safely');
       const staged = await connect(`${directory}/gateway-${data.target}.sock`);
       try {
         staged.send({ auth: data.auth, transaction: data.transaction, session: { ...data.session, linkId: p.id } });

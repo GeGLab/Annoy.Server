@@ -53,7 +53,11 @@ export async function install({ compatibility = false } = {}) {
     return originalSend.call(this, event);
   };
   for (const conn of g.live) watch(conn);
-  const route = socket => ({ port: socket.remotePort, backendPort: socket.localPort, host: socket.localAddress });
+  const route = socket => ({ port: socket.remotePort, backendPort: socket.localPort, host: socket.localAddress, bytesRead: socket.bytesRead, bytesWritten: socket.bytesWritten });
+  function boundary(ws) {
+    const socket = ws._socket, receiver = ws._receiver;
+    return ws.readyState === 1 && !Object.keys(ws._extensions).length && receiver._state === 0 && !receiver._bufferedBytes && !receiver._fragmented && !receiver.writableLength && !socket.readableLength && !socket.writableLength && !ws._sender._bufferedBytes;
+  }
   const legacy = () => globalThis[Symbol.for('annoy.legacy.handoff')];
   function validBackend() {
     if ((process.env.ANNOY_ACCOUNT_MODE || 'global') !== 'global') throw Error('Local social/call state requires its own migration protocol');
@@ -98,6 +102,8 @@ export async function install({ compatibility = false } = {}) {
         const symbol = Object.getOwnPropertySymbols(socket).find(k => k.description === 'websocket');
         const front = symbol && socket[symbol];
         if (!front || front.readyState !== 1 || [...g.live].some(conn => conn.socket === front)) continue;
+        if (!boundary(front)) throw Error('Legacy frontend is between message boundaries; retry safely');
+        if (data.probe === false) { routes.push({ route: route(socket) }); continue; }
         const listener = front.listeners('message')[0];
         if (!listener) throw Error('Legacy relay cannot be identified');
         const { upstream } = await scopes(listener, ['upstream']);
@@ -118,7 +124,7 @@ export async function install({ compatibility = false } = {}) {
           const ws = conn.socket, socket = ws._socket, receiver = ws._receiver;
           socket.pause();
           frozen.set(conn.id, { conn, events: [] });
-          if (ws.readyState !== 1 || Object.keys(ws._extensions).length || receiver._state !== 0 || receiver._bufferedBytes || receiver._fragmented || socket.readableLength || socket.writableLength || ws._sender._bufferedBytes) throw Error('WebSocket is between message boundaries; retry safely');
+          if (!boundary(ws)) throw Error('WebSocket is between message boundaries; retry safely');
           const sessionHash = g.sessionHashes.get(conn);
           if (!sessionHash || auth.userIdForSessionHash(sessionHash) !== conn.userId) throw Error('Session is no longer authorized');
           const peer = v.peersByConn.get(conn.id);
