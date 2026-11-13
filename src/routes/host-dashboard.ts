@@ -4,7 +4,7 @@ import { db, all, one, run } from "../db.ts";
 import { badRequest, forbidden, notFound } from "../errors.ts";
 import { config } from "../config.ts";
 import { getChannel, getServer, getUser } from "../repo.ts";
-import { hostActor } from "../host-context.ts";
+import { ADMIN_TOKEN_HEADER } from "../admin-control.ts";
 import { deleteAccount, disconnectEverywhere } from "../accounts.ts";
 import { connectionsOf, sendToAudience } from "../events.ts";
 import { parse, type Params } from "../validate.ts";
@@ -61,13 +61,13 @@ export async function hostDashboardRoutes(app: FastifyInstance): Promise<void> {
     actorId ??= one<{ id: string }>("SELECT id FROM users WHERE imported_from IS NULL AND username NOT LIKE 'deleted.%' ORDER BY is_admin DESC, created_at LIMIT 1")?.id;
     if (!actorId || !getUser(actorId)) throw badRequest("Selecione uma conta existente como proprietário");
     const actor = actorId;
-    const response = await hostActor.run(actor, () => app.inject({
+    const response = await app.inject({
       method: body.method as HTTPMethods,
       url: `/api${body.path}`,
       remoteAddress: "127.0.0.1",
-      headers: body.bodyBase64 ? { "content-type": body.contentType ?? "application/octet-stream" } : body.body === undefined ? {} : { "content-type": "application/json" },
+      headers: { [ADMIN_TOKEN_HEADER]: String(req.headers[ADMIN_TOKEN_HEADER]), 'x-annoy-host-actor': actor, ...(body.bodyBase64 ? { "content-type": body.contentType ?? "application/octet-stream" } : body.body === undefined ? {} : { "content-type": "application/json" }) },
       ...(body.bodyBase64 ? { payload: Buffer.from(body.bodyBase64, "base64") } : body.body === undefined ? {} : { payload: JSON.stringify(body.body) }),
-    }));
+    });
     const contentType = String(response.headers["content-type"] ?? "application/json");
     return { status: response.statusCode, contentType, ...(contentType.includes("json") ? { data: response.json() } : { bodyBase64: response.rawPayload.toString("base64") }) };
   });
