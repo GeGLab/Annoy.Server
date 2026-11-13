@@ -13,7 +13,7 @@ export async function install({ compatibility = false } = {}) {
   const base = process.cwd(), require = createRequire(path.join(base, 'package.json'));
   const load = name => import(pathToFileURL(path.join(base, `src/${name}.ts`)).href);
   const manifest = require('./package.json');
-  if (compatibility && !['0.12.0-alpha.2', '0.12.0-alpha.6'].includes(manifest.version)) throw Error('Unverified compatibility source');
+  if (compatibility && !['0.12.0-alpha.2', '0.12.0-alpha.6', '0.12.0-alpha.7', '0.12.0-alpha.8'].includes(manifest.version)) throw Error('Unverified compatibility source');
   const [{ config }, gateway, events, presence, cloudflare, auth, repo] = await Promise.all(['config', 'gateway', 'events', 'presence', 'voice-cloudflare', 'auth', 'repo'].map(load));
   const slot = process.env.ANNOY_SLOT, directory = process.env.ANNOY_CONTROL_DIR;
   if (!directory || !['annoy', 'annoy-b'].includes(slot)) throw Error('Managed slot required');

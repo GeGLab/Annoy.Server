@@ -17,8 +17,14 @@ live_install() {
   if [ "$live_native" = 1 ]; then return 0; fi
   live_digest="$(docker inspect --format '{{.Image}}' "$live_id")" || return 1
   # Compatibility is limited to the exact images validated in isolation.
+  # alpha.7/alpha.8 ship byte-identical gateway, presence, voice, auth, repo,
+  # events and config sources to alpha.6, and a proxy.ts that only differs
+  # from alpha.2 in its header comment.
   case "$live_mode:$live_digest" in
-    server:sha256:d6b4fe304cba5cebfa26ea298d75f69bf848fdc4785f14e7e633d75638365346|server:sha256:f7a2dc2bf1fa530573e8a6e9a0ebb7cab8f273b1c64ceb8dd45d92a6f9990a62|proxy:sha256:d6b4fe304cba5cebfa26ea298d75f69bf848fdc4785f14e7e633d75638365346) ;;
+    server:sha256:d6b4fe304cba5cebfa26ea298d75f69bf848fdc4785f14e7e633d75638365346|server:sha256:f7a2dc2bf1fa530573e8a6e9a0ebb7cab8f273b1c64ceb8dd45d92a6f9990a62) ;;
+    server:sha256:4ec8c44312ebe434b5097b254a5e2999328c17c5c76fa273c9763c1951024712|server:sha256:a3fe6942a582dc9f1a2f6e6de7077fd906af64960733867acf9450470d3e919e) ;;
+    proxy:sha256:d6b4fe304cba5cebfa26ea298d75f69bf848fdc4785f14e7e633d75638365346|proxy:sha256:f7a2dc2bf1fa530573e8a6e9a0ebb7cab8f273b1c64ceb8dd45d92a6f9990a62) ;;
+    proxy:sha256:4ec8c44312ebe434b5097b254a5e2999328c17c5c76fa273c9763c1951024712|proxy:sha256:a3fe6942a582dc9f1a2f6e6de7077fd906af64960733867acf9450470d3e919e) ;;
     *) echo 'Unverified compatibility image; serving processes preserved' >&2; return 1 ;;
   esac
   docker exec "$live_id" mkdir -p "$live_bundle" || return 1
@@ -66,7 +72,9 @@ live_move() {
 live_recreate_empty() {
   recreate_slot="$1"
   # A stopped standby has no process to query. A running one must prove empty.
-  if running "$recreate_slot"; then live_empty "$recreate_slot" || return 1; fi
+  # A running pre-live standby must get its session controller before it can
+  # answer that probe; native images return immediately from live_install.
+  if running "$recreate_slot"; then live_install "$recreate_slot" && live_empty "$recreate_slot" || return 1; fi
   phase=starting; write_status
   compose up --detach --no-deps --no-build --force-recreate "$recreate_slot" || return 1
   phase=checking; write_status
