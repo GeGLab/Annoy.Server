@@ -141,7 +141,7 @@ export async function install({ slot, target, attempt: suppliedAttempt }) {
     if (forwarded) return;
     // Check the new API through the private path before touching old listeners.
     const response = await new Promise((resolve, reject) => {
-      const request = http.get({ socketPath: targetPath, path: '/api/info', headers: { host: 'localhost' }, timeout: 3000 }, r => { r.resume(); r.on('end', () => resolve(r.statusCode)); });
+      const request = http.get({ socketPath: targetPath, path: '/api/info', headers: { host: 'localhost' }, timeout: 3000 }, r => { r.on('error', reject); r.on('end', () => resolve(r.statusCode)); r.resume(); });
       request.on('timeout', () => request.destroy(Error('timeout'))); request.on('error', reject);
     });
     if (response !== 200) throw Error('New private API is not healthy');
