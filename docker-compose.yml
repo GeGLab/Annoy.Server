@@ -1,8 +1,6 @@
-# Updates without downtime: "proxy" owns port 8787 and forwards to whichever of
-# "annoy" and "annoy-b" is active. The updater starts the new version in the
-# other one, switches the proxy once it answers and stops the old one; clients
-# Existing connections are never forcibly closed by an update. Promotion waits
-# for the active slot to be idle; the old slot is drained before it is stopped.
+# Blue/green API activation preserves all existing gateway/media sessions.
+# The old slot is retired only after its gateway, voice and TCP usage reaches
+# zero and the new slot acknowledges sole ownership of future gateways.
 x-annoy: &annoy
   # Published for every release; `docker compose up --build` builds from source instead.
   image: ghcr.io/geglab/annoy-server:${ANNOY_VERSION:-latest}
@@ -41,7 +39,7 @@ services:
       - annoy-control:/control
 
   # The second slot, started only by the updater during an update. Its voice
-  # ports differ so both can run for those few seconds.
+  # ports differ so both can coexist while the old gateway still has sessions.
   annoy-b:
     <<: *annoy
     profiles: [standby]

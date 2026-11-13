@@ -13,6 +13,7 @@ import { insertChannel } from "./routes/servers.ts";
 import { discardBlobs } from "./uploads.ts";
 import { parse, type Params } from "./validate.ts";
 import { voiceStatesFor } from "./voice-backend.ts";
+import { usesLegacyGateway } from './handoff.ts';
 
 /** Deletes a channel with everything hanging off it: attachment files, playback and code workspace. */
 export async function removeChannel(channel: Channel): Promise<void> {
@@ -49,6 +50,7 @@ function checkServer(serverId: string): void {
 
 /** Marks rooms someone is in as used and removes used rooms that emptied. */
 export function roomsOccupied(serverId: string, occupied: ReadonlySet<string>): void {
+  if(usesLegacyGateway())return;
   for (const room of all<{ id: string; temp_used: number }>("SELECT id, temp_used FROM channels WHERE server_id = ? AND temporary = 1", serverId)) {
     if (occupied.has(room.id)) {
       if (!room.temp_used) {
@@ -66,10 +68,10 @@ export function roomsOccupied(serverId: string, occupied: ReadonlySet<string>): 
 /** Nobody is in voice right after a restart: rooms that were used go now, the rest get their timer back. */
 export function startTempRooms(): void {
   for (const room of all<{ id: string; server_id: string; temp_used: number; created_at: string }>("SELECT id, server_id, temp_used, created_at FROM channels WHERE temporary = 1")) {
-    if (room.temp_used) {
+    if (room.temp_used && !usesLegacyGateway() && !voiceStatesFor(room.server_id).some(v=>v.channelId===room.id)) {
       const channel = getChannel(room.id);
       if (channel) void removeChannel(channel);
-    } else scheduleIdle(room.id, Date.parse(room.created_at));
+    } else if(!room.temp_used) scheduleIdle(room.id, Date.parse(room.created_at));
   }
   onVoiceChanged(checkServer);
 }

@@ -2,6 +2,7 @@ import { has, Permission, type Channel, type GatewayEvent } from "@annoy/protoco
 import type { WebSocket } from "ws";
 import { channelPermissions } from "./perms.ts";
 import { audienceOf, dmRecipientIds, memberIds } from "./repo.ts";
+import { publishLegacyEvent, usesLegacyGateway, onLegacyVoiceChanged } from './handoff.ts';
 
 /** One authenticated gateway connection. Voice sessions hang off it. */
 export class Connection {
@@ -59,6 +60,7 @@ export function connectionsOf(userId: string): ReadonlySet<Connection> {
 }
 
 export function sendToUser(userId: string, event: GatewayEvent): void {
+  publishLegacyEvent(userId,event);
   for (const conn of byUser.get(userId) ?? []) conn.send(event);
 }
 
@@ -74,7 +76,7 @@ export function sendToServer(serverId: string, event: GatewayEvent): void {
 export function sendToChannel(channel: Channel, event: GatewayEvent, exceptUserId?: string): void {
   const candidates = channel.type === "dm" ? dmRecipientIds(channel.id) : channel.serverId ? memberIds(channel.serverId) : [];
   for (const userId of candidates) {
-    if (userId === exceptUserId || !byUser.has(userId)) continue;
+    if (userId === exceptUserId || (!usesLegacyGateway() && !byUser.has(userId))) continue;
     if (has(channelPermissions(channel, userId), Permission.VIEW_CHANNEL)) sendToUser(userId, event);
   }
 }
@@ -104,6 +106,7 @@ export function onVoiceChanged(hook: VoiceHook): void {
 export function voiceChanged(serverId: string): void {
   for (const hook of voiceHooks) hook(serverId);
 }
+onLegacyVoiceChanged(voiceChanged);
 
 /** Single entry point for "structure, roles or membership changed". */
 export function serverChanged(serverId: string): void {

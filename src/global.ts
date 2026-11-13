@@ -1,3 +1,4 @@
+import { isLegacySource } from './handoff.ts';
 // Annoy Global, from a self-hosted server's side (see Annoy-api-global's
 // DESIGN.md). The server asks Global for an ID once, keeps the blind-token
 // public keys fresh, and checks global logins offline: Global is never told
@@ -82,6 +83,7 @@ export async function ensureTokenKey(kid: string): Promise<void> {
 export function startGlobal(log: (msg: string) => void): void {
   if (!config.global.enabled) return log("Contas Annoy: serviço desligado (ANNOY_ACCOUNT_MODE=local)");
   const tick = async () => {
+    if(isLegacySource())return;
     try {
       await register();
       await refresh();

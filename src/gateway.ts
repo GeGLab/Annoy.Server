@@ -1,6 +1,7 @@
 import {observeSessions} from "./session-events.ts";
 import { compareVersions, isVersion } from "./version.ts";
 import {config} from "./config.ts";
+import { usesLegacyGateway, proxyLegacyGateway, gatewayRetirement } from './handoff.ts';
 import { clearCalls, handleCall, endAllCalls } from "./calls.ts";
 import { Permission, type ClientOp } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
@@ -52,7 +53,10 @@ export function registerGateway(app: FastifyInstance): void {
   }, 30_000);
   app.addHook("onClose", async () => clearInterval(sweep));
 
-  app.get("/gateway", { websocket: true }, (socket,req) => {
+  app.get("/gateway", { websocket: true }, async (socket,req) => {
+    const retirement=gatewayRetirement();
+    if(retirement){socket.pause();await retirement;if(socket.readyState!==socket.OPEN)return;}
+    if (usesLegacyGateway()){proxyLegacyGateway(socket);if(retirement)socket.resume();return;}
     if (restarting) return void socket.close(4010, "server stopping");
     const conn = new Connection(socket);
     live.add(conn);
@@ -93,6 +97,7 @@ export function registerGateway(app: FastifyInstance): void {
         }
       }
     });
+    if(retirement)socket.resume();
   });
 }
 

@@ -14,6 +14,10 @@ function connections() {
       count++;
     }
   }
+  try {
+    const legacy=JSON.parse(fs.readFileSync((process.env.ANNOY_CONTROL_DIR||'/control')+'/legacy.json','utf8'));
+    if(legacy.enabled&&(!process.env.ANNOY_SLOT||process.env.ANNOY_SLOT===legacy.slot))count=Math.max(count,legacy.gatewayConnections||0);
+  }catch{}
   return count;
 }
 function compare(a, b) {
@@ -34,6 +38,16 @@ function compare(a, b) {
 (async () => {
   let output;
   if (action === 'connections') output = connections();
+  else if(action==='handoff-phase'){const dir=process.env.ANNOY_CONTROL_DIR||'/control';const state=JSON.parse(fs.readFileSync(dir+'/legacy.json','utf8'));output=state.enabled&&state.forwarded&&fs.readFileSync(dir+'/active','utf8').trim()===state.target?'active_draining':'handoff_recovery';}
+  else if (action === 'prepare' || action === 'retire-ready') {
+    const token=fs.readFileSync((process.env.ANNOY_DATA_DIR||'/data')+'/admin.token','utf8').trim();
+    const response=await fetch(`http://127.0.0.1:${port}/api/admin/host/handoff/${action==='prepare'?'prepare':'retire'}`,{
+      method:'POST',headers:{'x-annoy-admin-token':token,'content-type':'application/json',connection:'close'},
+      body:JSON.stringify(action==='prepare'?{slot:args[0],target:args[1]}:{}),signal:AbortSignal.timeout(35_000)
+    });
+    if(!response.ok)throw Error('Handoff unavailable');
+    const data=await response.json();output=action==='prepare'?'ready':data.ready?'1':'0';
+  }
   else if (action === 'compare') output = compare(args[0], args[1]);
   else if (action === 'health') {
     const response = await fetch(`http://127.0.0.1:${port}/api/info`, { signal: AbortSignal.timeout(3000), headers: { connection: 'close' } });

@@ -10,6 +10,7 @@ import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { config } from "./config.ts";
 import { whenServing } from "./slot.ts";
+import { startApiTunnel } from './handoff.ts';
 import { db } from "./db.ts";
 import { HttpError } from "./errors.ts";
 import { closeForRestart, registerGateway } from "./gateway.ts";
@@ -127,6 +128,7 @@ process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 await app.listen({ host: config.host, port: config.port });
+await startApiTunnel(config.port);
 // Voice media goes straight to the announced address; a container or loopback address reaches nobody.
 if (config.voice.backend === "builtin" && config.voice.announcedAddresses.length === 0 && voiceAddresses().every((a) => /^(127\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a))) {
   app.log.warn(
