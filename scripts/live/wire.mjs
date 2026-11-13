@@ -48,11 +48,11 @@ export async function connect(path) {
   return channel(socket);
 }
 
-export async function call(path, auth, method, data = {}) {
+export async function call(path, auth, method, data = {}, timeout = 30_000) {
   const peer = await connect(path);
   try {
     peer.send({ id: randomUUID(), auth, method, data });
-    const response = await peer.read(30_000);
+    const response = await peer.read(timeout);
     if (!response.ok) throw Error(response.error || 'Private operation failed');
     return response.result;
   } finally { peer.socket.destroy(); }

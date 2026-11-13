@@ -197,6 +197,7 @@ export async function install({ compatibility = false } = {}) {
         if (session.peer && (!session.voiceState || session.peer.userId !== session.userId || session.peer.channelId !== session.voiceState.channelId)) throw Error('Invalid voice ownership');
         if (transfers.has(message.transaction)) throw Error('Transaction already activated');
         const ws = new WebSocket(null, undefined, { autoPong: true });
+        ws.on('error', () => {});
         // No HTTP upgrade or READY goes to the client: its original WebSocket
         // and its existing Cloudflare RTCPeerConnection remain established.
         peer.send({ ok: true });

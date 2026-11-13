@@ -64,6 +64,13 @@ live_recreate_empty() {
 rolling_live() {
   old="$(active)" || return 1
   live_bundle_setup && live_install proxy proxy || return 1
+  if [ -e "$control/migration.json" ] && ! grep -Eq '"phase":"(done|rolled_back)"' "$control/migration.json"; then
+    docker run --rm --network none --user 1000 \
+      --mount "type=volume,src=$control_volume,dst=/control" \
+      --mount "type=volume,src=$data_volume,dst=/data,readonly" \
+      --entrypoint node "$image" /app/scripts/live/move.mjs recover || return 1
+    old="$(active)" || return 1
+  fi
   # Finish the actual gateway move first, rather than waiting for users to go
   # away. This also bootstraps the already deployed API/gateway split.
   if [ -e "$control/legacy.json" ]; then

@@ -12,9 +12,9 @@ export async function move(source, target, { relaySlot, directory = process.env.
   if (recovering && (existing.source !== source || existing.target !== target)) throw Error('Recover the recorded source and target before another transfer');
   const transaction = recovering ? existing.transaction : randomUUID(), nonce = randomUUID(), filename = `${directory}/rollout-${transaction}.sock`;
   let peer, server, frozen = false, activated = false, sessions;
-  const sessionCall = (slot, method, data = {}) => call(`${directory}/sessions-${slot}.sock`, auth, method, data);
+  const sessionCall = (slot, method, data = {}) => call(`${directory}/sessions-${slot}.sock`, auth, method, data, frozen ? 1200 : 30_000);
   const proxyCall = async (method, data = {}) => {
-    peer.send({ method, data }); const response = await peer.read(8000);
+    peer.send({ method, data }); const response = await peer.read(frozen ? 1200 : 8000);
     if (!response.ok) throw Error(response.error || 'Proxy operation failed');
     return response.result;
   };
@@ -41,6 +41,7 @@ export async function move(source, target, { relaySlot, directory = process.env.
         }).catch(() => socket.destroy());
       });
       server.on('error', reject);
+      if (recovering) { try { fs.unlinkSync(filename); } catch {} }
       server.listen(filename, () => {
         fs.chmodSync(filename, 0o600);
         fs.writeFileSync(request + '.tmp', JSON.stringify({ id: transaction, nonce, created: Date.now() }), { mode: 0o600 });
@@ -56,7 +57,7 @@ export async function move(source, target, { relaySlot, directory = process.env.
         await sessionCall(target, 'abort', { transaction });
         await sessionCall(source, 'resume');
         await proxyCall('rollback'); save('rolled_back');
-        throw Error('Uncommitted transfer safely recovered; retry the requested operation');
+        return { recovered: true, rolledBack: true, source, target };
       }
       imported = { connections: existing.connections, voices: existing.voices };
       frozen = true;
@@ -113,5 +114,15 @@ export async function move(source, target, { relaySlot, directory = process.env.
 }
 
 if (process.argv[1]?.endsWith('/move.mjs')) {
-  move(process.argv[2], process.argv[3], { relaySlot: process.argv[4] }).then(result => console.log(JSON.stringify(result)), error => { console.error(error.message); process.exitCode = 1; });
+  const execute = async () => {
+    if (process.argv[2] === 'recover') {
+      const file = `${process.env.ANNOY_CONTROL_DIR || '/control'}/migration.json`;
+      if (!fs.existsSync(file)) return { recovered: false };
+      const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (['done', 'rolled_back'].includes(state.phase)) return { recovered: false };
+      return move(state.source, state.target);
+    }
+    return move(process.argv[2], process.argv[3], { relaySlot: process.argv[4] });
+  };
+  execute().then(result => console.log(JSON.stringify(result)), error => { console.error(error.message); process.exitCode = 1; });
 }

@@ -173,7 +173,9 @@ restart() {
       expected="$(docker run --rm --network none --read-only --entrypoint node "$image" -p 'require("./package.json").version')" || expected=''
       case "$expected" in ''|*[!0-9A-Za-z.+-]*) fail 'Imagem configurada inválida.' ;; *)
         target_version="\"$expected\""
-        if ! rolling_live; then fail 'A migração das sessões não foi confirmada; slots com usuários foram preservados.'; fi ;;
+        restart_comparison="$(probe "$old" compare "$(printf '%s' "$current_version" | tr -d '\"')" "$expected")" || restart_comparison=unknown
+        if [ "$restart_comparison" = 1 ] || [ "$restart_comparison" = unknown ]; then fail 'Downgrade ou versão inválida bloqueada; processos preservados.'
+        elif ! rolling_live; then fail 'A migração das sessões não foi confirmada; slots com usuários foram preservados.'; fi ;;
       esac
     fi
   elif [ "$image_id" != "$configured_id" ]; then fail 'A imagem configurada difere da ativa. Use Atualizar para trocar de versão.'; else swap || true; fi
