@@ -9,6 +9,7 @@ import multipart from "@fastify/multipart";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { config } from "./config.ts";
+import { whenServing } from "./slot.ts";
 import { db } from "./db.ts";
 import { HttpError } from "./errors.ts";
 import { closeForRestart, registerGateway } from "./gateway.ts";
@@ -74,7 +75,7 @@ app.setErrorHandler((err, _req, reply) => {
 });
 
 syncConfiguredAdmin();
-startGlobal((msg) => app.log.info(msg));
+whenServing(() => startGlobal((msg) => app.log.info(msg)));
 await startVoice();
 const decrypted = await removeServerCrypto();
 if (decrypted) app.log.info(`Criptografia MLS removida: ${decrypted.tables} tabelas e ${decrypted.files} arquivos cifrados apagados; mensagens dos canais voltam a ser em texto.`);
@@ -86,7 +87,7 @@ ensureAdminToken();
 const ignored = ignoredStoredSettings();
 if (ignored.length) app.log.warn(`Configurações salvas pelo app ignoradas (${ignored.join(", ")}): agora valem só as flags do .env (ANNOY_REGISTRATION, ANNOY_MAX_UPLOAD_MB, ANNOY_MAX_SERVERS_PER_USER).`);
 registerGateway(app);
-startTempRooms();
+whenServing(startTempRooms);
 await app.register(
   async (api) => {
     authRoutes(api);

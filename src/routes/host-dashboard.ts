@@ -1,15 +1,16 @@
 import type { FastifyInstance, HTTPMethods } from "fastify";
 import { z } from "zod";
 import { db, all, one, run } from "../db.ts";
-import { badRequest, notFound } from "../errors.ts";
+import { badRequest, forbidden, notFound } from "../errors.ts";
+import { config } from "../config.ts";
 import { getChannel, getServer, getUser } from "../repo.ts";
 import { hostActor } from "../host-context.ts";
-import { disconnectEverywhere } from "../accounts.ts";
-import { connectionsOf } from "../events.ts";
+import { deleteAccount, disconnectEverywhere } from "../accounts.ts";
+import { connectionsOf, sendToAudience } from "../events.ts";
 import { parse, type Params } from "../validate.ts";
 
 const catalogue: { method: string; path: string }[] = [];
-const controllable = /^\/(servers|channels|invites|stickers|sticker-info|uploads|imports)(\/|$)/;
+const controllable = /^\/(servers|channels|invites|stickers|sticker-info|uploads|import)(\/|$)/;
 
 export function captureControlRoutes(app: FastifyInstance): void {
   app.addHook("onRoute", route => {
@@ -34,7 +35,7 @@ const sensitive = /password|token|secret|private|credential|authorization|recove
 
 /** Registered underneath adminRoutes: every route inherits requireHostAdmin. */
 export async function hostDashboardRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/admin/host/capabilities", async () => ({ version: 1, routes: catalogue }));
+  app.get("/admin/host/capabilities", async () => ({ version: 1, accountMode: config.accountMode, scope: 'instance', routes: catalogue }));
 
   app.post("/admin/host/request", { bodyLimit: 700 * 1024 * 1024 }, async req => {
     const body = parse(dispatch, req.body);
@@ -79,12 +80,14 @@ export async function hostDashboardRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch<Params<"id">>("/admin/host/users/:id", async req => {
+    if (config.accountMode !== 'local') throw forbidden('Perfis Global são gerenciados na conta Annoy. Este painel administra somente a instância.');
     if (!getUser(req.params.id)) throw notFound("Usuário");
     const body = parse(z.object({ displayName: z.string().trim().min(1).max(64).optional(), bio: z.string().max(2000).optional() }).strict(), req.body);
     if (body.displayName !== undefined) run("UPDATE users SET display_name=? WHERE id=?", body.displayName, req.params.id);
     if (body.bio !== undefined) run("UPDATE users SET bio=? WHERE id=?", body.bio, req.params.id);
-    disconnectEverywhere(req.params.id, "Perfil atualizado pela administração");
-    return getUser(req.params.id);
+    const updated = getUser(req.params.id)!;
+    sendToAudience(req.params.id, { t: 'USER_UPDATE', d: updated });
+    return updated;
   });
 
   app.delete<Params<"id">>("/admin/host/users/:id/sessions", async req => {
@@ -94,6 +97,12 @@ export async function hostDashboardRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/admin/host/invites", async () => all("SELECT i.*, s.name AS server_name FROM invites i JOIN servers s ON s.id=i.server_id ORDER BY i.created_at DESC LIMIT 1000"));
+  app.post<Params<"id">>("/admin/host/users/:id/remove-from-instance", async req => {
+    parse(z.object({ confirm: z.literal('REMOVER_DESTA_INSTANCIA') }).strict(), req.body);
+    if (!getUser(req.params.id)) throw notFound('Usuário desta instância');
+    await deleteAccount(req.params.id);
+    return { removedFrom: 'instance', globalAccountDeleted: false };
+  });
   app.delete<Params<"code">>("/admin/host/invites/:code", async req => { run("DELETE FROM invites WHERE code=?", req.params.code); return {}; });
 
   app.get("/admin/host/storage", async () => {
@@ -105,6 +114,6 @@ export async function hostDashboardRoutes(app: FastifyInstance): Promise<void> {
     if (!/^[a-z][a-z0-9_]*$/.test(table) || !one("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table)) throw notFound("Tabela");
     const query = parse(z.object({ limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) }), req.query);
     const rows = db.prepare(`SELECT * FROM "${table}" LIMIT ? OFFSET ?`).all(query.limit, query.offset);
-    return { rows: rows.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, sensitive.test(key) ? "[protegido]" : value]))), columns: db.prepare(`PRAGMA table_info("${table}")`).all() };
+    return { rows: rows.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, sensitive.test(key) || (key === 'value' && sensitive.test(String(row.key ?? ''))) ? "[protegido]" : value]))), columns: db.prepare(`PRAGMA table_info("${table}")`).all() };
   });
 }

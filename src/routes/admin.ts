@@ -10,7 +10,7 @@ import { z } from "zod";
 import { deleteAccount, disconnectEverywhere, ownedServerNames } from "../accounts.ts";
 import { config } from "../config.ts";
 import { all, now, one, run } from "../db.ts";
-import { conflict, notFound } from "../errors.ts";
+import { conflict, forbidden, notFound } from "../errors.ts";
 import { sendToAudience } from "../events.ts";
 import { inviteCode } from "../ids.ts";
 import { getSettings } from "../instance.ts";
@@ -181,6 +181,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete<Params<"id">>("/admin/users/:id", async (req) => {
+    if (config.accountMode !== 'local') throw forbidden('Este painel não exclui contas Global. Suspenda o acesso nesta instância ou revogue as sessões locais.');
     const id = userIdOf(req.params.id);
     requireTarget(id);
     const owned = ownedServerNames(id);

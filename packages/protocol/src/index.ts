@@ -570,6 +570,14 @@ export interface UpdateStatus {
   lastCheck: string | null;
   lastError: string | null;
   updating: boolean;
+  deployment?: {
+    protocol: number;
+    phase: string;
+    currentVersion: string;
+    targetVersion: string | null;
+    waitingConnections: number;
+    operationId: string | null;
+  };
 }
 
 export interface VoiceUsage {
