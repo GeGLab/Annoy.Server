@@ -4,7 +4,7 @@
 
 **Chat de voz e texto auto-hospedado. Hospede como TeamSpeak, use como Discord.**
 
-[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-7b61ff.svg)](LICENSE)
+[![Licença: AGPL-3.0](https://img.shields.io/badge/licen%C3%A7a-AGPL--3.0-7b61ff.svg)](LICENSE)
 ![Node.js](https://img.shields.io/badge/node-%E2%89%A524.7-339933?logo=node.js&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-pronto-2496ed?logo=docker&logoColor=white)
 
@@ -134,7 +134,7 @@ Veja [configuração e privacidade](docs/steam.md).
 
 ## Licença
 
-[MIT](LICENSE) © Gustavo Cruz.
+[GNU AGPL-3.0](LICENSE) © Gustavo Cruz.
 
 ## Desconexões a partir da 0.8
 

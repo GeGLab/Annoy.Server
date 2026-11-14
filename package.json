@@ -5,7 +5,7 @@
   "annoyHandoff": 1,
   "annoyLiveMigration": 1,
   "description": "Self-hosted voice and text chat server: TeamSpeak-style hosting with Discord-style features",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "workspaces": [
     "packages/*"

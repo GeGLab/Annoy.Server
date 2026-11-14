@@ -4,7 +4,7 @@
 
 **Self-hosted voice and text chat. Host it like TeamSpeak, use it like Discord.**
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-7b61ff.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-7b61ff.svg)](LICENSE)
 ![Node.js](https://img.shields.io/badge/node-%E2%89%A524.7-339933?logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-ready-2496ed?logo=docker&logoColor=white)
@@ -313,7 +313,7 @@ tests when you touch `voice.ts`.
 
 ## License
 
-[MIT](LICENSE) © Gustavo Cruz
+[GNU AGPL-3.0](LICENSE) © Gustavo Cruz
 
 ## Security
 
