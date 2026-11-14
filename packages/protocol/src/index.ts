@@ -133,6 +133,8 @@ export interface ServerSummary {
   id: string;
   name: string;
   iconUrl: string | null;
+  /** Cover at the top of the channel list (POST /servers/:id/banner); absent on servers without `serverBanners`. */
+  bannerUrl?: string | null;
   ownerId: string;
 }
 
@@ -677,7 +679,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; /** A reaction can be a sticker link (POST /channels/:id/messages/:messageId/reactions). */ stickerReactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; /** Servers have their own sticker packs (/servers/:id/stickers). */ serverStickers?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; /** Store integrations installed per server (/servers/:id/integrations). */ integrations?: boolean; /** PUT /servers/:id/read-state marks every visible channel read without fetching messages. */ serverReadState?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; /** A reaction can be a sticker link (POST /channels/:id/messages/:messageId/reactions). */ stickerReactions?: boolean; serverIcons?: boolean; /** Servers can have a fixed cover image (POST /servers/:id/banner, PATCH bannerUrl: null). */ serverBanners?: boolean; gifSearch?: boolean; /** Servers have their own sticker packs (/servers/:id/stickers). */ serverStickers?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; /** Store integrations installed per server (/servers/:id/integrations). */ integrations?: boolean; /** PUT /servers/:id/read-state marks every visible channel read without fetching messages. */ serverReadState?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
