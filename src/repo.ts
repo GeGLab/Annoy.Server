@@ -1,5 +1,6 @@
 import type {
   Attachment,
+  CategoryKind,
   Channel,
   ChannelType,
   DmChannel,
@@ -46,6 +47,7 @@ interface ChannelRow {
   position: number;
   temporary?: number;
   message_ttl_ms?: number | null;
+  category_kind?: CategoryKind | null;
 }
 interface OverwriteRow {
   channel_id: string;
@@ -302,6 +304,7 @@ const toChannel = (r: ChannelRow, overwrites: Overwrite[]): Channel => ({
   overwrites,
   ...(r.temporary ? { temporary: true } : {}),
   ...(r.message_ttl_ms ? { messageTtlMs: r.message_ttl_ms } : {}),
+  ...(r.type === "category" && r.category_kind && r.category_kind !== "mixed" ? { categoryKind: r.category_kind } : {}),
 });
 
 export function getChannel(id: string): Channel | undefined {

@@ -88,7 +88,8 @@ export function tempRoomRoutes(app: FastifyInstance): void {
     const { perms } = requireServer(serverId, userId);
     if (!has(perms, Permission.CONNECT)) throw forbidden("Sem permissão para conectar em salas de voz");
     const body = parse(createTempRoom, req.body);
-    const parentId = body.parentId && one("SELECT 1 AS x FROM channels WHERE id = ? AND server_id = ? AND type = 'category'", body.parentId, serverId) ? body.parentId : null;
+    // A temporary room goes into the category asked for when it takes voice rooms, else outside any.
+    const parentId = body.parentId && one("SELECT 1 AS x FROM channels WHERE id = ? AND server_id = ? AND type = 'category' AND (category_kind IS NULL OR category_kind <> 'text')", body.parentId, serverId) ? body.parentId : null;
     const mine = one<{ n: number }>("SELECT COUNT(*) AS n FROM channels WHERE server_id = ? AND temporary = 1 AND created_by = ?", serverId, userId)!.n;
     if (mine >= ROOMS_PER_MEMBER) throw badRequest(`Você já tem ${ROOMS_PER_MEMBER} salas temporárias neste servidor`);
     const id = insertChannel(serverId, "voice", body.name, parentId, "", userId, true);

@@ -167,6 +167,11 @@ export type ChannelType = "category" | "text" | "voice" | "dm" | "files" | "code
 /** Channel types people join with voice (theater rooms also stream and watch together). */
 export const VOICE_CHANNEL_TYPES: readonly ChannelType[] = ["voice", "theater"];
 export const isVoiceChannel = (type: ChannelType) => VOICE_CHANNEL_TYPES.includes(type);
+/** What a category holds: any room, only text-like rooms (text, files, code, song) or only voice rooms (voice, theater). */
+export type CategoryKind = "mixed" | "text" | "voice";
+export const CATEGORY_KINDS: readonly CategoryKind[] = ["mixed", "text", "voice"];
+export const categoryAccepts = (kind: CategoryKind | undefined, type: ChannelType) =>
+  type !== "category" && (!kind || kind === "mixed" || (kind === "voice") === isVoiceChannel(type));
 /** Channel types with a message history (a files channel is one where every message carries files). */
 export const MESSAGE_CHANNEL_TYPES: readonly ChannelType[] = ["text", "dm", "files", "theater", "song"];
 export const hasMessages = (type: ChannelType) => MESSAGE_CHANNEL_TYPES.includes(type);
@@ -193,6 +198,8 @@ export interface Channel {
   temporary?: boolean;
   /** New messages are deleted automatically after this long (set by the server admins). Absent: permanent. */
   messageTtlMs?: number;
+  /** Categories only: which rooms they take. Absent: mixed. */
+  categoryKind?: CategoryKind;
 }
 
 /** Lifetimes the server admins can choose for a text channel: 1 hour, 1 day, 7 days. */
@@ -692,7 +699,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; /** A reaction can be a sticker link (POST /channels/:id/messages/:messageId/reactions). */ stickerReactions?: boolean; serverIcons?: boolean; /** Servers can have a fixed cover image (POST /servers/:id/banner, PATCH bannerUrl: null). */ serverBanners?: boolean; gifSearch?: boolean; /** Servers have their own sticker packs (/servers/:id/stickers). */ serverStickers?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; /** POST /channels/:id/move reorders rooms; names are unique per type and place. */ channelOrder?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; /** Store integrations installed per server (/servers/:id/integrations). */ integrations?: boolean; /** PUT /servers/:id/read-state marks every visible channel read without fetching messages. */ serverReadState?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; /** A reaction can be a sticker link (POST /channels/:id/messages/:messageId/reactions). */ stickerReactions?: boolean; serverIcons?: boolean; /** Servers can have a fixed cover image (POST /servers/:id/banner, PATCH bannerUrl: null). */ serverBanners?: boolean; gifSearch?: boolean; /** Servers have their own sticker packs (/servers/:id/stickers). */ serverStickers?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; /** POST /channels/:id/move reorders rooms; names are unique per type and place. */ channelOrder?: boolean; /** Categories can take only text or only voice rooms (Channel.categoryKind). */ categoryKinds?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; /** Store integrations installed per server (/servers/:id/integrations). */ integrations?: boolean; /** PUT /servers/:id/read-state marks every visible channel read without fetching messages. */ serverReadState?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }

@@ -16,7 +16,7 @@ import { byteRange } from "../ranges.ts";
 import { uploadsRemoved } from "../playback.ts";
 import { removeChannel } from "../rooms.ts";
 import { parse, type Params } from "../validate.ts";
-import { moveChannel, requireFreeChannelName } from "../channel-order.ts";
+import { moveChannel, requireCategoryAccepts, requireFreeChannelName, requireKindFits } from "../channel-order.ts";
 
 /** Longest sticker link accepted as a reaction. */
 const STICKER_REACTION_MAX = 300;
@@ -36,6 +36,7 @@ const patchChannel = z.object({
   parentId: z.string().nullable().optional(),
   position: z.number().int().min(0).optional(),
   messageTtlMs: z.union([z.null(), z.literal(MESSAGE_TTLS[0]), z.literal(MESSAGE_TTLS[1]), z.literal(MESSAGE_TTLS[2])]).optional(),
+  categoryKind: z.enum(["mixed", "text", "voice"]).optional(),
 });
 const moveBody = z.object({ parentId: z.string().max(64).nullable().optional(), beforeId: z.string().max(64).nullable() });
 const overwriteBody = z.object({
@@ -131,6 +132,9 @@ export function channelRoutes(app: FastifyInstance): void {
       throw badRequest("Categoria inválida");
     }
     const parentId = body.parentId !== undefined && channel.type !== "category" ? body.parentId : channel.parentId;
+    if (parentId !== channel.parentId) requireCategoryAccepts(channel.serverId, parentId, channel.type);
+    if (body.categoryKind !== undefined && channel.type !== "category") throw badRequest("Só categorias têm tipo");
+    if (body.categoryKind && body.categoryKind !== "mixed") requireKindFits(channel.id, body.categoryKind);
     // Only a new name or place is checked: rooms that already share a name keep being editable.
     if (((body.name !== undefined && body.name.trim() !== channel.name) || parentId !== channel.parentId) && !channel.temporary)
       requireFreeChannelName(channel.serverId, channel.type, body.name ?? channel.name, parentId, channel.id);
@@ -139,6 +143,7 @@ export function channelRoutes(app: FastifyInstance): void {
       if (body.topic !== undefined) run("UPDATE channels SET topic = ? WHERE id = ?", body.topic, channel.id);
       if (body.parentId !== undefined && channel.type !== "category") run("UPDATE channels SET parent_id = ? WHERE id = ?", body.parentId, channel.id);
       if (body.position !== undefined) run("UPDATE channels SET position = ? WHERE id = ?", body.position, channel.id);
+      if (body.categoryKind !== undefined) run("UPDATE channels SET category_kind = ? WHERE id = ?", body.categoryKind === "mixed" ? null : body.categoryKind, channel.id);
       if (body.messageTtlMs !== undefined) {
         if (channel.type !== "text" && body.messageTtlMs !== null) throw badRequest("Só canais de texto apagam mensagens automaticamente");
         run("UPDATE channels SET message_ttl_ms = ? WHERE id = ?", body.messageTtlMs, channel.id);

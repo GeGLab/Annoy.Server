@@ -1,4 +1,4 @@
-import { LIMITS, type ChannelType } from "@annoy/protocol";
+import { categoryAccepts, LIMITS, type CategoryKind, type ChannelType } from "@annoy/protocol";
 import { all, one, run, tx } from "./db.ts";
 import { badRequest, HttpError } from "./errors.ts";
 
@@ -43,7 +43,10 @@ export function moveChannel(serverId: string, channelId: string, parentId: strin
     const before = beforeId ? rows.find((row) => row.id === beforeId) : null;
     if (beforeId && (!before || before.id === channelId || (category ? before.type !== "category" : before.type === "category" || before.parent_id !== parent)))
       throw badRequest("Posição inválida");
-    if (!category && !moving.temporary && moving.parent_id !== parent) requireFreeChannelName(serverId, moving.type, moving.name, parent, moving.id);
+    if (!category && moving.parent_id !== parent) {
+      requireCategoryAccepts(serverId, parent, moving.type);
+      if (!moving.temporary) requireFreeChannelName(serverId, moving.type, moving.name, parent, moving.id);
+    }
     const rest = rows.filter((row) => row.id !== channelId);
     let at: number;
     if (before) at = rest.indexOf(before);
@@ -55,6 +58,21 @@ export function moveChannel(serverId: string, channelId: string, parentId: strin
     rest.splice(at, 0, { ...moving, parent_id: parent });
     rest.forEach((row, position) => run("UPDATE channels SET position = ?, parent_id = ? WHERE id = ?", position, row.parent_id, row.id));
   });
+}
+
+/** A room may go into this category: mixed ones take any room; text or voice ones only their kind. */
+export function requireCategoryAccepts(serverId: string, parentId: string | null, type: ChannelType): void {
+  if (!parentId) return;
+  const row = one<{ category_kind: CategoryKind | null }>("SELECT category_kind FROM channels WHERE id = ? AND server_id = ? AND type = 'category'", parentId, serverId);
+  if (!row) throw badRequest("Categoria inválida");
+  if (!categoryAccepts(row.category_kind ?? undefined, type))
+    throw new HttpError(400, "category_kind", row.category_kind === "voice" ? "Essa categoria só aceita salas de voz." : "Essa categoria só aceita salas de texto.");
+}
+
+/** A category can become text or voice only while every room in it is of that kind. */
+export function requireKindFits(categoryId: string, kind: CategoryKind): void {
+  const rooms = all<{ type: ChannelType }>("SELECT type FROM channels WHERE parent_id = ?", categoryId);
+  if (rooms.some((room) => !categoryAccepts(kind, room.type))) throw new HttpError(409, "category_kind", "A categoria tem salas de outro tipo. Mova-as antes de mudar.");
 }
 
 /** For callers that only need to know a parent exists. */

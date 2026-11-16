@@ -115,3 +115,35 @@ test("names are unique per type and place; other types, places and temporary roo
   const temp = await post("/servers/s/temp-rooms", { name: "Sala", parentId: voice });
   assert.equal(temp.statusCode, 200, temp.body);
 });
+
+test("categories can take only text or only voice rooms; creating, moving and editing respect it", async () => {
+  const textOnly = (await post("/servers/s/channels", { name: "Só texto", type: "category", categoryKind: "text" })).json() as { id: string; categoryKind?: string };
+  const voiceOnly = (await post("/servers/s/channels", { name: "Só voz", type: "category", categoryKind: "voice" })).json() as { id: string; categoryKind?: string };
+  const mixed = (await post("/servers/s/channels", { name: "Mista", type: "category", categoryKind: "mixed" })).json() as { id: string; categoryKind?: string };
+  assert.deepEqual([textOnly.categoryKind, voiceOnly.categoryKind, mixed.categoryKind], ["text", "voice", undefined]);
+  // Creating.
+  const refused = await post("/servers/s/channels", { name: "papo", type: "voice", parentId: textOnly.id });
+  assert.equal(refused.statusCode, 400);
+  assert.equal(refused.json().code, "category_kind");
+  assert.equal((await post("/servers/s/channels", { name: "cinema", type: "theater", parentId: textOnly.id })).statusCode, 400, "theater is a voice room");
+  assert.equal((await post("/servers/s/channels", { name: "avisos", type: "text", parentId: voiceOnly.id })).statusCode, 400);
+  const notes = await create("files", "notas", textOnly.id);
+  const room = await create("voice", "papo", voiceOnly.id);
+  await create("song", "som", textOnly.id);
+  await create("voice", "misturado", mixed.id);
+  // Moving and editing the place.
+  assert.equal((await post(`/channels/${room}/move`, { parentId: textOnly.id, beforeId: null })).statusCode, 400);
+  assert.equal((await app.inject({ method: "PATCH", url: `/channels/${notes}`, headers: auth(), payload: { parentId: voiceOnly.id } })).statusCode, 400);
+  assert.equal((await post(`/channels/${room}/move`, { parentId: mixed.id, beforeId: null })).statusCode, 200);
+  // A category changes kind only when its rooms fit; only categories have one.
+  assert.equal((await app.inject({ method: "PATCH", url: `/channels/${mixed.id}`, headers: auth(), payload: { categoryKind: "text" } })).statusCode, 409);
+  const ok = await app.inject({ method: "PATCH", url: `/channels/${mixed.id}`, headers: auth(), payload: { categoryKind: "voice" } });
+  assert.equal(ok.statusCode, 200, ok.body);
+  assert.equal(ok.json().categoryKind, "voice");
+  assert.equal((await app.inject({ method: "PATCH", url: `/channels/${mixed.id}`, headers: auth(), payload: { categoryKind: "mixed" } })).json().categoryKind, undefined);
+  assert.equal((await app.inject({ method: "PATCH", url: `/channels/${room}`, headers: auth(), payload: { categoryKind: "text" } })).statusCode, 400);
+  // A temporary room asked for in a text category lands outside any category.
+  const temp = await post("/servers/s/temp-rooms", { name: "rápida", parentId: textOnly.id });
+  assert.equal(temp.statusCode, 200, temp.body);
+  assert.equal(temp.json().parentId, null);
+});

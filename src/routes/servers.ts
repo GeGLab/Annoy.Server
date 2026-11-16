@@ -30,7 +30,7 @@ import { requireServerQuota } from "../instance.ts";
 import { createStickerFile, DEFAULT_STICKER_LIMIT, discardStickerFile, MAX_STICKER_BYTES, readStickerFile, STICKER_ID } from "../stickers.ts";
 import { discardBlobs } from "../uploads.ts";
 import { parse, type Params } from "../validate.ts";
-import { channelName, requireFreeChannelName, SLUG_TYPES, slug } from "../channel-order.ts";
+import { channelName, requireCategoryAccepts, requireFreeChannelName, SLUG_TYPES, slug } from "../channel-order.ts";
 import { disconnectUser, setServerMute, voiceStatesFor } from "../voice-backend.ts";
 
 const name = z.string().trim().min(1).max(LIMITS.nameMax);
@@ -57,6 +57,7 @@ const createChannel = z.object({
   type: z.enum(["category", "text", "voice", "files", "code", "theater", "song"]),
   parentId: z.string().nullable().optional(),
   topic: z.string().max(LIMITS.topicMax).optional(),
+  categoryKind: z.enum(["mixed", "text", "voice"]).optional(),
 });
 const createRole = z.object({ name, color: color.optional(), permissions: permissions.optional() });
 const patchRole = z.object({
@@ -339,8 +340,10 @@ export function serverRoutes(app: FastifyInstance): void {
     if (parentId && !one("SELECT 1 AS x FROM channels WHERE id = ? AND server_id = ? AND type = 'category'", parentId, serverId)) {
       throw badRequest("Categoria inválida");
     }
+    requireCategoryAccepts(serverId, parentId, body.type);
     requireFreeChannelName(serverId, body.type, channelName(body.type, body.name), parentId);
     const id = insertChannel(serverId, body.type, body.name, parentId, body.topic ?? "", userId);
+    if (body.type === "category" && body.categoryKind && body.categoryKind !== "mixed") run("UPDATE channels SET category_kind = ? WHERE id = ?", body.categoryKind, id);
     serverChanged(serverId);
     return getChannels(serverId).find((c) => c.id === id);
   });

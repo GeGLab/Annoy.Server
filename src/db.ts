@@ -249,6 +249,8 @@ if (!channelColumns.includes("temp_used")) db.exec("ALTER TABLE channels ADD COL
 // Placeholders of deleted accounts from older versions kept their Global link; release it.
 db.exec("UPDATE users SET global_id = NULL WHERE username LIKE 'deleted.%' AND global_id IS NOT NULL");
 if (!channelColumns.includes("message_ttl_ms")) db.exec("ALTER TABLE channels ADD COLUMN message_ttl_ms INTEGER");
+// Categories that take only text or only voice rooms; NULL is mixed.
+if (!channelColumns.includes("category_kind")) db.exec("ALTER TABLE channels ADD COLUMN category_kind TEXT");
 db.exec(`CREATE TABLE IF NOT EXISTS playback (
   channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
   state      TEXT NOT NULL
