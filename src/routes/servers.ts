@@ -30,6 +30,7 @@ import { requireServerQuota } from "../instance.ts";
 import { createStickerFile, DEFAULT_STICKER_LIMIT, discardStickerFile, MAX_STICKER_BYTES, readStickerFile, STICKER_ID } from "../stickers.ts";
 import { discardBlobs } from "../uploads.ts";
 import { parse, type Params } from "../validate.ts";
+import { channelName, requireFreeChannelName, SLUG_TYPES, slug } from "../channel-order.ts";
 import { disconnectUser, setServerMute, voiceStatesFor } from "../voice-backend.ts";
 
 const name = z.string().trim().min(1).max(LIMITS.nameMax);
@@ -75,14 +76,6 @@ const serverListQuery = z.object({ limit: z.coerce.number().int().min(1).max(100
 const banBody = z.object({ reason: z.string().max(512).optional() });
 const voiceMod = z.object({ serverMute: z.boolean().optional(), disconnect: z.boolean().optional() });
 
-/** Channel names in the Discord style: lowercase, dashes, no spaces. */
-const slug = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\p{L}\p{N}_-]/gu, "")
-    .slice(0, LIMITS.nameMax) || "canal";
 
 /** Removes a server with its channels, messages and attachment files. */
 export async function deleteServer(serverId: string, actorId: string): Promise<void> {
@@ -124,8 +117,6 @@ export function serverState(serverId: string, userId: string, membersLimit?: num
     permissions: perms,
   };
 }
-
-const SLUG_TYPES = new Set<ChannelType>(["text", "files", "code"]);
 
 export function insertChannel(serverId: string, type: ChannelType, channelName: string, parentId: string | null, topic = "", createdBy: string | null = null, temporary = false): string {
   const id = newId();
@@ -348,6 +339,7 @@ export function serverRoutes(app: FastifyInstance): void {
     if (parentId && !one("SELECT 1 AS x FROM channels WHERE id = ? AND server_id = ? AND type = 'category'", parentId, serverId)) {
       throw badRequest("Categoria inválida");
     }
+    requireFreeChannelName(serverId, body.type, channelName(body.type, body.name), parentId);
     const id = insertChannel(serverId, body.type, body.name, parentId, body.topic ?? "", userId);
     serverChanged(serverId);
     return getChannels(serverId).find((c) => c.id === id);
