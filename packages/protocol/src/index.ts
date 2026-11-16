@@ -773,7 +773,13 @@ export interface PlaybackState {
   djStyle?: DjStyle;
   /** Song rooms: who is listening right now (POST /channels/:id/playback/listen). Absent on servers that predate it. */
   listeners?: string[];
+  /** Song rooms: a finished track leaves the queue for `history` (set by whoever manages the room). Absent on servers that predate it. */
+  removePlayed?: boolean;
+  /** Song rooms with removePlayed: the tracks that left the queue, newest first (at most PLAYBACK_HISTORY_MAX). */
+  history?: PlaybackHistoryItem[];
 }
+export interface PlaybackHistoryItem extends PlaybackItem { playedAt: string }
+export const PLAYBACK_HISTORY_MAX = 50;
 
 export type DjStyle = "auto" | "smooth" | "filter" | "echo" | "brake" | "bassswap" | "riser";
 export const DJ_STYLES: readonly DjStyle[] = ["auto", "smooth", "filter", "echo", "brake", "bassswap", "riser"];
@@ -789,7 +795,13 @@ export type PlaybackAction =
   | { op: "move"; itemId: string; index: number }
   | { op: "autoplay"; value: boolean }
   | { op: "ducking"; value: boolean }
-  | { op: "dj"; value: boolean; style?: DjStyle };
+  | { op: "dj"; value: boolean; style?: DjStyle }
+  /** Needs Manage channels. */
+  | { op: "removePlayed"; value: boolean }
+  /** Back to the track before: the last played one (removePlayed) or the one above in the queue. */
+  | { op: "previous" }
+  /** A played track back at the end of the queue. Anyone who may add. */
+  | { op: "requeue"; itemId: string };
 
 /** Where the current item should be right now, in seconds. */
 export function playbackPosition(state: PlaybackState, clockOffsetMs = 0): number {

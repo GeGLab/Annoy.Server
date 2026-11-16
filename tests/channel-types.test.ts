@@ -227,3 +227,40 @@ test("server admins set how long new messages live in a text channel", async () 
   assert.equal(permanent.statusCode, 200);
   assert.equal("messageTtlMs" in permanent.json(), false);
 });
+
+test("song rooms can drop played tracks into a history, go back to them and queue them again", async () => {
+  const song = await create("song", "Rádio com histórico");
+  const act = (payload: object, who = "owner") => app.inject({ method: "POST", url: `/channels/${song.id}/playback`, headers: auth(who), payload });
+  for (const n of [1, 2, 3]) await act({ op: "add", url: `https://example.com/${n}.mp3` });
+  let state = (await act({ op: "next" })).json();
+  const [one, two, three] = state.queue;
+  assert.equal(state.currentId, two.id, "off: played tracks stay in the queue");
+  // Only whoever manages the room turns it on; that clears what already played.
+  assert.equal((await act({ op: "removePlayed", value: true }, "member")).statusCode, 403);
+  state = (await act({ op: "removePlayed", value: true })).json();
+  assert.deepEqual(state.queue.map((i: { id: string }) => i.id), [two.id, three.id]);
+  assert.deepEqual(state.history.map((i: { id: string }) => i.id), [one.id]);
+  // A finished track leaves the queue for the history, newest first.
+  state = (await act({ op: "ended", itemId: two.id })).json();
+  assert.deepEqual([state.currentId, state.queue.length, state.history.map((i: { id: string }) => i.id)], [three.id, 1, [two.id, one.id]]);
+  // Back: the last played track returns in front of the current one and plays.
+  state = (await act({ op: "previous" })).json();
+  assert.deepEqual([state.currentId, state.queue.map((i: { id: string }) => i.id), state.history.map((i: { id: string }) => i.id), state.paused], [two.id, [two.id, three.id], [one.id], false]);
+  // Anyone who may add can queue a played track again (a new entry, at the end).
+  state = (await act({ op: "requeue", itemId: one.id }, "member")).json();
+  assert.equal(state.queue.at(-1).url, one.url);
+  assert.notEqual(state.queue.at(-1).id, one.id);
+  assert.equal(state.queue.at(-1).addedBy, "member");
+  assert.equal((await act({ op: "requeue", itemId: "nope" })).statusCode, 404);
+  // A track removed by hand is not "played".
+  state = (await act({ op: "remove", itemId: state.currentId })).json();
+  assert.ok(!state.history.some((i: { id: string }) => i.id === two.id));
+  // Without autoplay the room stops at the end, but the track still leaves the queue.
+  await act({ op: "autoplay", value: false });
+  state = (await act({ op: "ended", itemId: state.currentId })).json();
+  assert.equal(state.paused, true);
+  assert.equal(state.history[0].id, three.id);
+  // Theater rooms don't have it.
+  const theater = await create("theater", "Cinema sem histórico");
+  assert.equal((await app.inject({ method: "POST", url: `/channels/${theater.id}/playback`, headers: auth(), payload: { op: "removePlayed", value: true } })).statusCode, 400);
+});
