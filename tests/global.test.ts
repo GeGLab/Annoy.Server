@@ -118,7 +118,9 @@ async function globalAccount(name: string) {
   const { iterations } = await G("/v1/auth/prelogin", json({ email }));
   const salt = kdf.newSalt();
   const pk = await kdf.derivePasswordKeys("senha de teste longa", salt, iterations);
-  await G("/v1/auth/register", json({ email, name, salt, authKey: pk.authKey, wrappedKeys: await kdf.wrapKeys(pk.wrapKey, keys), recovery: { mode: "recoveryKey", wrapped: await kdf.wrapWithRecovery(kdf.newRecoveryKey(),keys) }, acceptTerms: "2026-10-29" }));
+  // The current terms version comes from the API, so a terms update never breaks this test.
+  const terms = (await fetch(`${process.env.ANNOY_AUTH_URL}/v1/terms`).then((r) => r.json())).version;
+  await G("/v1/auth/register", json({ email, name, salt, authKey: pk.authKey, wrappedKeys: await kdf.wrapKeys(pk.wrapKey, keys), recovery: { mode: "recoveryKey", wrapped: await kdf.wrapWithRecovery(kdf.newRecoveryKey(),keys) }, acceptTerms: terms, ageConfirmed: true }));
   const login = await G("/v1/auth/login", json({ email, authKey: pk.authKey }));
   return { keys, session: login.token as string };
 }

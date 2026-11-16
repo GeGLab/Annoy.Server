@@ -1,5 +1,5 @@
 import { anonymizeMessages } from "../annoy-members.ts";
-import { createAvatar, discardAvatar, MAX_AVATAR_BYTES } from "../avatars.ts";
+import { createAvatar, createBanner, discardAvatar, MAX_AVATAR_BYTES } from "../avatars.ts";
 import { config } from "../config.ts";
 import { refreshActivityAccess } from "../activity.ts";
 import {
@@ -30,6 +30,7 @@ import { requireServerQuota } from "../instance.ts";
 import { createStickerFile, DEFAULT_STICKER_LIMIT, discardStickerFile, MAX_STICKER_BYTES, readStickerFile, STICKER_ID } from "../stickers.ts";
 import { discardBlobs } from "../uploads.ts";
 import { parse, type Params } from "../validate.ts";
+import { channelName, requireCategoryAccepts, requireFreeChannelName, SLUG_TYPES, slug } from "../channel-order.ts";
 import { disconnectUser, setServerMute, voiceStatesFor } from "../voice-backend.ts";
 
 const name = z.string().trim().min(1).max(LIMITS.nameMax);
@@ -40,7 +41,7 @@ const color = z
 const permissions = z.number().int().min(0).max(ALL_PERMISSIONS);
 
 const createServer = z.object({ name });
-const patchServer = z.object({ name: name.optional(), iconUrl: z.null().optional() }).refine((body) => body.name !== undefined || body.iconUrl === null, "Nenhuma alteração informada");
+const patchServer = z.object({ name: name.optional(), iconUrl: z.null().optional(), bannerUrl: z.null().optional() }).refine((body) => body.name !== undefined || body.iconUrl === null || body.bannerUrl === null, "Nenhuma alteração informada");
 const transferOwnership = z.object({ userId: z.string().min(1).max(128) }).strict();
 const stickerName = z.string().trim().min(1).max(32);
 
@@ -56,6 +57,7 @@ const createChannel = z.object({
   type: z.enum(["category", "text", "voice", "files", "code", "theater", "song"]),
   parentId: z.string().nullable().optional(),
   topic: z.string().max(LIMITS.topicMax).optional(),
+  categoryKind: z.enum(["mixed", "text", "voice"]).optional(),
 });
 const createRole = z.object({ name, color: color.optional(), permissions: permissions.optional() });
 const patchRole = z.object({
@@ -75,19 +77,11 @@ const serverListQuery = z.object({ limit: z.coerce.number().int().min(1).max(100
 const banBody = z.object({ reason: z.string().max(512).optional() });
 const voiceMod = z.object({ serverMute: z.boolean().optional(), disconnect: z.boolean().optional() });
 
-/** Channel names in the Discord style: lowercase, dashes, no spaces. */
-const slug = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\p{L}\p{N}_-]/gu, "")
-    .slice(0, LIMITS.nameMax) || "canal";
 
 /** Removes a server with its channels, messages and attachment files. */
 export async function deleteServer(serverId: string, actorId: string): Promise<void> {
   const stickers = all<{ id: string }>("SELECT id FROM server_stickers WHERE server_id = ?", serverId).map((r) => r.id);
-  const { members, blobs, icon } = tx(() => {
+  const { members, blobs, icon, banner } = tx(() => {
     const server = getServer(serverId);
     if (!server) throw notFound("Servidor");
     const members = all<{ user_id: string }>("SELECT user_id FROM members WHERE server_id = ?", serverId);
@@ -98,11 +92,12 @@ export async function deleteServer(serverId: string, actorId: string): Promise<v
       serverId,
     ).map((r) => r.id);
     run("DELETE FROM servers WHERE id = ?", serverId);
-    return { members, blobs, icon: server.iconUrl };
+    return { members, blobs, icon: server.iconUrl, banner: server.bannerUrl ?? null };
   });
   for (const m of members) disconnectUser(serverId, m.user_id);
   refreshActivityAccess();
   await discardAvatar(icon);
+  await discardAvatar(banner);
   for (const id of stickers) await discardStickerFile(id);
   await discardBlobs(blobs);
   for (const m of members) sendToUser(m.user_id, { t: "SERVER_REMOVE", d: { serverId } });
@@ -123,8 +118,6 @@ export function serverState(serverId: string, userId: string, membersLimit?: num
     permissions: perms,
   };
 }
-
-const SLUG_TYPES = new Set<ChannelType>(["text", "files", "code"]);
 
 export function insertChannel(serverId: string, type: ChannelType, channelName: string, parentId: string | null, topic = "", createdBy: string | null = null, temporary = false): string {
   const id = newId();
@@ -204,9 +197,10 @@ export function serverRoutes(app: FastifyInstance): void {
     const userId = requireUser(req);
     requireServer(req.params.id, userId, Permission.MANAGE_SERVER);
     const body = parse(patchServer, req.body);
-    const previous = getServer(req.params.id)?.iconUrl;
+    const previous = getServer(req.params.id);
     if (body.name !== undefined) run("UPDATE servers SET name = ? WHERE id = ?", body.name, req.params.id);
-    if (body.iconUrl === null) { run("UPDATE servers SET icon_url = NULL WHERE id = ?", req.params.id); await discardAvatar(previous); }
+    if (body.iconUrl === null) { run("UPDATE servers SET icon_url = NULL WHERE id = ?", req.params.id); await discardAvatar(previous?.iconUrl); }
+    if (body.bannerUrl === null) { run("UPDATE servers SET banner_url = NULL WHERE id = ?", req.params.id); await discardAvatar(previous?.bannerUrl); }
     serverChanged(req.params.id);
     return getServer(req.params.id);
   });
@@ -223,6 +217,24 @@ export function serverRoutes(app: FastifyInstance): void {
       requireServer(req.params.id, requireUser(req), Permission.MANAGE_SERVER);
       previous = getServer(req.params.id)?.iconUrl ?? null;
       run("UPDATE servers SET icon_url = ? WHERE id = ?", new URL(path, config.publicUrl || `${req.protocol}://${req.host}`).toString(), req.params.id);
+    } catch (error) { await discardAvatar(path); throw error; }
+    serverChanged(req.params.id);
+    await discardAvatar(previous).catch((error) => app.log.warn(error));
+    return getServer(req.params.id);
+  });
+
+  app.post<Params<"id">>("/servers/:id/banner", async (req) => {
+    requireServer(req.params.id, requireUser(req), Permission.MANAGE_SERVER);
+    const file = await req.file({ limits: { fileSize: MAX_AVATAR_BYTES, files: 1, fields: 0 } });
+    if (!file) throw badRequest("Selecione uma imagem");
+    const bytes = await file.toBuffer();
+    if (file.file.truncated) throw new HttpError(413, "too_large", "A imagem deve ter no máximo 8 MB");
+    const path = await createBanner(bytes);
+    let previous: string | null = null;
+    try {
+      requireServer(req.params.id, requireUser(req), Permission.MANAGE_SERVER);
+      previous = getServer(req.params.id)?.bannerUrl ?? null;
+      run("UPDATE servers SET banner_url = ? WHERE id = ?", new URL(path, config.publicUrl || `${req.protocol}://${req.host}`).toString(), req.params.id);
     } catch (error) { await discardAvatar(path); throw error; }
     serverChanged(req.params.id);
     await discardAvatar(previous).catch((error) => app.log.warn(error));
@@ -328,7 +340,10 @@ export function serverRoutes(app: FastifyInstance): void {
     if (parentId && !one("SELECT 1 AS x FROM channels WHERE id = ? AND server_id = ? AND type = 'category'", parentId, serverId)) {
       throw badRequest("Categoria inválida");
     }
+    requireCategoryAccepts(serverId, parentId, body.type);
+    requireFreeChannelName(serverId, body.type, channelName(body.type, body.name), parentId);
     const id = insertChannel(serverId, body.type, body.name, parentId, body.topic ?? "", userId);
+    if (body.type === "category" && body.categoryKind && body.categoryKind !== "mixed") run("UPDATE channels SET category_kind = ? WHERE id = ?", body.categoryKind, id);
     serverChanged(serverId);
     return getChannels(serverId).find((c) => c.id === id);
   });

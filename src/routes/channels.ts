@@ -16,6 +16,7 @@ import { byteRange } from "../ranges.ts";
 import { uploadsRemoved } from "../playback.ts";
 import { removeChannel } from "../rooms.ts";
 import { parse, type Params } from "../validate.ts";
+import { moveChannel, requireCategoryAccepts, requireFreeChannelName, requireKindFits } from "../channel-order.ts";
 
 /** Longest sticker link accepted as a reaction. */
 const STICKER_REACTION_MAX = 300;
@@ -35,7 +36,9 @@ const patchChannel = z.object({
   parentId: z.string().nullable().optional(),
   position: z.number().int().min(0).optional(),
   messageTtlMs: z.union([z.null(), z.literal(MESSAGE_TTLS[0]), z.literal(MESSAGE_TTLS[1]), z.literal(MESSAGE_TTLS[2])]).optional(),
+  categoryKind: z.enum(["mixed", "text", "voice"]).optional(),
 });
+const moveBody = z.object({ parentId: z.string().max(64).nullable().optional(), beforeId: z.string().max(64).nullable() });
 const overwriteBody = z.object({
   targetType: z.enum(["role", "member"]),
   allow: z.number().int().min(0).max(ALL_PERMISSIONS),
@@ -128,11 +131,19 @@ export function channelRoutes(app: FastifyInstance): void {
     if (body.parentId && !one("SELECT 1 AS x FROM channels WHERE id = ? AND server_id = ? AND type = 'category'", body.parentId, channel.serverId)) {
       throw badRequest("Categoria inválida");
     }
+    const parentId = body.parentId !== undefined && channel.type !== "category" ? body.parentId : channel.parentId;
+    if (parentId !== channel.parentId) requireCategoryAccepts(channel.serverId, parentId, channel.type);
+    if (body.categoryKind !== undefined && channel.type !== "category") throw badRequest("Só categorias têm tipo");
+    if (body.categoryKind && body.categoryKind !== "mixed") requireKindFits(channel.id, body.categoryKind);
+    // Only a new name or place is checked: rooms that already share a name keep being editable.
+    if (((body.name !== undefined && body.name.trim() !== channel.name) || parentId !== channel.parentId) && !channel.temporary)
+      requireFreeChannelName(channel.serverId, channel.type, body.name ?? channel.name, parentId, channel.id);
     tx(() => {
       if (body.name !== undefined) run("UPDATE channels SET name = ? WHERE id = ?", body.name, channel.id);
       if (body.topic !== undefined) run("UPDATE channels SET topic = ? WHERE id = ?", body.topic, channel.id);
       if (body.parentId !== undefined && channel.type !== "category") run("UPDATE channels SET parent_id = ? WHERE id = ?", body.parentId, channel.id);
       if (body.position !== undefined) run("UPDATE channels SET position = ? WHERE id = ?", body.position, channel.id);
+      if (body.categoryKind !== undefined) run("UPDATE channels SET category_kind = ? WHERE id = ?", body.categoryKind === "mixed" ? null : body.categoryKind, channel.id);
       if (body.messageTtlMs !== undefined) {
         if (channel.type !== "text" && body.messageTtlMs !== null) throw badRequest("Só canais de texto apagam mensagens automaticamente");
         run("UPDATE channels SET message_ttl_ms = ? WHERE id = ?", body.messageTtlMs, channel.id);
@@ -140,6 +151,18 @@ export function channelRoutes(app: FastifyInstance): void {
     });
     serverChanged(channel.serverId);
     return getChannel(channel.id);
+  });
+
+  // Drag and drop in the room list: before another room, or at the end of a category (beforeId null).
+  app.post<Params<"id">>("/channels/:id/move", async (req) => {
+    const userId = requireUser(req);
+    const { channel } = requireChannel(req.params.id, userId);
+    if (!channel.serverId) throw badRequest("DMs não podem ser movidas");
+    requireServer(channel.serverId, userId, Permission.MANAGE_CHANNELS);
+    const body = parse(moveBody, req.body);
+    moveChannel(channel.serverId, channel.id, body.parentId === undefined ? channel.parentId : body.parentId, body.beforeId);
+    serverChanged(channel.serverId);
+    return {};
   });
 
   app.delete<Params<"id">>("/channels/:id", async (req) => {

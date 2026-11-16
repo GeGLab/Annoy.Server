@@ -133,6 +133,8 @@ export interface ServerSummary {
   id: string;
   name: string;
   iconUrl: string | null;
+  /** Cover at the top of the channel list (POST /servers/:id/banner); absent on servers without `serverBanners`. */
+  bannerUrl?: string | null;
   ownerId: string;
 }
 
@@ -165,6 +167,11 @@ export type ChannelType = "category" | "text" | "voice" | "dm" | "files" | "code
 /** Channel types people join with voice (theater rooms also stream and watch together). */
 export const VOICE_CHANNEL_TYPES: readonly ChannelType[] = ["voice", "theater"];
 export const isVoiceChannel = (type: ChannelType) => VOICE_CHANNEL_TYPES.includes(type);
+/** What a category holds: any room, only text-like rooms (text, files, code, song) or only voice rooms (voice, theater). */
+export type CategoryKind = "mixed" | "text" | "voice";
+export const CATEGORY_KINDS: readonly CategoryKind[] = ["mixed", "text", "voice"];
+export const categoryAccepts = (kind: CategoryKind | undefined, type: ChannelType) =>
+  type !== "category" && (!kind || kind === "mixed" || (kind === "voice") === isVoiceChannel(type));
 /** Channel types with a message history (a files channel is one where every message carries files). */
 export const MESSAGE_CHANNEL_TYPES: readonly ChannelType[] = ["text", "dm", "files", "theater", "song"];
 export const hasMessages = (type: ChannelType) => MESSAGE_CHANNEL_TYPES.includes(type);
@@ -191,6 +198,8 @@ export interface Channel {
   temporary?: boolean;
   /** New messages are deleted automatically after this long (set by the server admins). Absent: permanent. */
   messageTtlMs?: number;
+  /** Categories only: which rooms they take. Absent: mixed. */
+  categoryKind?: CategoryKind;
 }
 
 /** Lifetimes the server admins can choose for a text channel: 1 hour, 1 day, 7 days. */
@@ -279,8 +288,19 @@ export type ProfileFieldKind=typeof PROFILE_FIELD_KINDS[number];
 export type ProfileAudience="self"|"friends"|"community";
 export interface ProfileField {kind:ProfileFieldKind;value:string;audience:ProfileAudience}
 export interface ActivityHistoryEntry {id:string;kind:UserActivity["kind"];provider:UserActivity["provider"];name:string;startedAt:string;endedAt:string|null}
+/** Who sees the linked Steam account on the profile (and so the games in common and the lobby to join). */
+export type SteamAudience = "self" | "friends" | "community";
+export interface SteamProfileLink { steamId: string; profileUrl: string; personaName?: string; avatarUrl?: string; audience?: SteamAudience }
+export interface SteamCommonGames {
+  status: "ok" | "hidden" | "not_linked" | "unavailable" | "private";
+  who?: "you" | "them";
+  total?: number;
+  games?: { appId: string; name: string; mine: number; theirs: number }[];
+}
 export interface ProfileDetails {
   user:User;
+  /** The Annoy account's Steam, when its owner shows it to this viewer (Annoy accounts only). */
+  steam?: SteamProfileLink | null;
   fields:ProfileField[];
   hasPrivateFields:boolean;
   history:{enabled:boolean;visibility:"visible"|"private"|"disabled";entries:ActivityHistoryEntry[]};
@@ -498,7 +518,7 @@ export type DiscordLoginPoll =
 /** Private connection information: returned only to the account owner. */
 export interface SteamConnectionStatus {
   /** personaName is the public Steam display name; absent on older servers or while Steam has not answered. */
-  connection: { steamId: string; profileUrl: string; personaName?: string } | null;
+  connection: { steamId: string; profileUrl: string; personaName?: string; avatarUrl?: string; audience?: SteamAudience } | null;
   onlineActivityAvailable: boolean;
 }
 export interface SteamLinkBegin { url: string; handoff: string }
@@ -618,6 +638,8 @@ export interface UserActivity {
   file?: string;
   project?: string;
   language?: string;
+  /** A Steam lobby the person is in; whoever sees their Steam account can join it. Annoy account presence only. */
+  lobbyId?: string;
 }
 export interface MessageSearchPage {
   items: { message: Message; channelName: string; serverId: string | null }[];
@@ -677,7 +699,7 @@ export type GatewayEvent =
         relationships: Relationship[];
         presences: Record<string, Presence>;
         activities?: Record<string, UserActivity[]>;
-        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; /** A reaction can be a sticker link (POST /channels/:id/messages/:messageId/reactions). */ stickerReactions?: boolean; serverIcons?: boolean; gifSearch?: boolean; /** Servers have their own sticker packs (/servers/:id/stickers). */ serverStickers?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; /** Store integrations installed per server (/servers/:id/integrations). */ integrations?: boolean; /** PUT /servers/:id/read-state marks every visible channel read without fetching messages. */ serverReadState?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
+        instance: { isAdmin: boolean; registration: RegistrationMode; voiceBackend: VoiceBackend; activityArtwork?: boolean; steamConnection?: boolean; serverOwnership?: boolean; developmentActivity?: boolean; directCalls?: boolean; socialProfiles?: boolean; groupActivity?: boolean; reactions?: boolean; /** A reaction can be a sticker link (POST /channels/:id/messages/:messageId/reactions). */ stickerReactions?: boolean; serverIcons?: boolean; /** Servers can have a fixed cover image (POST /servers/:id/banner, PATCH bannerUrl: null). */ serverBanners?: boolean; gifSearch?: boolean; /** Servers have their own sticker packs (/servers/:id/stickers). */ serverStickers?: boolean; presenceStatus?: boolean; manualPresence?: boolean; channelTypes?: boolean; /** POST /channels/:id/move reorders rooms; names are unique per type and place. */ channelOrder?: boolean; /** Categories can take only text or only voice rooms (Channel.categoryKind). */ categoryKinds?: boolean; codeChannels?: boolean; historyWindow?: boolean; messagePins?: boolean; /** Store integrations installed per server (/servers/:id/integrations). */ integrations?: boolean; /** PUT /servers/:id/read-state marks every visible channel read without fetching messages. */ serverReadState?: boolean; profileDetails?: boolean; extendedActivity?: boolean; /** Friends, DMs, status and direct calls live in the Annoy cloud, not on this server (TODO item 1). */ annoySocial?: boolean };
       };
     }
   | { t: "HEARTBEAT_ACK"; d: null }
@@ -751,7 +773,13 @@ export interface PlaybackState {
   djStyle?: DjStyle;
   /** Song rooms: who is listening right now (POST /channels/:id/playback/listen). Absent on servers that predate it. */
   listeners?: string[];
+  /** Song rooms: a finished track leaves the queue for `history` (set by whoever manages the room). Absent on servers that predate it. */
+  removePlayed?: boolean;
+  /** Song rooms with removePlayed: the tracks that left the queue, newest first (at most PLAYBACK_HISTORY_MAX). */
+  history?: PlaybackHistoryItem[];
 }
+export interface PlaybackHistoryItem extends PlaybackItem { playedAt: string }
+export const PLAYBACK_HISTORY_MAX = 50;
 
 export type DjStyle = "auto" | "smooth" | "filter" | "echo" | "brake" | "bassswap" | "riser";
 export const DJ_STYLES: readonly DjStyle[] = ["auto", "smooth", "filter", "echo", "brake", "bassswap", "riser"];
@@ -767,7 +795,13 @@ export type PlaybackAction =
   | { op: "move"; itemId: string; index: number }
   | { op: "autoplay"; value: boolean }
   | { op: "ducking"; value: boolean }
-  | { op: "dj"; value: boolean; style?: DjStyle };
+  | { op: "dj"; value: boolean; style?: DjStyle }
+  /** Needs Manage channels. */
+  | { op: "removePlayed"; value: boolean }
+  /** Back to the track before: the last played one (removePlayed) or the one above in the queue. */
+  | { op: "previous" }
+  /** A played track back at the end of the queue. Anyone who may add. */
+  | { op: "requeue"; itemId: string };
 
 /** Where the current item should be right now, in seconds. */
 export function playbackPosition(state: PlaybackState, clockOffsetMs = 0): number {

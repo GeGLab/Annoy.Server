@@ -25,6 +25,28 @@ export async function createAvatar(bytes: Buffer): Promise<string> {
   await writeFile(join(directory, `${id}.webp`), output, { flag: "wx" });
   return `/api/avatars/${id}.webp`;
 }
+/** Server covers are wide: the channel list shows them cropped to its own width. */
+export const BANNER_WIDTH = 960, BANNER_HEIGHT = 400;
+/**
+ * A server cover: one fixed frame (an animated upload keeps its first frame),
+ * cropped wide for the top of the channel list. Stored and served like avatars.
+ */
+export async function createBanner(bytes: Buffer): Promise<string> {
+  if (!bytes.length || bytes.length > MAX_AVATAR_BYTES) throw badRequest("Envie uma imagem de até 8 MB.");
+  let output: Buffer;
+  try {
+    const image = sharp(bytes, { limitInputPixels: 40_000_000 });
+    const metadata = await image.metadata();
+    if (!metadata.format || !["jpeg", "png", "webp", "gif"].includes(metadata.format)) throw new Error("Unsupported banner");
+    output = await image.rotate().resize(BANNER_WIDTH, BANNER_HEIGHT, { fit: "cover", position: "attention" }).webp({ quality: 86 }).toBuffer();
+  } catch {
+    throw badRequest("Imagem inválida. Use PNG, JPEG, WebP ou GIF (fica a primeira imagem), até 40 megapixels.");
+  }
+  const id = secretId();
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, `${id}.webp`), output, { flag: "wx" });
+  return `/api/avatars/${id}.webp`;
+}
 export async function readAvatar(id: string): Promise<Buffer> {
   if (!AVATAR_ID.test(id)) throw notFound("Foto");
   try {

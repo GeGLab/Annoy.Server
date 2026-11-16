@@ -67,6 +67,28 @@ test("server images require management permission, appear in server state and ca
  assert.equal((await app.inject({url:new URL(url).pathname.replace("/api","")})).statusCode,404);
 });
 
+test("server covers are fixed wide images that require management permission and can be removed",async()=>{
+ const photo=await sharp({create:{width:1600,height:1600,channels:3,background:"#3a6ea5"}}).png().toBuffer();
+ assert.equal((await upload("/servers/server/banner",photo,"member")).statusCode,403);
+ assert.equal((await upload("/servers/server/banner",Buffer.from("bad"))).statusCode,400);
+ const uploaded=await upload("/servers/server/banner",photo);assert.equal(uploaded.statusCode,200,uploaded.body);
+ const url=uploaded.json().bannerUrl;assert.ok(url);
+ assert.equal((await app.inject({url:"/servers/server",headers:auth("member")})).json().server.bannerUrl,url);
+ const stored=await sharp((await app.inject({url:new URL(url).pathname.replace("/api","")})).rawPayload).metadata();
+ assert.equal(stored.width,960);assert.equal(stored.height,400);
+ // An animated upload becomes one fixed frame.
+ const pixels=Buffer.alloc(16*32*4,255);
+ const gif=await sharp(pixels,{raw:{width:16,height:32,channels:4,pageHeight:16}}).gif({delay:[80,80]}).toBuffer();
+ const replaced=await upload("/servers/server/banner",gif);assert.equal(replaced.statusCode,200,replaced.body);
+ const fixed=await sharp((await app.inject({url:new URL(replaced.json().bannerUrl).pathname.replace("/api","")})).rawPayload,{animated:true}).metadata();
+ assert.equal(fixed.pages??1,1);
+ assert.equal((await app.inject({url:new URL(url).pathname.replace("/api","")})).statusCode,404,"the replaced cover is discarded");
+ assert.equal((await app.inject({method:"PATCH",url:"/servers/server",headers:auth("member"),payload:{bannerUrl:null}})).statusCode,403);
+ const removed=await app.inject({method:"PATCH",url:"/servers/server",headers:auth("owner"),payload:{bannerUrl:null}});
+ assert.equal(removed.statusCode,200);assert.equal(removed.json().bannerUrl,null);
+ assert.equal((await app.inject({url:new URL(replaced.json().bannerUrl).pathname.replace("/api","")})).statusCode,404);
+});
+
 test("GIF provider configuration requires authentication and is not cached",async()=>{
  assert.equal((await app.inject({url:"/media/config"})).statusCode,401);
  process.env.GIPHY_CLIENT_API_KEY="synthetic-public-client-key";

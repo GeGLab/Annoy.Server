@@ -1,4 +1,4 @@
-import { DJ_STYLES, has, Permission, playbackPosition, type Channel, type PlaybackItem, type PlaybackKind, type PlaybackState } from "@annoy/protocol";
+import { DJ_STYLES, has, Permission, PLAYBACK_HISTORY_MAX, playbackPosition, type Channel, type PlaybackItem, type PlaybackKind, type PlaybackState } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "./auth.ts";
@@ -30,6 +30,8 @@ function load(channelId: string): Omit<PlaybackState, "serverTime"> {
     state.ducking ??= true;
     state.dj ??= false;
     state.djStyle ??= "auto";
+    state.removePlayed ??= false;
+    state.history ??= [];
     states.set(channelId, state);
   }
   return state;
@@ -105,7 +107,7 @@ export function uploadsRemoved(channel: Channel, attachmentIds: readonly string[
   const gone = (item: PlaybackItem) => item.kind === "file" && attachmentIds.some((id) => item.url.startsWith(`/api/uploads/${id}/`));
   if (!state.queue.some(gone)) return;
   settle(state);
-  if (state.queue.find((i) => i.id === state.currentId && gone(i))) advance(state);
+  if (state.queue.find((i) => i.id === state.currentId && gone(i))) advance(state, false);
   state.queue = state.queue.filter((i) => !gone(i));
   save(channel, state);
 }
@@ -132,9 +134,20 @@ async function titleFor(url: URL, kind: PlaybackKind): Promise<string> {
   return "YouTube";
 }
 
-function advance(state: Omit<PlaybackState, "serverTime">): void {
+/** A finished track leaves the queue for the history (newest first), where it can be played again. */
+function retire(state: Omit<PlaybackState, "serverTime">, items: PlaybackItem[]): void {
+  if (!items.length) return;
+  const ids = new Set(items.map((i) => i.id));
+  state.queue = state.queue.filter((i) => !ids.has(i.id));
+  const playedAt = now();
+  state.history = [...items.reverse().map((i) => ({ ...i, playedAt })), ...(state.history ?? [])].slice(0, PLAYBACK_HISTORY_MAX);
+}
+
+/** On to the next track; one that played (not one removed by hand) goes to the history when the room keeps one. */
+function advance(state: Omit<PlaybackState, "serverTime">, played = true): void {
   const index = state.queue.findIndex((i) => i.id === state.currentId);
   const next = state.queue[index + 1] ?? null;
+  if (played && state.removePlayed && index >= 0) retire(state, [state.queue[index]!]);
   state.currentId = next?.id ?? null;
   state.position = 0;
   state.paused = !next;
@@ -154,6 +167,9 @@ const action = z.discriminatedUnion("op", [
   z.object({ op: z.literal("autoplay"), value: z.boolean() }),
   z.object({ op: z.literal("ducking"), value: z.boolean() }),
   z.object({ op: z.literal("dj"), value: z.boolean(), style: z.enum(DJ_STYLES as [string, ...string[]]).optional() }),
+  z.object({ op: z.literal("removePlayed"), value: z.boolean() }),
+  z.object({ op: z.literal("previous") }),
+  z.object({ op: z.literal("requeue"), itemId: z.string().max(64) }),
 ]);
 
 export function playbackRoutes(app: FastifyInstance): void {
@@ -231,7 +247,7 @@ export function playbackRoutes(app: FastifyInstance): void {
       }
       case "remove": {
         if (!moderator && !owns(body.itemId)) throw forbidden("Só quem adicionou ou um moderador pode remover");
-        if (state.currentId === body.itemId) advance(state);
+        if (state.currentId === body.itemId) advance(state, false);
         state.queue = state.queue.filter((i) => i.id !== body.itemId);
         break;
       }
@@ -259,7 +275,11 @@ export function playbackRoutes(app: FastifyInstance): void {
       case "ended":
         // Every viewer reports the end; only the first one for the current item counts (above).
         if (state.autoplay) advance(state);
-        else state.paused = true;
+        else if (state.removePlayed) {
+          // Without autoplay the room stops, but the finished track still leaves the queue.
+          advance(state);
+          state.paused = true;
+        } else state.paused = true;
         break;
       case "move": {
         if (!moderator) throw forbidden("Só moderadores podem reordenar a fila");
@@ -284,6 +304,47 @@ export function playbackRoutes(app: FastifyInstance): void {
         // A DJ always moves on to the next track.
         if (body.value) state.autoplay = true;
         break;
+      case "removePlayed": {
+        if (channel.type !== "song") throw badRequest("Só salas de música tiram da fila o que já tocou");
+        if (!has(perms, Permission.MANAGE_CHANNELS)) throw forbidden("Só quem gerencia a sala pode mudar isso");
+        state.removePlayed = body.value;
+        // Turning it on also clears what already played above the current track.
+        if (body.value) {
+          const index = state.queue.findIndex((i) => i.id === state.currentId);
+          retire(state, index > 0 ? state.queue.slice(0, index) : []);
+        }
+        break;
+      }
+      case "previous": {
+        // Like picking an earlier track by hand: anyone who may control the room.
+        const index = state.queue.findIndex((i) => i.id === state.currentId);
+        const last = state.removePlayed ? state.history?.[0] : undefined;
+        if (last) {
+          // The last played track comes back in front of the current one.
+          state.history = state.history!.slice(1);
+          const { playedAt: _played, ...item } = last;
+          state.queue.splice(Math.max(0, index), 0, item);
+          state.currentId = item.id;
+        } else if (index > 0) state.currentId = state.queue[index - 1]!.id;
+        else if (!state.currentId) throw badRequest("Não há música para voltar");
+        state.position = 0;
+        state.paused = false;
+        break;
+      }
+      case "requeue": {
+        const played = state.history?.find((i) => i.id === body.itemId);
+        if (!played) throw notFound("Item");
+        if (state.queue.length >= QUEUE_MAX) throw badRequest(`A fila já tem ${QUEUE_MAX} itens`);
+        const { playedAt: _played, ...item } = played;
+        const copy = { ...item, id: secretId(), addedBy: userId, addedAt: now() };
+        state.queue.push(copy);
+        if (!state.currentId) {
+          state.currentId = copy.id;
+          state.position = 0;
+          state.paused = false;
+        }
+        break;
+      }
     }
     return save(channel, state);
   });

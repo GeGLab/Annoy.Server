@@ -1,5 +1,6 @@
 import type {
   Attachment,
+  CategoryKind,
   Channel,
   ChannelType,
   DmChannel,
@@ -34,6 +35,7 @@ interface ServerRow {
   name: string;
   owner_id: string;
   icon_url: string | null;
+  banner_url: string | null;
 }
 interface ChannelRow {
   id: string;
@@ -45,6 +47,7 @@ interface ChannelRow {
   position: number;
   temporary?: number;
   message_ttl_ms?: number | null;
+  category_kind?: CategoryKind | null;
 }
 interface OverwriteRow {
   channel_id: string;
@@ -109,16 +112,16 @@ export function getUsers(ids: readonly string[]): Map<string, User> {
 
 // Servers ----------------------------------------------------------------------
 
-const toServer = (r: ServerRow): ServerSummary => ({ id: r.id, name: r.name, ownerId: r.owner_id, iconUrl: r.icon_url ?? null });
+const toServer = (r: ServerRow): ServerSummary => ({ id: r.id, name: r.name, ownerId: r.owner_id, iconUrl: r.icon_url ?? null, bannerUrl: r.banner_url ?? null });
 
 export function getServer(id: string): ServerSummary | undefined {
-  const row = one<ServerRow>("SELECT id, name, owner_id, icon_url FROM servers WHERE id = ?", id);
+  const row = one<ServerRow>("SELECT id, name, owner_id, icon_url, banner_url FROM servers WHERE id = ?", id);
   return row && toServer(row);
 }
 
 export function serversForUser(userId: string): ServerSummary[] {
   return all<ServerRow>(
-    "SELECT s.id, s.name, s.owner_id, s.icon_url FROM servers s JOIN members m ON m.server_id = s.id WHERE m.user_id = ? ORDER BY m.joined_at",
+    "SELECT s.id, s.name, s.owner_id, s.icon_url, s.banner_url FROM servers s JOIN members m ON m.server_id = s.id WHERE m.user_id = ? ORDER BY m.joined_at",
     userId,
   ).map(toServer);
 }
@@ -139,7 +142,7 @@ export function serverSummariesPage(userId: string, limit: number, after: string
   const total = one<{ total: number }>(`SELECT COUNT(*) AS total FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ${filter}`, ...params)?.total ?? 0;
   const afterClause = cursor ? "AND (m.joined_at>? OR (m.joined_at=? AND s.id>?))" : "";
   const rows = all<ServerRow & { joined_at: string }>(
-    `SELECT s.id, s.name, s.owner_id, s.icon_url, m.joined_at FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ${filter} ${afterClause} ORDER BY m.joined_at, s.id LIMIT ?`,
+    `SELECT s.id, s.name, s.owner_id, s.icon_url, s.banner_url, m.joined_at FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ${filter} ${afterClause} ORDER BY m.joined_at, s.id LIMIT ?`,
     ...params, ...(cursor ? [cursor[0], cursor[0], cursor[1]] : []), limit + 1,
   );
   const hasMore = rows.length > limit;
@@ -301,6 +304,7 @@ const toChannel = (r: ChannelRow, overwrites: Overwrite[]): Channel => ({
   overwrites,
   ...(r.temporary ? { temporary: true } : {}),
   ...(r.message_ttl_ms ? { messageTtlMs: r.message_ttl_ms } : {}),
+  ...(r.type === "category" && r.category_kind && r.category_kind !== "mixed" ? { categoryKind: r.category_kind } : {}),
 });
 
 export function getChannel(id: string): Channel | undefined {
