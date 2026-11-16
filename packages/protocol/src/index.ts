@@ -281,8 +281,19 @@ export type ProfileFieldKind=typeof PROFILE_FIELD_KINDS[number];
 export type ProfileAudience="self"|"friends"|"community";
 export interface ProfileField {kind:ProfileFieldKind;value:string;audience:ProfileAudience}
 export interface ActivityHistoryEntry {id:string;kind:UserActivity["kind"];provider:UserActivity["provider"];name:string;startedAt:string;endedAt:string|null}
+/** Who sees the linked Steam account on the profile (and so the games in common and the lobby to join). */
+export type SteamAudience = "self" | "friends" | "community";
+export interface SteamProfileLink { steamId: string; profileUrl: string; personaName?: string; avatarUrl?: string; audience?: SteamAudience }
+export interface SteamCommonGames {
+  status: "ok" | "hidden" | "not_linked" | "unavailable" | "private";
+  who?: "you" | "them";
+  total?: number;
+  games?: { appId: string; name: string; mine: number; theirs: number }[];
+}
 export interface ProfileDetails {
   user:User;
+  /** The Annoy account's Steam, when its owner shows it to this viewer (Annoy accounts only). */
+  steam?: SteamProfileLink | null;
   fields:ProfileField[];
   hasPrivateFields:boolean;
   history:{enabled:boolean;visibility:"visible"|"private"|"disabled";entries:ActivityHistoryEntry[]};
@@ -500,7 +511,7 @@ export type DiscordLoginPoll =
 /** Private connection information: returned only to the account owner. */
 export interface SteamConnectionStatus {
   /** personaName is the public Steam display name; absent on older servers or while Steam has not answered. */
-  connection: { steamId: string; profileUrl: string; personaName?: string } | null;
+  connection: { steamId: string; profileUrl: string; personaName?: string; avatarUrl?: string; audience?: SteamAudience } | null;
   onlineActivityAvailable: boolean;
 }
 export interface SteamLinkBegin { url: string; handoff: string }
@@ -620,6 +631,8 @@ export interface UserActivity {
   file?: string;
   project?: string;
   language?: string;
+  /** A Steam lobby the person is in; whoever sees their Steam account can join it. Annoy account presence only. */
+  lobbyId?: string;
 }
 export interface MessageSearchPage {
   items: { message: Message; channelName: string; serverId: string | null }[];
