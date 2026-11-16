@@ -52,7 +52,7 @@ const app = Fastify({
 captureControlRoutes(app);
 transportSecurity(app);
 resourceLimits(app);
-const allowedOrigins=new Set((process.env.ANNOY_ALLOWED_ORIGINS??"null,https://annoy.localhost,http://127.0.0.1:5173,http://localhost:5173").split(",").map(s=>s.trim()));
+const allowedOrigins=new Set((process.env.ANNOY_ALLOWED_ORIGINS??"null,https://annoy.localhost,https://appannoy.geg.dev.br,http://127.0.0.1:5173,http://localhost:5173").split(",").map(s=>s.trim()));
 if(config.publicUrl)allowedOrigins.add(new URL(config.publicUrl).origin);
 await app.register(cors, { origin: (origin,callback)=>callback(null,!origin||allowedOrigins.has(origin)), methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] });
 // Per-upload size comes from the instance settings (see routes/channels.ts); this is only the ceiling.
