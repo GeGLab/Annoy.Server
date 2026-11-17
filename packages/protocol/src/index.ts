@@ -777,9 +777,21 @@ export interface PlaybackState {
   removePlayed?: boolean;
   /** Song rooms with removePlayed: the tracks that left the queue, newest first (at most PLAYBACK_HISTORY_MAX). */
   history?: PlaybackHistoryItem[];
+  /** Song rooms: random mode (set by whoever manages the room). The queue keeps its order; the next track is drawn from those not played yet. Absent on servers that predate it. */
+  shuffle?: boolean;
+  /** Song rooms in random mode: the track that plays next, drawn ahead so every listener (and the DJ) knows it. */
+  upNextId?: string | null;
+  /** Song rooms in random mode: the tracks played in this round, oldest first; "previous" goes back through them. */
+  played?: string[];
+  /** Song rooms: the queue order before "shuffleQueue", which "unshuffle" puts back; null while the queue is in its own order. */
+  originalOrder?: string[] | null;
 }
+/** What adding to the queue answers: the room, and for a playlist how many tracks went in and how many found no room. */
+export interface PlaybackAddResult extends PlaybackState { added?: number; skipped?: number }
 export interface PlaybackHistoryItem extends PlaybackItem { playedAt: string }
 export const PLAYBACK_HISTORY_MAX = 50;
+/** The most tracks a room's queue holds. */
+export const PLAYBACK_QUEUE_MAX = 200;
 
 export type DjStyle = "auto" | "smooth" | "filter" | "echo" | "brake" | "bassswap" | "riser";
 export const DJ_STYLES: readonly DjStyle[] = ["auto", "smooth", "filter", "echo", "brake", "bassswap", "riser"];
@@ -801,7 +813,20 @@ export type PlaybackAction =
   /** Back to the track before: the last played one (removePlayed) or the one above in the queue. */
   | { op: "previous" }
   /** A played track back at the end of the queue. Anyone who may add. */
-  | { op: "requeue"; itemId: string };
+  | { op: "requeue"; itemId: string }
+  /** Random mode on or off. Needs Manage channels. */
+  | { op: "shuffle"; value: boolean }
+  /** Shuffles the tracks after the current one, keeping the order before for "unshuffle". Needs Manage channels. */
+  | { op: "shuffleQueue" }
+  /** The queue back in its order before "shuffleQueue". Needs Manage channels. */
+  | { op: "unshuffle" };
+
+/** The track after the current one: the drawn one in random mode, else the next in the queue. */
+export function nextInQueue(state: Pick<PlaybackState, "queue" | "currentId" | "shuffle" | "upNextId">): PlaybackItem | null {
+  if (state.shuffle) return state.queue.find((i) => i.id === state.upNextId) ?? null;
+  const index = state.queue.findIndex((i) => i.id === state.currentId);
+  return index >= 0 ? state.queue[index + 1] ?? null : null;
+}
 
 /** Where the current item should be right now, in seconds. */
 export function playbackPosition(state: PlaybackState, clockOffsetMs = 0): number {
