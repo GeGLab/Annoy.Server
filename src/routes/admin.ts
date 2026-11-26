@@ -4,6 +4,7 @@
 // token in the data folder (see admin-control.ts).
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { annoyName, annoyProfiles } from "../profiles.ts";
 import type { AdminOverview, AdminServer, AdminUser, SignupInvite, UpdateStatus } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -49,14 +50,18 @@ interface UserRow {
   servers: number;
 }
 
-function toAdminUsers(rows: UserRow[]): AdminUser[] {
+async function toAdminUsers(rows: UserRow[]): Promise<AdminUser[]> {
   const users = getUsers(rows.map((r) => r.id));
+  const profiles = await annoyProfiles([...users.values()].flatMap((u) => (u.annoyId ? [u.annoyId] : [])));
   return rows.flatMap((r) => {
     const user = users.get(r.id);
+    const profile = user?.annoyId ? profiles.get(user.annoyId) : undefined;
     return user
       ? [
           {
             user,
+            name: user.annoyId ? annoyName(profile, user.annoyId) : user.profile?.displayName ?? user.username ?? "",
+            handle: user.annoyId ? profile?.username ?? "" : user.username ?? "",
             createdAt: r.created_at,
             isAdmin: r.is_admin === 1,
             bannedAt: r.banned_at,
@@ -144,21 +149,27 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/admin/users", async (req): Promise<AdminUser[]> => {
     const q = parse(listQuery, req.query);
-    const like = `%${(q.q ?? "").replace(/[!%_]/g, "!$&")}%`;
-    return toAdminUsers(
-      all<UserRow>(
-        `SELECT u.id, u.created_at, u.is_admin, u.banned_at, u.ban_reason, u.discord_id, u.imported_from,
-                (SELECT COUNT(*) FROM servers s WHERE s.owner_id = u.id) AS servers
-           FROM users u
-          WHERE u.username NOT LIKE 'deleted.%' AND (u.username LIKE ? ESCAPE '!' OR u.display_name LIKE ? ESCAPE '!')
-          ORDER BY u.imported_from IS NOT NULL, u.created_at DESC
-          LIMIT ? OFFSET ?`,
-        like,
-        like,
-        q.limit,
-        q.offset,
-      ),
+    const term = (q.q ?? "").trim().toLowerCase();
+    // Local accounts match by @username or by this server's profile; Annoy accounts by their Annoy
+    // profile, read from usersannoy (this server keeps no copy).
+    const rows = all<UserRow & { username: string; display_name: string; global_id: string | null; global_public_id: string | null }>(
+      `SELECT u.id, u.username, u.display_name, u.global_id, u.global_public_id, u.created_at, u.is_admin, u.banned_at, u.ban_reason, u.discord_id, u.imported_from,
+              (SELECT COUNT(*) FROM servers s WHERE s.owner_id = u.id) AS servers
+         FROM users u
+        WHERE u.username NOT LIKE 'deleted.%'
+        ORDER BY u.imported_from IS NOT NULL, u.created_at DESC`,
     );
+    const annoy = term ? await annoyProfiles(rows.flatMap((r) => (r.global_public_id ? [r.global_public_id] : []))) : new Map();
+    const matches = term
+      ? rows.filter((r) => {
+          if (r.global_id || r.global_public_id) {
+            const p = r.global_public_id ? annoy.get(r.global_public_id) : undefined;
+            return [p?.username, p?.displayName, r.global_public_id].some((v) => v?.toLowerCase().includes(term));
+          }
+          return [r.username, r.display_name].some((v) => v.toLowerCase().includes(term));
+        })
+      : rows;
+    return toAdminUsers(matches.slice(q.offset, q.offset + q.limit));
   });
 
   // Who administers is ANNOY_ADMIN (or the first account); it is not changed here.

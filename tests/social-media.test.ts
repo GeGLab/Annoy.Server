@@ -50,7 +50,7 @@ test("animated profile GIF keeps multiple frames and loops indefinitely",async()
  const pixels=Buffer.alloc(16*32*4);for(let index=0;index<16*32;index++){pixels[index*4]=index<16*16?255:0;pixels[index*4+2]=index<16*16?0:255;pixels[index*4+3]=255;}
  const gif=await sharp(pixels,{raw:{width:16,height:32,channels:4,pageHeight:16}}).gif({loop:2,delay:[80,120]}).toBuffer();
  const response=await upload("/users/@me/avatar",gif); assert.equal(response.statusCode,200,response.body);
- const photo=await app.inject({url:new URL(response.json().avatarUrl).pathname.replace("/api","")});
+ const photo=await app.inject({url:new URL(response.json().profile.avatarUrl).pathname.replace("/api","")});
  const metadata=await sharp(photo.rawPayload,{animated:true}).metadata();assert.equal(metadata.pages,2);assert.equal(metadata.loop,0);assert.equal(metadata.pageHeight,512);
 });
 

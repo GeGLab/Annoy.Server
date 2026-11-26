@@ -23,7 +23,7 @@ export function profileDetails(
   viewer: string,
 ): ProfileDetails {
   const user = getUser(subject);
-  if (!user || user.username.startsWith("deleted.")) throw notFound("Perfil");
+  if (!user || one<{ username: string }>("SELECT username FROM users WHERE id = ?", subject)?.username.startsWith("deleted.")) throw notFound("Perfil");
   const owner = subject === viewer;
   const friends =
     relationshipStatus(viewer, subject) === "friend" &&

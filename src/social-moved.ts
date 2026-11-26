@@ -19,8 +19,8 @@ const PROFILE_MOVED = "Perfil, contatos, histórico de atividade e Steam agora f
 /**
  * User settings belong to the Annoy account, not to a server: profile contacts,
  * activity history, the Steam link and extra sign-in methods (Discord). The
- * server keeps only a copy of name, bio and photo, written by the app from the
- * Annoy profile, so members can see them.
+ * profile itself (name, photo, bio, @username) lives only in usersannoy: the
+ * server keeps no copy and sends only the Annoy ID (repo.ts toUser).
  */
 export function userSettingsMovedRoutes(app: FastifyInstance): void {
   const gone = async () => {

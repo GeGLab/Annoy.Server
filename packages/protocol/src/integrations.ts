@@ -50,8 +50,17 @@ export interface IntegrationFile {
   type: string;
   data: Uint8Array;
 }
+/**
+ * Who called or wrote: the Annoy ID (or, on a local-mode server, the server's user ID). The name
+ * comes only for local accounts, which have no Annoy profile; anyone who needs an Annoy account's
+ * name reads it by ID, so it is always current.
+ */
+export interface IntegrationPerson {
+  id: string;
+  name?: string;
+}
 export interface IntegrationHistoryItem {
-  author: string;
+  author: IntegrationPerson;
   text: string;
   at: string;
   /** Written by this integration itself. */
@@ -67,7 +76,9 @@ export interface IntegrationInput {
   trigger: IntegrationTrigger;
   scope: "dm" | "server";
   locale: string;
-  invoker: string;
+  invoker: IntegrationPerson;
+  /** First-party integrations that write names into a prompt (GPT): names read by ID by the caller. */
+  names?: Record<string, string>;
   history: IntegrationHistoryItem[];
   attachments: IntegrationFile[];
   settings: IntegrationSettings;
@@ -304,9 +315,9 @@ async function runHttp(http: IntegrationHttp, input: IntegrationInput, endpoint:
     text: trigger.text,
     scope: input.scope,
     locale: input.locale,
-    invoker: { name: input.invoker },
+    invoker: input.invoker,
     settings: input.settings,
-    ...(trigger.integration.access.history && { history: input.history.map((h) => ({ author: { name: h.author, ...(h.self && { self: true }) }, text: h.text, at: h.at })) }),
+    ...(trigger.integration.access.history && { history: input.history.map((h) => ({ author: { ...h.author, ...(h.self && { self: true }) }, text: h.text, at: h.at })) }),
     ...(trigger.integration.access.attachments && { attachments: input.attachments.map((a) => ({ name: a.name, type: a.type, size: a.data.length, data: toBase64(a.data) })) }),
   };
   const payload = JSON.stringify(body);
@@ -384,12 +395,13 @@ async function runOpenai(http: IntegrationHttp, input: IntegrationInput): Promis
   const count = Math.max(0, Math.min(INTEGRATION_LIMITS.history, Number(settings.history) || 0));
   const history = count ? input.history.slice(-count) : [];
   const images = input.attachments.filter((a) => imageKind(a.data));
-  const question = `${input.invoker}: ${trigger.text}`;
+  const nameOf = (person: IntegrationPerson) => input.names?.[person.id] ?? person.name ?? person.id;
+  const question = `${nameOf(input.invoker)}: ${trigger.text}`;
   const data = await openai(http, key, "/chat/completions", {
     model: String(settings.model),
     messages: [
       { role: "system", content: `You are ${trigger.integration.name}, taking part in a chat conversation in the Annoy app. Every message from a person starts with that person's name and a colon. Reply in the language of the last message.` },
-      ...history.map((h) => (h.self ? { role: "assistant", content: h.text } : { role: "user", content: `${h.author}: ${h.text}` })),
+      ...history.map((h) => (h.self ? { role: "assistant", content: h.text } : { role: "user", content: `${nameOf(h.author)}: ${h.text}` })),
       { role: "user", content: images.length ? [{ type: "text", text: question }, ...images.map((a) => ({ type: "image_url", image_url: { url: `data:${imageKind(a.data)!.type};base64,${toBase64(a.data)}` } }))] : question },
     ],
   });

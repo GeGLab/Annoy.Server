@@ -120,14 +120,16 @@ function resolveAccount(d: DUser, linkUserId: string | null, inviteCode: string 
         run("UPDATE messages SET author_id = ? WHERE author_id = ?", linkUserId, ghost);
         run("DELETE FROM users WHERE id = ?", ghost);
       }
-      run("UPDATE users SET discord_id = ?, display_name = ?, avatar_url = ? WHERE id = ?", d.id, displayName, avatar, linkUserId);
+      run("UPDATE users SET discord_id = ? WHERE id = ?", d.id, linkUserId);
+      // An Annoy account's profile lives only in usersannoy: Discord fills it only for local accounts.
+      run("UPDATE users SET display_name = ?, avatar_url = ? WHERE id = ? AND global_id IS NULL AND global_public_id IS NULL", displayName, avatar, linkUserId);
       return linkUserId;
     }
 
     if (linked) {
       const banned = one<{ banned_at: string | null }>("SELECT banned_at FROM users WHERE id = ?", linked)?.banned_at;
       if (banned) throw new Error("Conta suspensa nesta instância");
-      run("UPDATE users SET display_name = ?, avatar_url = ? WHERE id = ?", displayName, avatar, linked);
+      run("UPDATE users SET display_name = ?, avatar_url = ? WHERE id = ? AND global_id IS NULL AND global_public_id IS NULL", displayName, avatar, linked);
       return linked;
     }
     if (ghost) {
@@ -185,7 +187,7 @@ export async function completeLogin(state: string, code: string | undefined, err
     const user = getUser(userId)!;
     sendToAudience(userId, { t: "USER_UPDATE", d: user });
     pending.result = { status: "done", auth: pending.linkUserId ? null : { token: createSession(userId), user }, user };
-    return page(pending.linkUserId ? "Discord vinculado" : `Olá, ${user.displayName}!`, "Pronto. Pode fechar esta aba e voltar ao Annoy.");
+    return page(pending.linkUserId ? "Discord vinculado" : user.profile ? `Olá, ${user.profile.displayName}!` : "Olá!", "Pronto. Pode fechar esta aba e voltar ao Annoy.");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Falha no login com Discord";
     pending.result = { status: "error", message };

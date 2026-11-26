@@ -51,8 +51,10 @@ await app.register((await import("@fastify/multipart")).default);
 integrationRoutes(app);
 channelRoutes(app);
 const tokens: Record<string, string> = {};
+// Annoy accounts: the server keeps no name for them, only their Annoy ID.
+const ANNOY_IDS: Record<string, string> = { owner: "UA0000000001", member: "UB0000000002", guest: "UC0000000003" };
 for (const id of ["owner", "member", "guest"]) {
-  run("INSERT INTO users(id,username,display_name,password_hash,created_at,global_id) VALUES(?,?,?,'!','2026-01-01',?)", id, id, id === "member" ? "Bia" : id, `global-${id}`);
+  run("INSERT INTO users(id,username,display_name,password_hash,created_at,global_id,global_public_id) VALUES(?,?,'','!','2026-01-01',?,?)", id, `annoy.${id}`, `global-${id}`, ANNOY_IDS[id]);
   tokens[id] = createSession(id);
 }
 run("INSERT INTO servers(id,name,owner_id,created_at) VALUES('s','s','owner','2026-01-01')");
@@ -108,8 +110,8 @@ test("a member with the permission calls it; the answer is posted as the integra
   assert.equal(call.url, "https://eco.example/annoy");
   assert.equal(call.headers.authorization, "Bearer secret-key");
   assert.equal(call.headers["x-annoy-integration"], "eco");
-  assert.deepEqual({ ...call.body, history: undefined }, { v: 1, type: "command", command: "eco", text: "olá mundo", scope: "server", locale: "pt-BR", invoker: { name: "Bia" }, settings: { idioma: "en" }, history: undefined });
-  assert.deepEqual(call.body.history.map((h: any) => [h.author.name, h.text]), [["owner", "primeira mensagem"]]);
+  assert.deepEqual({ ...call.body, history: undefined }, { v: 1, type: "command", command: "eco", text: "olá mundo", scope: "server", locale: "pt-BR", invoker: { id: "UB0000000002" }, settings: { idioma: "en" }, history: undefined });
+  assert.deepEqual(call.body.history.map((h: any) => [h.author, h.text]), [[{ id: "UA0000000001" }, "primeira mensagem"]]);
   assert.ok(!JSON.stringify(call.body).includes("member"), "no account identifiers leave the server");
   const [reply] = replies();
   assert.equal(reply!.content, "pong");
@@ -128,7 +130,7 @@ test("mention calls it too; the integration's own answers go back as its history
   assert.equal(calls.length, 2);
   assert.equal(calls[1]!.body.type, "mention");
   assert.equal(calls[1]!.body.text, "e agora, ?");
-  assert.deepEqual(calls[1]!.body.history.at(-1), { author: { name: "Eco", self: true }, text: "pong", at: calls[1]!.body.history.at(-1).at });
+  assert.deepEqual(calls[1]!.body.history.at(-1), { author: { id: "eco", name: "Eco", self: true }, text: "pong", at: calls[1]!.body.history.at(-1).at });
 });
 
 test("without the permission nothing is called; an integration's answer never calls another", async () => {

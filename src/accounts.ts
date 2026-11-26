@@ -10,7 +10,8 @@ import { clearUserActivity } from "./activity.ts";
 import { usesLegacyGateway, legacyCommand } from './handoff.ts';
 
 /** Prefixes that registration refuses, so system-made usernames can't be claimed. */
-export const RESERVED_USERNAME = /^(dc|deleted)\./i;
+/** "annoy." names are internal keys of Annoy accounts (their @username lives in usersannoy and is never stored here). */
+export const RESERVED_USERNAME = /^(dc|deleted|annoy)\./i;
 
 /** Ends every live session of the user (gateway sockets close; voice is released on close). */
 export function disconnectEverywhere(userId: string, reason: string): void {
@@ -33,7 +34,7 @@ export function ownedServerNames(userId: string): string[] {
  * Nothing is left behind as a "deleted user". The person must hand over owned servers first.
  */
 export async function deleteAccount(userId: string): Promise<void> {
-  const avatar = getUser(userId)?.avatarUrl;
+  const avatar = one<{ avatar_url: string | null }>("SELECT avatar_url FROM users WHERE id = ?", userId)?.avatar_url;
   const owned = ownedServerNames(userId);
   if (owned.length > 0) throw conflict(`Exclua ou transfira estes servidores antes: ${owned.join(", ")}`);
   const servers = all<{ server_id: string }>("SELECT server_id FROM members WHERE user_id = ?", userId).map((r) => r.server_id);

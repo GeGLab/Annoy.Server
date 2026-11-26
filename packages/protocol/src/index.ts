@@ -111,20 +111,32 @@ export function computePermissions(input: PermissionInput): number {
 // Entities
 // ---------------------------------------------------------------------------
 
-export interface User {
-  bio?: string;
-  id: string;
-  username: string;
+/**
+ * A person's public profile. Annoy accounts: it exists only in the Annoy cloud (usersannoy), read
+ * by `User.annoyId`; a server never stores or sends it. Local-mode accounts: the server's own,
+ * sent as `User.profile`.
+ */
+export interface Profile {
   displayName: string;
   avatarUrl: string | null;
-  /** Signs in with an Annoy account. Only sent for the user's own profile. */
+  bio?: string;
+}
+
+/** Who someone is on this server. Profile attributes (name, photo, bio) are not part of it. */
+export interface User {
+  id: string;
+  /** Local accounts only: the @username on this server. Annoy accounts use their Annoy username. */
+  username?: string;
+  /** Signs in with an Annoy account. Only sent for the user's own user. */
   global?: boolean;
   /**
    * Annoy public ID (U + 11 characters) of an Annoy account on a server in
-   * Annoy-account mode. The app uses it to read status and profile from the
-   * Annoy cloud (chatannoy, usersannoy). Absent for local accounts.
+   * Annoy-account mode. The app reads the profile (usersannoy) and status
+   * (chatannoy) by it. Absent for local accounts.
    */
   annoyId?: string | null;
+  /** Local accounts only: the profile this server keeps for them. */
+  profile?: Profile;
 }
 
 export type Presence = "online" | "idle" | "dnd" | "offline";
@@ -494,9 +506,7 @@ export interface GlobalProof {
 }
 
 export interface GlobalLogin extends GlobalProof {
-  /** First time on this server: the username to create; ignored when the account exists. */
-  username?: string;
-  displayName?: string;
+  /** First time on a server that creates accounts by invite. No name: the @username and profile are the Annoy account's. */
   inviteCode?: string;
 }
 
@@ -540,6 +550,9 @@ export interface InstanceSettings {
 
 export interface AdminUser {
   user: User;
+  /** Shown name and @username: local accounts from this server, Annoy accounts read from usersannoy. */
+  name: string;
+  handle: string;
   createdAt: string;
   isAdmin: boolean;
   bannedAt: string | null;

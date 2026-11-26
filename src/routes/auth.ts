@@ -1,3 +1,4 @@
+import { annoyProfiles } from "../profiles.ts";
 import { LIMITS, PROTOCOL_VERSION, type AuthResponse, type InstanceInfo, type User } from "@annoy/protocol";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -48,8 +49,6 @@ const globalProof = z.object({
   attestation: z.object({ publicId: z.string().max(32), expires: z.number().int(), signature: b64url }).optional(),
 });
 const globalLogin = globalProof.extend({
-  username: username.optional(),
-  displayName: displayName.optional(),
   inviteCode: z.string().trim().max(64).optional(),
 });
 
@@ -57,6 +56,13 @@ const globalLogin = globalProof.extend({
 export function ownUser(id: string): User {
   const global = one<{ global_id: string | null }>("SELECT global_id FROM users WHERE id = ?", id)?.global_id;
   return { ...getUser(id)!, global: !!global };
+}
+
+/** An Annoy account's profile lives only in usersannoy: this server neither stores nor changes it. */
+function requireLocalProfile(userId: string): void {
+  if (one("SELECT 1 AS x FROM users WHERE id = ? AND (global_id IS NOT NULL OR global_public_id IS NOT NULL)", userId)) {
+    throw new HttpError(403, "profile_in_annoy", "O perfil desta conta fica na conta Annoy");
+  }
 }
 
 function refuseBanned(row: { banned_at: string | null; ban_reason: string }): void {
@@ -160,24 +166,23 @@ export function authRoutes(app: FastifyInstance): void {
       if (publicId) run("UPDATE users SET global_public_id = ? WHERE id = ? AND global_public_id IS NULL", publicId, existing.id);
       return { token: createSession(existing.id), user: ownUser(existing.id) };
     }
-    // First time here: a new account on this server, under its registration rules.
-    if (!body.username) throw new HttpError(404, "global_new_account", "Escolha um nome de usuário para este servidor");
+    // First time here: a new account on this server, under its registration rules. No name is asked:
+    // the @username and the profile belong to the Annoy account (usersannoy). The username column
+    // gets an internal key that never leaves the server.
     const invite = checkRegistration(body.inviteCode);
-    if (RESERVED_USERNAME.test(body.username)) throw badRequest('Os prefixos "dc." e "deleted." são reservados');
-    if (one("SELECT 1 AS x FROM users WHERE username = ?", body.username)) throw conflict("Nome de usuário em uso");
     const id = newId();
+    const internal = `annoy.${id}`;
     // No password: "!" never matches a scrypt hash, so only the global login opens it.
     run(
-      "INSERT INTO users (id, username, display_name, password_hash, global_id, global_public_id, created_at) VALUES (?, ?, ?, '!', ?, ?, ?)",
+      "INSERT INTO users (id, username, display_name, password_hash, global_id, global_public_id, created_at) VALUES (?, ?, '', '!', ?, ?, ?)",
       id,
-      body.username,
-      body.displayName ?? body.username,
+      internal,
       identity,
       publicId && !one("SELECT 1 AS x FROM users WHERE global_public_id = ?", publicId) ? publicId : null,
       now(),
     );
     consumeSignupInvite(invite);
-    grantBootstrapAdmin(id, body.username);
+    grantBootstrapAdmin(id, internal, publicId);
     return { token: createSession(id), user: ownUser(id) };
   });
 
@@ -204,11 +209,14 @@ export function authRoutes(app: FastifyInstance): void {
       if (owner.global_id) throw conflict("Esta conta já utiliza uma conta Annoy");
       mergeUsers(owner.id, holder.id);
     }
+    const dropped = one<{ avatar_url: string | null }>("SELECT avatar_url FROM users WHERE id = ?", owner.id)?.avatar_url ?? null;
     tx(() => {
-      run("UPDATE users SET global_id = ?, password_hash = '!' WHERE id = ?", identity, owner.id);
+      // Now an Annoy account: its @username and profile live in usersannoy; the local copies go.
+      run("UPDATE users SET global_id = ?, password_hash = '!', username = 'annoy.' || id, display_name = '', bio = '', avatar_url = NULL WHERE id = ?", identity, owner.id);
       run("DELETE FROM account_recovery WHERE user_id = ?", owner.id);
       deleteSessionsOf(owner.id);
     });
+    await discardAvatar(dropped).catch(() => undefined);
     return { token: createSession(owner.id), user: ownUser(owner.id), removedUserId: holder && holder.id !== owner.id ? holder.id : null };
   });
 
@@ -294,13 +302,14 @@ export function authRoutes(app: FastifyInstance): void {
 
   app.patch("/users/@me", async (req) => {
     const userId = requireUser(req);
+    requireLocalProfile(userId);
     const body = parse(patchMe, req.body);
     const previous = tx(() => {
-      const old = getUser(userId)!;
+      const old = one<{ avatar_url: string | null }>("SELECT avatar_url FROM users WHERE id = ?", userId)!;
       if (body.displayName !== undefined) run("UPDATE users SET display_name = ? WHERE id = ?", body.displayName, userId);
       if (body.bio !== undefined) run("UPDATE users SET bio = ? WHERE id = ?", body.bio, userId);
       if (body.avatarUrl === null) run("UPDATE users SET avatar_url = NULL WHERE id = ?", userId);
-      return old.avatarUrl;
+      return old.avatar_url;
     });
     const user = getUser(userId)!;
     sendToAudience(userId, { t: "USER_UPDATE", d: user });
@@ -310,6 +319,7 @@ export function authRoutes(app: FastifyInstance): void {
 
   app.post("/users/@me/avatar", async (req) => {
     const userId = requireUser(req);
+    requireLocalProfile(userId);
     const file = await req.file({ limits: { fileSize: MAX_AVATAR_BYTES, files: 1, fields: 0 } });
     if (!file) throw badRequest("Selecione uma foto");
     const bytes = await file.toBuffer();
@@ -319,9 +329,9 @@ export function authRoutes(app: FastifyInstance): void {
     let previous: string | null = null;
     try {
       tx(() => {
-        const current = getUser(userId);
+        const current = one<{ username: string; avatar_url: string | null }>("SELECT username, avatar_url FROM users WHERE id = ?", userId);
         if (!current || current.username.startsWith("deleted.")) throw notFound("Usuário");
-        previous = current.avatarUrl;
+        previous = current.avatar_url;
         run("UPDATE users SET avatar_url = ? WHERE id = ?", new URL(path, origin).toString(), userId);
       });
     } catch (error) {
@@ -348,8 +358,13 @@ export function authRoutes(app: FastifyInstance): void {
   app.delete("/users/@me", async (req) => {
     const userId = requireUser(req);
     const body = parse(deleteMe, req.body);
-    const row = one<{ username: string; password_hash: string }>("SELECT username, password_hash FROM users WHERE id = ?", userId)!;
-    if (body.confirm.trim().toLowerCase() !== row.username.toLowerCase()) throw badRequest("Digite seu nome de usuário para confirmar");
+    const row = one<{ username: string; password_hash: string; global_id: string | null; global_public_id: string | null }>("SELECT username, password_hash, global_id, global_public_id FROM users WHERE id = ?", userId)!;
+    // Annoy accounts confirm with their Annoy @username, read now from usersannoy.
+    const expected = row.global_id || row.global_public_id
+      ? (row.global_public_id ? (await annoyProfiles([row.global_public_id])).get(row.global_public_id)?.username : undefined)
+      : row.username;
+    if (!expected) throw new HttpError(503, "profile_unavailable", "Não foi possível ler seu perfil Annoy agora. Tente de novo.");
+    if (body.confirm.trim().toLowerCase() !== expected.toLowerCase()) throw badRequest("Digite seu nome de usuário para confirmar");
     if (row.password_hash !== "!" && !(await verifyPassword(body.password ?? "", row.password_hash))) {
       throw new HttpError(401, "invalid_credentials", "Senha incorreta");
     }

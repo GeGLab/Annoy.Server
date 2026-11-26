@@ -11,7 +11,8 @@ import Fastify from "fastify";
 import { config } from "./config.ts";
 import { whenServing } from "./slot.ts";
 import { startApiTunnel } from './handoff.ts';
-import { db } from "./db.ts";
+import { db, droppedAnnoyAvatars } from "./db.ts";
+import { discardAvatar } from "./avatars.ts";
 import { HttpError } from "./errors.ts";
 import { closeForRestart, registerGateway } from "./gateway.ts";
 import { syncConfiguredAdmin } from "./instance.ts";
@@ -76,6 +77,8 @@ app.setErrorHandler((err, _req, reply) => {
 });
 
 syncConfiguredAdmin();
+// Photos this server kept for Annoy accounts before their profile moved to usersannoy only.
+for (const url of droppedAnnoyAvatars) void discardAvatar(url).catch(() => undefined);
 whenServing(() => startGlobal((msg) => app.log.info(msg)));
 await startVoice();
 const decrypted = await removeServerCrypto();

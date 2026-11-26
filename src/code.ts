@@ -1,3 +1,4 @@
+import { annoyName, annoyProfiles } from "./profiles.ts";
 import { Permission, type Channel, type CodeEntry, type CodeFile, type CodeRepo, type CodeStatus } from "@annoy/protocol";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -377,8 +378,9 @@ export function codeRoutes(app: FastifyInstance): void {
     requireReady(channel.id);
     const body = parse(commitBody, req.body);
     const user = getUsers([userId]).get(userId);
-    const name = user?.displayName || user?.username || "Annoy";
-    const email = body.email || `${user?.username ?? "annoy"}@users.noreply.annoy`;
+    // Annoy accounts: the name is read now from usersannoy (this server keeps no profile).
+    const name = user?.annoyId ? annoyName((await annoyProfiles([user.annoyId])).get(user.annoyId), user.annoyId) : user?.profile?.displayName || user?.username || "Annoy";
+    const email = body.email || `${user?.annoyId ?? user?.username ?? "annoy"}@users.noreply.annoy`;
     const cwd = repoDir(channel.id);
     await serial(channel.id, () =>
       gitStep(async () => {

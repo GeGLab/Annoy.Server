@@ -388,3 +388,20 @@ db.exec(`CREATE TABLE IF NOT EXISTS server_integrations (
   PRIMARY KEY (server_id, integration_id)
 )`);
 if (!(db.prepare("PRAGMA table_info(messages)").all() as { name: string }[]).some((c) => c.name === "integration")) db.exec("ALTER TABLE messages ADD COLUMN integration TEXT");
+
+// Profiles of Annoy accounts live only in usersannoy (decided 2026-11-26): the copy this server kept
+// (name, photo, bio) and the server @username go. The username column keeps an internal key
+// ("annoy.<id>") that never leaves the server. The photo files are removed at start (index.ts).
+export const droppedAnnoyAvatars: string[] = [];
+if (!db.prepare("SELECT 1 FROM instance_settings WHERE key = 'migration.annoy_profiles_out'").get()) {
+  db.exec("BEGIN");
+  try {
+    for (const row of db.prepare("SELECT avatar_url FROM users WHERE global_id IS NOT NULL AND avatar_url IS NOT NULL").all() as { avatar_url: string }[]) droppedAnnoyAvatars.push(row.avatar_url);
+    db.prepare("UPDATE users SET display_name = '', bio = '', avatar_url = NULL, username = 'annoy.' || id WHERE global_id IS NOT NULL AND username NOT LIKE 'deleted.%'").run();
+    db.prepare("INSERT INTO instance_settings (key, value) VALUES ('migration.annoy_profiles_out', 'done')").run();
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}

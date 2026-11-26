@@ -103,10 +103,10 @@ export async function deleteServer(serverId: string, actorId: string): Promise<v
   for (const m of members) sendToUser(m.user_id, { t: "SERVER_REMOVE", d: { serverId } });
 }
 
-export function serverState(serverId: string, userId: string, membersLimit?: number): ServerState {
+export async function serverState(serverId: string, userId: string, membersLimit?: number): Promise<ServerState> {
   const { server, perms } = requireServer(serverId, userId);
   const channels = getChannels(serverId).filter((c) => has(channelPermissions(c, userId), Permission.VIEW_CHANNEL));
-  const page = membersLimit ? getMembersPage(serverId, membersLimit, null) : null;
+  const page = membersLimit ? await getMembersPage(serverId, membersLimit, null) : null;
   const members = page ? [getMember(serverId, userId), ...page.members].filter((member, index, all): member is NonNullable<typeof member> => !!member && all.findIndex((other) => other?.user.id === member.user.id) === index) : getMembers(serverId);
   return {
     server,

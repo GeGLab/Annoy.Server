@@ -155,7 +155,7 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | `ANNOY_VOICE_BACKEND` | `builtin` | `cloudflare` routes voice and video through Cloudflare Realtime SFU (for CGNAT, see below) |
 | `ANNOY_CF_SFU_APP_ID` / `_TOKEN` | (empty) | Cloudflare Realtime SFU app credentials, used with `ANNOY_VOICE_BACKEND=cloudflare` |
 | `ANNOY_REGISTRATION` | `invite` | Sign-up mode: `open`, `invite` or `closed` |
-| `ANNOY_ADMIN` | (empty) | Username that administers the annoy-server (exempt from the limits below). Otherwise the first account |
+| `ANNOY_ADMIN` | (empty) | Username (local accounts) or Annoy ID (Annoy accounts) that administers the annoy-server (exempt from the limits below). Otherwise the first account |
 | `ANNOY_MAX_SERVERS_PER_USER` | unlimited | Limit of servers per account |
 | `ANNOY_MAX_UPLOAD_MB` | `25` | Maximum size per attachment |
 | `ANNOY_AUTO_UPDATE` | `off` | `on` updates the server automatically (Docker, with the `updater` service) |
