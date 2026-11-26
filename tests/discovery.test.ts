@@ -278,7 +278,7 @@ test("biographies and friend nicknames persist and validate; a friend nickname s
   assert.equal((await app.inject({ method: "PATCH", url: "/users/@me", headers: auth("alice"), payload: { bio: "A".repeat(1000) } })).statusCode, 200);
   assert.equal((await app.inject({ method: "PATCH", url: "/users/@me", headers: auth("alice"), payload: { bio: "A".repeat(1001) } })).statusCode, 400);
   const me = await app.inject({ method: "GET", url: "/users/@me", headers: auth("alice") });
-  assert.equal(me.json().bio.length, 1000);
+  assert.equal(me.json().profile.bio.length, 1000);
   const nickname = await app.inject({ method: "PATCH", url: "/relationships/bob/nickname", headers: auth("alice"), payload: { nickname: "Bobby" } });
   assert.equal(nickname.statusCode, 200);
   const alice = (await app.inject({ method: "GET", url: "/relationships", headers: auth("alice") })).json();

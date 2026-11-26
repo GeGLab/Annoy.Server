@@ -61,7 +61,7 @@ test("avatar upload validates, re-encodes, serves and deletes the user's image",
   const response = await request(photo);
   assert.equal(response.statusCode, 200, response.body);
   const user = response.json();
-  const url = new URL(user.avatarUrl);
+  const url = new URL(user.profile.avatarUrl);
   assert.match(url.pathname, /^\/api\/avatars\/[a-f0-9]{32}\.webp$/);
   const image = await app.inject({ url: url.pathname.replace("/api", "") });
   assert.equal(image.statusCode, 200);
@@ -74,8 +74,8 @@ test("avatar upload validates, re-encodes, serves and deletes the user's image",
   assert.equal((await app.inject({ url: url.pathname.replace("/api", "") })).statusCode, 404);
   const removed = await app.inject({ method: "PATCH", url: "/users/@me", headers: { authorization }, payload: { avatarUrl: null } });
   assert.equal(removed.statusCode, 200);
-  assert.equal(removed.json().avatarUrl, null);
-  assert.equal((await app.inject({ url: new URL(second.json().avatarUrl).pathname.replace("/api", "") })).statusCode, 404);
+  assert.equal(removed.json().profile.avatarUrl, null);
+  assert.equal((await app.inject({ url: new URL(second.json().profile.avatarUrl).pathname.replace("/api", "") })).statusCode, 404);
   const arbitrary = await app.inject({
     method: "PATCH",
     url: "/users/@me",

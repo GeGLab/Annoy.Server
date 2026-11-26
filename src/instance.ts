@@ -30,8 +30,10 @@ export function requireAdmin(userId: string): void {
 }
 
 /** ANNOY_ADMIN, or else the very first account, administers the instance. */
-export function grantBootstrapAdmin(userId: string, username: string): void {
-  const named = config.adminUsername !== "" && config.adminUsername.toLowerCase() === username.toLowerCase();
+/** ANNOY_ADMIN names a local account by @username or an Annoy account by its Annoy ID. */
+export function grantBootstrapAdmin(userId: string, username: string, annoyId: string | null = null): void {
+  const wanted = config.adminUsername.toLowerCase();
+  const named = wanted !== "" && (wanted === username.toLowerCase() || (!!annoyId && wanted === annoyId.toLowerCase()));
   const noAdmin = !one("SELECT 1 AS x FROM users WHERE is_admin = 1 AND id != ?", userId);
   if (named || (config.adminUsername === "" && noAdmin)) run("UPDATE users SET is_admin = 1 WHERE id = ?", userId);
 }
@@ -43,7 +45,7 @@ export function grantBootstrapAdmin(userId: string, username: string): void {
  */
 export function syncConfiguredAdmin(): void {
   if (config.adminUsername) {
-    run("UPDATE users SET is_admin = 1 WHERE username = ?", config.adminUsername);
+    run("UPDATE users SET is_admin = 1 WHERE username = ? COLLATE NOCASE OR global_public_id = ? COLLATE NOCASE", config.adminUsername, config.adminUsername);
     return;
   }
   if (one("SELECT 1 AS x FROM users WHERE is_admin = 1")) return;

@@ -25,7 +25,7 @@ const origin = await app.listen({ host: "127.0.0.1", port: 0 });
 after(async () => { await app.close(); db.close(); await rm(directory, { recursive: true, force: true }); });
 
 test("the gateway rejects old, malformed and missing client versions", { timeout: 10_000 }, async () => {
-  for (const clientVersion of [undefined, null, "latest", "0.10.0-alpha.7", "0.10.0-nightly.202611070927"]) {
+  for (const clientVersion of [undefined, null, "latest", "0.10.0-alpha.7", "0.10.0-nightly.202611070927", "0.13.1-alpha.3"]) {
     const socket = new WebSocket(origin.replace("http", "ws") + "/gateway");
     await once(socket, "open");
     // Client close can arrive before the server's gateway cleanup on Windows.
@@ -44,7 +44,7 @@ test("the gateway rejects old, malformed and missing client versions", { timeout
 });
 
 test("the gateway accepts the new minimum and newer clients", { timeout: 10_000 }, async () => {
-  for (const clientVersion of [MIN_CLIENT_VERSION, "0.11.0-alpha.2", "0.11.0"]) {
+  for (const clientVersion of [MIN_CLIENT_VERSION, "0.13.2-alpha.2", "0.13.2"]) {
     const socket = new WebSocket(origin.replace("http", "ws") + "/gateway");
     await once(socket, "open");
     // Client close can arrive before the server's gateway cleanup on Windows.

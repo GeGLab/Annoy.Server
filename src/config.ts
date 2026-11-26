@@ -97,6 +97,8 @@ export const config = {
     url: accountMode==='global'?secureServiceUrl(env("ANNOY_GLOBAL_URL", "https://global.geg.dev.br")):env("ANNOY_GLOBAL_URL", "https://global.geg.dev.br").replace(/\/+$/, ""),
     /** authannoy: blind-token and attestation keys (TODO item 2). The Global's address also serves them. */
     authUrl: accountMode==='global'?secureServiceUrl(env("ANNOY_AUTH_URL", env("ANNOY_GLOBAL_URL", "https://global.geg.dev.br"))):"",
+    /** usersannoy: the only place of an Annoy account's profile; this server reads names there by Annoy ID. */
+    usersUrl: accountMode==='global'?secureServiceUrl(env("ANNOY_USERS_URL", "https://usersannoy.geg.dev.br")):"",
   },
   /**
    * Folder shared with the "updater" Compose service (/control in

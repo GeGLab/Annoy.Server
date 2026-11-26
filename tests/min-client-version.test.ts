@@ -31,7 +31,7 @@ test("servers announce the oldest client they accept; newer clients always pass"
   assert.ok(compareVersions("0.10.0-beta.1", "0.10.0-alpha.2") > 0);
   const info = (await app.inject({ url: "/api/info" })).json();
   assert.equal(info.minClientVersion, MIN_CLIENT_VERSION);
-  assert.equal(info.minClientVersion, "0.11.0-alpha.1");
+  assert.equal(info.minClientVersion, "0.13.2-alpha.1");
   // A malformed minimum stops the server at startup instead of locking clients out.
   const started = spawnSync(process.execPath, ["--import", "tsx", "-e", "await import('./src/config.ts')"], { env: { ...process.env, ANNOY_MIN_CLIENT_VERSION: "latest" }, encoding: "utf8" });
   assert.notEqual(started.status, 0);

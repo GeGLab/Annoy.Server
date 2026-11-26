@@ -108,7 +108,7 @@ async function main(argv: string[]): Promise<void> {
     }
     case "user list": {
       const list = await call<AdminUser[]>("GET", `/users?q=${encodeURIComponent(plain.join(" "))}`);
-      return table([["USUÁRIO", "NOME", "ADMIN", "SUSPENSA", "SERVIDORES"], ...list.map((u) => [u.user.username, u.user.displayName, u.isAdmin ? "sim" : "", u.bannedAt ? day(u.bannedAt) : "", u.serverCount])]);
+      return table([["USUÁRIO", "NOME", "ADMIN", "SUSPENSA", "SERVIDORES"], ...list.map((u) => [u.handle, u.name, u.isAdmin ? "sim" : "", u.bannedAt ? day(u.bannedAt) : "", u.serverCount])]);
     }
     case "user ban": {
       if (!plain[0]) fail("Informe o usuário.");

@@ -1,3 +1,4 @@
+import { annoyName, annoyProfiles } from "./profiles.ts";
 import type {
   Attachment,
   CategoryKind,
@@ -26,10 +27,11 @@ interface UserRow {
   display_name: string;
   avatar_url: string | null;
   bio: string;
+  global_id: string | null;
   global_public_id: string | null;
 }
 
-const USER_COLS = "id, username, display_name, avatar_url, bio, global_public_id";
+const USER_COLS = "id, username, display_name, avatar_url, bio, global_id, global_public_id";
 interface ServerRow {
   id: string;
   name: string;
@@ -88,7 +90,15 @@ const placeholders = (n: number) => Array.from({ length: n }, () => "?").join(",
 
 // Users ----------------------------------------------------------------------
 
-const toUser = (r: UserRow): User => ({ id: r.id, username: r.username, displayName: r.display_name, avatarUrl: r.avatar_url, bio: r.bio ?? "", ...(r.global_public_id && { annoyId: r.global_public_id }) });
+/**
+ * User and Profile are separate. Annoy accounts: only the ID and the Annoy ID go out; their
+ * profile and @username live in usersannoy alone. Local accounts: the @username and the
+ * server's profile for them.
+ */
+export const toUser = (r: UserRow): User =>
+  r.global_id || r.global_public_id
+    ? { id: r.id, annoyId: r.global_public_id }
+    : { id: r.id, username: r.username, profile: { displayName: r.display_name, avatarUrl: r.avatar_url, bio: r.bio ?? "" } };
 
 export function getUser(id: string): User | undefined {
   const row = one<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id = ?`, id);
@@ -173,9 +183,9 @@ export function memberRoleIds(serverId: string, userId: string): string[] {
 
 export function getMembers(serverId: string): Member[] {
   const rows = all<UserRow & { nick: string | null; joined_at: string }>(
-    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.global_public_id, m.nick, m.joined_at
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.global_id, u.global_public_id, m.nick, m.joined_at
        FROM members m JOIN users u ON u.id = m.user_id
-      WHERE m.server_id = ? ORDER BY u.display_name COLLATE NOCASE`,
+      WHERE m.server_id = ? ORDER BY COALESCE(m.nick, u.display_name) COLLATE NOCASE`,
     serverId,
   );
   const roleMap = new Map<string, string[]>();
@@ -193,8 +203,12 @@ export function getMembers(serverId: string): Member[] {
   }));
 }
 
-/** Bounded, stable member query for large communities. Cursor follows the same visible-name order. */
-export function getMembersPage(serverId: string, limit: number, after: string | null, query = ""): MemberPage {
+/**
+ * Bounded, stable member query for large communities, in visible-name order (server nickname, else
+ * the profile name). Annoy accounts' names are read from usersannoy (this server keeps no copy);
+ * local accounts use this server's profile. The cursor carries the last name and user ID.
+ */
+export async function getMembersPage(serverId: string, limit: number, after: string | null, query = ""): Promise<MemberPage> {
   let key: [string, string] | null = null;
   if (after) {
     try {
@@ -202,45 +216,44 @@ export function getMembersPage(serverId: string, limit: number, after: string | 
       if (Array.isArray(parsed) && typeof parsed[0] === "string" && typeof parsed[1] === "string") key = [parsed[0], parsed[1]];
     } catch { /* An invalid cursor starts at the first page. */ }
   }
-  const pattern = `%${query.trim().replace(/[\\%_]/g, "\\$&")}%`;
-  const filter = query.trim() ? `AND (u.username LIKE ? ESCAPE '\\' COLLATE NOCASE OR u.display_name LIKE ? ESCAPE '\\' COLLATE NOCASE OR COALESCE(m.nick, '') LIKE ? ESCAPE '\\' COLLATE NOCASE)` : "";
-  const params: (string | number)[] = [serverId];
-  if (query.trim()) params.push(pattern, pattern, pattern);
-  const total = one<{ total: number }>(
-    `SELECT COUNT(*) AS total FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? ${filter}`,
-    ...params,
-  )?.total ?? 0;
-  const visible = "COALESCE(m.nick, u.display_name)";
-  const cursor = key ? `AND (LOWER(${visible}) > LOWER(?) OR (LOWER(${visible}) = LOWER(?) AND u.id > ?))` : "";
   const rows = all<UserRow & { nick: string | null; joined_at: string }>(
-    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.global_public_id, m.nick, m.joined_at
-       FROM members m JOIN users u ON u.id=m.user_id
-      WHERE m.server_id=? ${filter} ${cursor}
-      ORDER BY ${visible} COLLATE NOCASE, u.id LIMIT ?`,
-    ...params,
-    ...(key ? [key[0], key[0], key[1]] : []),
-    limit + 1,
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.global_id, u.global_public_id, m.nick, m.joined_at
+       FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=?`,
+    serverId,
   );
-  const hasMore = rows.length > limit;
-  if (hasMore) rows.pop();
+  const profiles = await annoyProfiles(rows.flatMap((r) => (r.global_public_id ? [r.global_public_id] : [])));
+  const annoyAccount = (r: UserRow) => !!(r.global_id || r.global_public_id);
+  const nameOf = (r: UserRow & { nick: string | null }) =>
+    r.nick ?? (annoyAccount(r) ? (r.global_public_id ? annoyName(profiles.get(r.global_public_id), r.global_public_id) : "") : r.display_name);
+  const term = query.trim().toLowerCase();
+  const matching = term
+    ? rows.filter((r) => {
+        const profile = r.global_public_id ? profiles.get(r.global_public_id) : undefined;
+        const handle = annoyAccount(r) ? profile?.username : r.username;
+        return [nameOf(r), handle, r.nick].some((v) => v?.toLowerCase().includes(term));
+      })
+    : rows;
+  const named = matching.map((r) => ({ r, name: nameOf(r), lower: nameOf(r).toLowerCase() })).sort((a, b) => a.lower.localeCompare(b.lower) || (a.r.id < b.r.id ? -1 : a.r.id > b.r.id ? 1 : 0));
+  const start = key ? named.findIndex((n) => n.lower > key![0].toLowerCase() || (n.lower === key![0].toLowerCase() && n.r.id > key![1])) : 0;
+  const slice = start < 0 ? [] : named.slice(start, start + limit + 1);
+  const hasMore = slice.length > limit;
+  if (hasMore) slice.pop();
+  const ids = slice.map((n) => n.r.id);
   const roleMap = new Map<string, string[]>();
-  const ids = rows.map((row) => row.id);
   for (const role of ids.length ? all<{ user_id: string; role_id: string }>(`SELECT user_id, role_id FROM member_roles WHERE server_id=? AND user_id IN (${placeholders(ids.length)})`, serverId, ...ids) : []) {
     const list = roleMap.get(role.user_id) ?? [];
     list.push(role.role_id);
     roleMap.set(role.user_id, list);
   }
-  const members = rows.map((row) => ({ user: toUser(row), nick: row.nick, roleIds: roleMap.get(row.id) ?? [], joinedAt: row.joined_at, presence: presenceOf(row.id) }));
-  const last = rows.at(-1);
-  const nextCursor = hasMore && rows.length > 0
-    ? Buffer.from(JSON.stringify([last!.nick ?? last!.display_name, last!.id])).toString("base64url")
-    : null;
-  return { members, nextCursor, total };
+  const members = slice.map(({ r }) => ({ user: toUser(r), nick: r.nick, roleIds: roleMap.get(r.id) ?? [], joinedAt: r.joined_at, presence: presenceOf(r.id) }));
+  const last = slice.at(-1);
+  const nextCursor = hasMore && last ? Buffer.from(JSON.stringify([last.name, last.r.id])).toString("base64url") : null;
+  return { members, nextCursor, total: matching.length };
 }
 
 export function getMember(serverId: string, userId: string): Member | undefined {
   const row = one<UserRow & { nick: string | null; joined_at: string }>(
-    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.global_public_id, m.nick, m.joined_at
+    `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.global_id, u.global_public_id, m.nick, m.joined_at
        FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? AND m.user_id=?`, serverId, userId,
   );
   if (!row) return undefined;

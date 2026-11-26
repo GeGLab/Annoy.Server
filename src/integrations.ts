@@ -1,6 +1,7 @@
+import { annoyName, annoyProfiles } from "./profiles.ts";
 import {
   cleanSettings, findTrigger, has, imageKind, INTEGRATION_LIMITS, IntegrationError, isCallable, missingSettings, parseStoreIntegration, Permission, runIntegration,
-  type Channel, type IntegrationFile, type IntegrationHistoryItem, type IntegrationHttp, type IntegrationSettings, type IntegrationSignature, type Message, type ServerIntegration, type StoreIntegration,
+  type Channel, type IntegrationFile, type IntegrationHistoryItem, type IntegrationPerson, type User, type IntegrationHttp, type IntegrationSettings, type IntegrationSignature, type Message, type ServerIntegration, type StoreIntegration,
 } from "@annoy/protocol";
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
@@ -51,6 +52,11 @@ async function assertPublicHost(hostname: string): Promise<void> {
 }
 
 /** Tests replace it; production calls go through `publicHttp`. */
+/** Who wrote or called, for an integration: the Annoy ID; local accounts (no Annoy profile) also send their name. */
+function personOf(user: User): IntegrationPerson {
+  return user.annoyId ? { id: user.annoyId } : { id: user.id, ...(user.profile && { name: user.profile.displayName }) };
+}
+
 export const transport: { http: IntegrationHttp } = {
   http: async (request) => {
     const url = new URL(request.url);
@@ -259,8 +265,12 @@ export async function runMessageIntegration(channel: Channel, message: Message, 
     const settings: IntegrationSettings = cleanSettings(integration, JSON.parse(fresh.settings));
     const count = integration.access.history ? Math.min(INTEGRATION_LIMITS.history, typeof settings.history === "number" ? settings.history : DEFAULT_HISTORY) : 0;
     const history: IntegrationHistoryItem[] = count
-      ? getMessages(channel.id, message.id, count).filter((m) => m.content).map((m) => ({ author: m.integration?.name ?? m.author.displayName, text: m.content, at: m.createdAt, ...(m.integration?.id === integration.id && { self: true }) }))
+      ? getMessages(channel.id, message.id, count).filter((m) => m.content).map((m) => ({ author: m.integration ? { id: m.integration.id, name: m.integration.name } : personOf(m.author), text: m.content, at: m.createdAt, ...(m.integration?.id === integration.id && { self: true }) }))
       : [];
+    const invoker = personOf(getUser(message.author.id) ?? message.author);
+    // First-party GPT writes names into its prompt: read now from usersannoy, by Annoy ID.
+    const annoyIds = [invoker, ...history.map((h) => h.author)].map((p) => p.id).filter((id) => /^U[0-9A-Z]{11}$/.test(id));
+    const names = integration.runtime.type === "http" ? undefined : Object.fromEntries([...(await annoyProfiles(annoyIds))].map(([id, p]) => [id, annoyName(p, id)]));
     const attachments: IntegrationFile[] = [];
     if (integration.access.attachments) {
       for (const a of message.attachments.slice(0, INTEGRATION_LIMITS.attachments)) {
@@ -270,7 +280,7 @@ export async function runMessageIntegration(channel: Channel, message: Message, 
     }
     try {
       const output = await runIntegration(transport.http, {
-        trigger, scope: "server", locale: "pt-BR", invoker: getUser(message.author.id)?.displayName ?? message.author.displayName, history, attachments, settings, apiKey: fresh.api_key,
+        trigger, scope: "server", locale: "pt-BR", invoker, ...(names && { names }), history, attachments, settings, apiKey: fresh.api_key,
         sign: devannoyCalls.sign, report: devannoyCalls.report,
       });
       await post(channel, message, integration, output.text, output.images);

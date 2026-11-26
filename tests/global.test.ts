@@ -141,22 +141,24 @@ test("the server registers with Global once and offers global login", { skip }, 
   assert.equal((await local("/api/info", undefined, undefined, "GET")).json().globalServerId, globalServerId());
 });
 
-test("first global login asks for a username, then signs in to the same account", { skip }, async () => {
+test("first global login signs in at once; the server keeps no @username or profile of the Annoy account", { skip }, async () => {
   const ana = await globalAccount("ana");
-  const first = await local("/api/auth/global", await proof(ana));
-  assert.equal(first.statusCode, 404);
-  assert.equal(first.json().code, "global_new_account");
-
-  const created = await local("/api/auth/global", { ...(await proof(ana)), username: "ana_aqui" });
+  const created = await local("/api/auth/global", await proof(ana));
   assert.equal(created.statusCode, 200, created.body);
-  assert.equal(created.json().user.global, true);
+  const user = created.json().user;
+  assert.equal(user.global, true);
+  assert.equal(user.username, undefined, "the @username comes from the Annoy account");
+  assert.equal(user.profile, undefined, "the profile lives only in usersannoy");
   const again = await local("/api/auth/global", await proof(ana));
-  assert.equal(again.json().user.id, created.json().user.id);
+  assert.equal(again.json().user.id, user.id);
 
-  // What this server stores is not the account's Global ID.
-  const row = db.prepare("SELECT global_id FROM users WHERE username = 'ana_aqui'").get() as { global_id: string };
+  // What this server stores is not the account's Global ID, nor any name or photo of it.
+  const row = db.prepare("SELECT global_id, username, display_name, avatar_url, bio FROM users WHERE id = ?").get(user.id) as { global_id: string; username: string; display_name: string; avatar_url: string | null; bio: string };
+  assert.deepEqual([row.username, row.display_name, row.avatar_url, row.bio], [`annoy.${user.id}`, "", null, ""]);
   const me = await G("/v1/me", { headers: { authorization: `Bearer ${ana.session}` } });
   assert.notEqual(row.global_id, me.id);
+  // Its profile cannot be written here.
+  assert.equal((await local("/api/users/@me", { displayName: "Outro" }, created.json().token, "PATCH")).statusCode, 403);
 });
 
 test("a token works once, only with its own identity and challenge", { skip }, async () => {
@@ -186,9 +188,11 @@ test("a legacy local account migrates exclusively to global without losing its I
   assert.equal(userIdForToken(linked.json().token), reg.user.id);
   assert.equal(db.prepare("SELECT password_hash FROM users WHERE id = ?").get(reg.user.id)?.password_hash, "!");
   const viaGlobal = await local("/api/auth/global", await proof(dani));
-  assert.equal(viaGlobal.json().user.username, "dani_local");
-  // Taken by another account here: refused.
-  assert.equal((await local("/api/auth/login", { username: "dani_local", password: "senha local longa" })).statusCode, 403);
+  // Now an Annoy account: the local @username and profile copies are gone from this server.
+  assert.equal(viaGlobal.json().user.username, undefined);
+  assert.equal(viaGlobal.json().user.profile, undefined);
+  assert.equal((db.prepare("SELECT username FROM users WHERE id = ?").get(reg.user.id) as { username: string }).username, `annoy.${reg.user.id}`);
+  assert.notEqual((await local("/api/auth/login", { username: "dani_local", password: "senha local longa" })).statusCode, 200);
   assert.equal((await local("/api/users/@me/global", await proof(dani), linked.json().token)).statusCode, 410);
   assert.equal((await local("/api/users/@me/global", undefined, linked.json().token, "DELETE")).statusCode, 403);
 });
