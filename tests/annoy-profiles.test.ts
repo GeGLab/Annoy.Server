@@ -29,10 +29,12 @@ process.env.ANNOY_ACCOUNT_MODE = "global";
 process.env.ANNOY_DATA_DIR = directory;
 process.env.ANNOY_GLOBAL_URL = "http://127.0.0.1:9";
 process.env.ANNOY_USERS_URL = `http://127.0.0.1:${(fakeUsers.address() as AddressInfo).port}`;
-const { run } = await import("../src/db.ts");
+const { db, run } = await import("../src/db.ts");
 const { getMembersPage, getUser } = await import("../src/repo.ts");
 after(async () => {
   fakeUsers.close();
+  // Windows keeps an open database file locked.
+  db.close();
   await rm(directory, { recursive: true, force: true });
 });
 
