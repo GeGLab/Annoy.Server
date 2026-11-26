@@ -506,9 +506,7 @@ export interface GlobalProof {
 }
 
 export interface GlobalLogin extends GlobalProof {
-  /** First time on this server: the username to create; ignored when the account exists. */
-  username?: string;
-  displayName?: string;
+  /** First time on a server that creates accounts by invite. No name: the @username and profile are the Annoy account's. */
   inviteCode?: string;
 }
 
