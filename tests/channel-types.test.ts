@@ -264,3 +264,94 @@ test("song rooms can drop played tracks into a history, go back to them and queu
   const theater = await create("theater", "Cinema sem histórico");
   assert.equal((await app.inject({ method: "POST", url: `/channels/${theater.id}/playback`, headers: auth(), payload: { op: "removePlayed", value: true } })).statusCode, 400);
 });
+
+test("song rooms pull a whole YouTube playlist from the request field, until the queue is full", async () => {
+  const song = await create("song", "Rádio de playlist");
+  const act = (payload: object, who = "member") => app.inject({ method: "POST", url: `/channels/${song.id}/playback`, headers: auth(who), payload });
+  const id = (n: number) => `vid${String(n).padStart(8, "0")}`;
+  const lockups = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => ({ lockupViewModel: { contentId: id(from + i), contentType: "LOCKUP_CONTENT_TYPE_VIDEO", metadata: { lockupMetadataViewModel: { title: { content: `Faixa ${from + i}` } } } } }));
+  const more = (token: string) => ({ continuationItemViewModel: { continuationCommand: { innertubeCommand: { continuationCommand: { token } } } } });
+  const page = { header: { pageHeaderRenderer: { content: { metadata: { text: { content: "230 videos" } } } } }, contents: [...lockups(0, 100), more("page2")] };
+  const calls: string[] = [];
+  const fetchMock = mock.method(globalThis, "fetch", async (input: string | URL, init?: RequestInit) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.includes("/playlist?list=PLgood")) return new Response(`<script>var ytInitialData = ${JSON.stringify(page)};</script><script>"INNERTUBE_CLIENT_VERSION":"2.1"</script>`);
+    if (url.includes("/youtubei/v1/browse")) {
+      const token = JSON.parse(String(init?.body)).continuation;
+      return Response.json(token === "page2" ? { onResponseReceivedActions: [{ appendContinuationItemsAction: { continuationItems: [...lockups(100, 200), more("page3")] } }] } : { onResponseReceivedActions: [{ appendContinuationItemsAction: { continuationItems: lockups(200, 230) } }] });
+    }
+    if (url.includes("oembed")) return Response.json({ title: "Só o vídeo" });
+    return new Response("", { status: 404 });
+  });
+  try {
+    // Anyone who may add pulls a playlist, also from music.youtube.com.
+    await act({ op: "add", url: "https://example.com/first.mp3" });
+    const res = await act({ op: "add", url: "https://music.youtube.com/playlist?list=PLgood" });
+    assert.equal(res.statusCode, 200, res.body);
+    let state = res.json();
+    assert.deepEqual([state.added, state.skipped, state.queue.length], [199, 31, 200]);
+    assert.deepEqual([state.queue[1].url, state.queue[1].title, state.queue[1].kind, state.queue[1].addedBy], [`https://www.youtube.com/watch?v=${id(0)}`, "Faixa 0", "youtube", "member"]);
+    assert.ok(calls.some((u) => u.includes("/youtubei/v1/browse")), "reads the next pages");
+    // A full queue takes nothing more.
+    assert.equal((await act({ op: "add", url: "https://www.youtube.com/playlist?list=PLgood" })).statusCode, 400);
+    // A list that can't be read: an error, or the video the link also names.
+    const other = await create("song", "Rádio vazia");
+    const add = (url: string) => app.inject({ method: "POST", url: `/channels/${other.id}/playback`, headers: auth(), payload: { op: "add", url } });
+    assert.equal((await add("https://www.youtube.com/playlist?list=PLgone")).statusCode, 400);
+    state = (await add("https://www.youtube.com/watch?v=abcdefghijk&list=PLgone")).json();
+    assert.deepEqual([state.queue.length, state.queue[0].title, state.added], [1, "Só o vídeo", undefined]);
+    // Theater rooms keep taking the link as one item.
+    const theater = await create("theater", "Cinema de playlist");
+    state = (await app.inject({ method: "POST", url: `/channels/${theater.id}/playback`, headers: auth(), payload: { op: "add", url: "https://www.youtube.com/playlist?list=PLgood" } })).json();
+    assert.equal(state.queue.length, 1);
+  } finally {
+    fetchMock.mock.restore();
+  }
+});
+
+test("song rooms have a random mode and a one-time shuffle that can go back to the original order", async () => {
+  const song = await create("song", "Rádio aleatória");
+  const act = (payload: object, who = "owner") => app.inject({ method: "POST", url: `/channels/${song.id}/playback`, headers: auth(who), payload });
+  for (let n = 0; n < 8; n++) await act({ op: "add", url: `https://example.com/${n}.mp3` });
+  let state = (await act({ op: "autoplay", value: true })).json();
+  const order = state.queue.map((i: { id: string }) => i.id);
+  // Only whoever manages the room uses them; theater rooms don't have them.
+  for (const op of [{ op: "shuffle", value: true }, { op: "shuffleQueue" }, { op: "unshuffle" }]) assert.equal((await act(op, "member")).statusCode, 403);
+  const theater = await create("theater", "Cinema aleatório");
+  assert.equal((await app.inject({ method: "POST", url: `/channels/${theater.id}/playback`, headers: auth(), payload: { op: "shuffle", value: true } })).statusCode, 400);
+
+  // Embaralhar: the tracks after the current one change places; the original order is kept.
+  state = (await act({ op: "shuffleQueue" })).json();
+  assert.equal(state.queue[0].id, order[0], "the current track stays");
+  assert.deepEqual([...state.queue.map((i: { id: string }) => i.id)].sort(), [...order].sort());
+  assert.deepEqual(state.originalOrder, order);
+  // A second shuffle still remembers the first order; a new track joins it at the end.
+  await act({ op: "shuffleQueue" });
+  state = (await act({ op: "add", url: "https://example.com/late.mp3" })).json();
+  const late = state.queue.at(-1).id;
+  assert.deepEqual(state.originalOrder, [...order, late]);
+  state = (await act({ op: "unshuffle" })).json();
+  assert.deepEqual(state.queue.map((i: { id: string }) => i.id), [...order, late]);
+  assert.equal(state.originalOrder, null);
+
+  // Random mode: the queue keeps its order, the next track is drawn ahead from those not played.
+  state = (await act({ op: "shuffle", value: true })).json();
+  assert.deepEqual(state.queue.map((i: { id: string }) => i.id), [...order, late]);
+  const seen = [state.currentId];
+  for (let n = 0; n < 8; n++) {
+    const next = state.upNextId;
+    assert.ok(next && !seen.includes(next), "draws a track that did not play in this round");
+    state = (await act({ op: "ended", itemId: state.currentId })).json();
+    assert.equal(state.currentId, next, "plays the drawn track");
+    seen.push(next);
+  }
+  assert.equal(state.upNextId, null, "all played: the round ends after this one");
+  // Back: the track that played before, and the one left behind is next again.
+  const leaving = state.currentId;
+  state = (await act({ op: "previous" })).json();
+  assert.deepEqual([state.currentId, state.upNextId], [seen.at(-2), leaving]);
+  // Off: the next track is the one below in the queue again.
+  state = (await act({ op: "shuffle", value: false })).json();
+  assert.deepEqual([state.shuffle, state.upNextId, state.played], [false, null, []]);
+});

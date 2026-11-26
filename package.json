@@ -1,6 +1,6 @@
 {
   "name": "annoy-server",
-  "version": "0.13.0-alpha.1",
+  "version": "0.13.1-alpha.1",
   "private": true,
   "annoyHandoff": 1,
   "annoyLiveMigration": 1,

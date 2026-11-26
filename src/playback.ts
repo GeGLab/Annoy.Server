@@ -1,4 +1,5 @@
-import { DJ_STYLES, has, Permission, PLAYBACK_HISTORY_MAX, playbackPosition, type Channel, type PlaybackItem, type PlaybackKind, type PlaybackState } from "@annoy/protocol";
+import { randomInt } from "node:crypto";
+import { DJ_STYLES, has, Permission, PLAYBACK_HISTORY_MAX, PLAYBACK_QUEUE_MAX, playbackPosition, type Channel, type PlaybackAddResult, type PlaybackItem, type PlaybackKind, type PlaybackState } from "@annoy/protocol";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser } from "./auth.ts";
@@ -10,11 +11,12 @@ import { requireChannel } from "./perms.ts";
 import { getChannel } from "./repo.ts";
 import { parse, type Params } from "./validate.ts";
 import { isLegacySource } from './handoff.ts';
+import { playlistIdOf, readPlaylist, videoIdOf, watchUrl } from "./youtube-playlist.ts";
 
 // Theater and song rooms share one playback per channel: a queue and where the current
 // item is. The server only keeps time; every viewer plays the media on their own device.
 
-const QUEUE_MAX = 200;
+const QUEUE_MAX = PLAYBACK_QUEUE_MAX;
 const states = new Map<string, Omit<PlaybackState, "serverTime">>();
 
 const isPlaybackChannel = (channel: Channel) => channel.type === "theater" || channel.type === "song";
@@ -32,6 +34,10 @@ function load(channelId: string): Omit<PlaybackState, "serverTime"> {
     state.djStyle ??= "auto";
     state.removePlayed ??= false;
     state.history ??= [];
+    state.shuffle ??= false;
+    state.upNextId ??= null;
+    state.played ??= [];
+    state.originalOrder ??= null;
     states.set(channelId, state);
   }
   return state;
@@ -87,7 +93,43 @@ const sweep = setInterval(() => {
 }, 15_000);
 sweep.unref?.();
 
-function save(channel: Channel, state: Omit<PlaybackState, "serverTime">): PlaybackState {
+type State = Omit<PlaybackState, "serverTime">;
+
+/** Random order for a list (Fisher–Yates). */
+function shuffled<T>(list: readonly T[]): T[] {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+/**
+ * Keeps the random mode's bookkeeping true to the queue: the played list holds only queued
+ * tracks, the drawn next track is queued, not playing and not played yet (else a new one is
+ * drawn), and the saved original order follows tracks that were added or left.
+ */
+function tidy(state: State): void {
+  const queued = new Set(state.queue.map((i) => i.id));
+  state.played = (state.played ?? []).filter((id) => queued.has(id) && id !== state.currentId);
+  if (state.shuffle) {
+    const played = new Set(state.played);
+    const open = (id: string | null | undefined) => !!id && id !== state.currentId && queued.has(id) && !played.has(id);
+    if (!open(state.upNextId)) {
+      const pool = state.queue.filter((i) => open(i.id));
+      state.upNextId = pool.length ? pool[randomInt(pool.length)]!.id : null;
+    }
+  } else state.upNextId = null;
+  if (state.originalOrder) {
+    const kept = state.originalOrder.filter((id) => queued.has(id));
+    const known = new Set(kept);
+    state.originalOrder = [...kept, ...state.queue.filter((i) => !known.has(i.id)).map((i) => i.id)];
+  }
+}
+
+function save(channel: Channel, state: State): PlaybackState {
+  tidy(state);
   state.updatedAt = Date.now();
   run("INSERT OR REPLACE INTO playback (channel_id, state) VALUES (?, ?)", channel.id, JSON.stringify(state));
   const out = snapshot(state);
@@ -143,14 +185,55 @@ function retire(state: Omit<PlaybackState, "serverTime">, items: PlaybackItem[])
   state.history = [...items.reverse().map((i) => ({ ...i, playedAt })), ...(state.history ?? [])].slice(0, PLAYBACK_HISTORY_MAX);
 }
 
-/** On to the next track; one that played (not one removed by hand) goes to the history when the room keeps one. */
-function advance(state: Omit<PlaybackState, "serverTime">, played = true): void {
+/**
+ * On to the next track; one that played (not one removed by hand) goes to the history when the
+ * room keeps one. In random mode the next one is the drawn one; when none is left the round ends.
+ */
+function advance(state: State, played = true): void {
   const index = state.queue.findIndex((i) => i.id === state.currentId);
-  const next = state.queue[index + 1] ?? null;
+  let next: PlaybackItem | null;
+  if (state.shuffle) {
+    tidy(state);
+    next = state.queue.find((i) => i.id === state.upNextId) ?? null;
+    if (state.currentId && next) state.played = [...(state.played ?? []), state.currentId];
+    else if (!next) state.played = [];
+    state.upNextId = null;
+  } else next = state.queue[index + 1] ?? null;
   if (played && state.removePlayed && index >= 0) retire(state, [state.queue[index]!]);
   state.currentId = next?.id ?? null;
   state.position = 0;
   state.paused = !next;
+}
+
+/** A track picked by hand in random mode: the one it replaces counts as played, the picked one no longer does. */
+function pick(state: State, itemId: string): void {
+  if (state.shuffle && state.currentId && state.currentId !== itemId) state.played = [...(state.played ?? []).filter((id) => id !== itemId), state.currentId];
+  state.currentId = itemId;
+}
+
+/** A link's queue entries: the link itself, or in song rooms every track of the YouTube playlist it points at. */
+async function resolveLink(channel: Channel, raw: string, title: string | undefined, userId: string, room: number): Promise<{ items: PlaybackItem[]; total: number }> {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    throw badRequest("Link inválido");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw badRequest("Use um link http ou https");
+  const list = channel.type === "song" ? playlistIdOf(url) : null;
+  const video = list ? videoIdOf(url) : null;
+  if (list) {
+    const playlist = room > 0 ? await readPlaylist(list, video, room) : null;
+    if (playlist) {
+      const items = playlist.tracks.map((t) => ({ id: secretId(), url: watchUrl(t.videoId), title: t.title || "YouTube", kind: "youtube" as const, addedBy: userId, addedAt: now() }));
+      return { items, total: playlist.total };
+    }
+    // The list can't be read, but the link also names a video: that one goes in.
+    if (room > 0 && !video) throw badRequest("Não foi possível ler a playlist");
+  }
+  const kind = classify(url);
+  const item = { id: secretId(), url: url.toString(), title: title?.trim() || (await titleFor(url, kind)), kind, addedBy: userId, addedAt: now() };
+  return { items: [item], total: 1 };
 }
 
 const listen = z.object({ value: z.boolean() });
@@ -170,6 +253,9 @@ const action = z.discriminatedUnion("op", [
   z.object({ op: z.literal("removePlayed"), value: z.boolean() }),
   z.object({ op: z.literal("previous") }),
   z.object({ op: z.literal("requeue"), itemId: z.string().max(64) }),
+  z.object({ op: z.literal("shuffle"), value: z.boolean() }),
+  z.object({ op: z.literal("shuffleQueue") }),
+  z.object({ op: z.literal("unshuffle") }),
 ]);
 
 export function playbackRoutes(app: FastifyInstance): void {
@@ -210,11 +296,31 @@ export function playbackRoutes(app: FastifyInstance): void {
     const owns = (itemId: string | null) => state.queue.find((i) => i.id === itemId)?.addedBy === userId;
     // A stale end report changes nothing, not even the clock.
     if (body.op === "ended" && body.itemId !== state.currentId) return snapshot(state);
+    if (body.op === "shuffle" || body.op === "shuffleQueue" || body.op === "unshuffle") {
+      if (channel.type !== "song") throw badRequest("Só salas de música têm modo aleatório");
+      if (!has(perms, Permission.MANAGE_CHANNELS)) throw forbidden("Só quem gerencia a sala pode mudar isso");
+    }
+    if (body.op === "add" && state.queue.length >= QUEUE_MAX) throw badRequest(`A fila já tem ${QUEUE_MAX} itens`);
+    // Links are looked up (titles, playlists) before the clock is settled: the room may play on meanwhile.
+    const linked = body.op === "add" && !body.uploadId ? await resolveLink(channel, body.url, body.title, userId, QUEUE_MAX - state.queue.length) : null;
     settle(state);
+    let added: { added: number; skipped: number } | null = null;
 
     switch (body.op) {
       case "add": {
         if (state.queue.length >= QUEUE_MAX) throw badRequest(`A fila já tem ${QUEUE_MAX} itens`);
+        if (linked && (linked.items.length > 1 || linked.total > 1)) {
+          // A playlist goes in until the queue is full; the rest is counted, not queued.
+          const items = linked.items.slice(0, QUEUE_MAX - state.queue.length);
+          state.queue.push(...items);
+          if (!state.currentId && items[0]) {
+            state.currentId = items[0].id;
+            state.position = 0;
+            state.paused = false;
+          }
+          added = { added: items.length, skipped: linked.total - items.length };
+          break;
+        }
         let item: PlaybackItem;
         if (body.uploadId) {
           const row = one<{ filename: string; content_type: string }>(
@@ -226,17 +332,7 @@ export function playbackRoutes(app: FastifyInstance): void {
           if (!/^(audio|video)\//.test(row.content_type)) throw badRequest("Só arquivos de áudio ou vídeo podem entrar na fila");
           const url = `/api/uploads/${body.uploadId}/${encodeURIComponent(row.filename)}`;
           item = { id: secretId(), url, title: body.title?.trim() || row.filename, kind: "file", addedBy: userId, addedAt: now() };
-        } else {
-          let url: URL;
-          try {
-            url = new URL(body.url.trim());
-          } catch {
-            throw badRequest("Link inválido");
-          }
-          if (url.protocol !== "https:" && url.protocol !== "http:") throw badRequest("Use um link http ou https");
-          const kind = classify(url);
-          item = { id: secretId(), url: url.toString(), title: body.title?.trim() || (await titleFor(url, kind)), kind, addedBy: userId, addedAt: now() };
-        }
+        } else item = linked!.items[0]!;
         state.queue.push(item);
         if (!state.currentId) {
           state.currentId = item.id;
@@ -254,7 +350,7 @@ export function playbackRoutes(app: FastifyInstance): void {
       case "play": {
         if (body.itemId && body.itemId !== state.currentId) {
           if (!state.queue.some((i) => i.id === body.itemId)) throw notFound("Item");
-          state.currentId = body.itemId;
+          pick(state, body.itemId);
           state.position = 0;
         }
         if (!state.currentId) throw badRequest("A fila está vazia");
@@ -319,13 +415,21 @@ export function playbackRoutes(app: FastifyInstance): void {
         // Like picking an earlier track by hand: anyone who may control the room.
         const index = state.queue.findIndex((i) => i.id === state.currentId);
         const last = state.removePlayed ? state.history?.[0] : undefined;
+        // In random mode the track left behind is the next one again.
+        const leaving = state.currentId;
         if (last) {
           // The last played track comes back in front of the current one.
           state.history = state.history!.slice(1);
           const { playedAt: _played, ...item } = last;
           state.queue.splice(Math.max(0, index), 0, item);
           state.currentId = item.id;
-        } else if (index > 0) state.currentId = state.queue[index - 1]!.id;
+          if (state.shuffle && leaving) state.upNextId = leaving;
+        } else if (state.shuffle && state.played?.length) {
+          // Random mode: back to the track that played before this one.
+          state.currentId = state.played.at(-1)!;
+          state.played = state.played.slice(0, -1);
+          if (leaving) state.upNextId = leaving;
+        } else if (index > 0 && !state.shuffle) state.currentId = state.queue[index - 1]!.id;
         else if (!state.currentId) throw badRequest("Não há música para voltar");
         state.position = 0;
         state.paused = false;
@@ -345,7 +449,30 @@ export function playbackRoutes(app: FastifyInstance): void {
         }
         break;
       }
+      case "shuffle":
+        state.shuffle = body.value;
+        // A new round: what played before random mode doesn't count.
+        state.played = [];
+        state.upNextId = null;
+        break;
+      case "shuffleQueue": {
+        // The tracks after the current one, in a new order; the first shuffle keeps the order to go back to.
+        const index = state.queue.findIndex((i) => i.id === state.currentId);
+        const rest = state.queue.slice(index + 1);
+        if (rest.length < 2) break;
+        state.originalOrder ??= state.queue.map((i) => i.id);
+        state.queue = [...state.queue.slice(0, index + 1), ...shuffled(rest)];
+        break;
+      }
+      case "unshuffle": {
+        if (!state.originalOrder) break;
+        const rank = new Map(state.originalOrder.map((id, i) => [id, i]));
+        state.queue = [...state.queue].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
+        state.originalOrder = null;
+        break;
+      }
     }
-    return save(channel, state);
+    const out: PlaybackAddResult = save(channel, state);
+    return added ? { ...out, ...added } : out;
   });
 }
